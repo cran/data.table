@@ -1,72 +1,69 @@
 \name{data.table}
 \alias{data.table}
-%- Also NEED an '\alias' for EACH other topic documented here.
-\title{ Just like a data.frame, but without row names }
+\alias{DT}
+\alias{as.data.table}
+\alias{is.data.table}
+\title{ Enhanced data.frame }
 \description{
-  Same as data.frame() but the result has no row names. In some cases (see example) rownames alone are responsible for 90\% of the memory used by a data.frame. Removing them can therefore mean up to 10 times less memory, and be 10 times faster to create, and 10 times faster to copy. 1:nrow stored in character form is inefficient since rows can be indexed by their integer position. For example, DF[6,] and DF["6",] both work but the former is more efficient. 
+   Same internal structure as data.frame (i.e. list of vectors) but enhanced extract methods.
 }
 \usage{
-data.table(..., keep.rownames = FALSE, check.names = TRUE)
+data.table(..., keep.rownames=FALSE, check.names=TRUE, key=NULL)
+DT(...)
 }
-%- maybe also 'usage' for other objects documented here.
 \arguments{
-  \item{\dots}{ Just as ... in data.frame() }
-  \item{keep.rownames}{ If ... is a data.frame itself, TRUE will retain the rownames in the first column }
-  \item{check.names}{ Just as in data.frame() }
+  \item{\dots}{ Just as \dots in \code{\link{data.frame}}. These arguments are of either the form value
+  or tag = value. Column names are created based on the tag (if present) or the deparsed argument itself.
+  
+  The data.table can be formed from one or more of (mixed type) vector, matrix, data.frame, data.table, etc. Usual
+  recycling rules are applied to vectors of different lengths.
+  
+  \code{\link{make.names}} is used to resolve any column name conflicts in the union of the column names of these objects
+  and the tag will be prefixed to the column name.
+  }
+  \item{keep.rownames}{ If \dots is a matrix or data.frame, TRUE will retain the rownames of that object into a column 'rn'.
+  If the matrix or data.frame already has a column called 'rn' it will be renamed 'rn.1' via \code{\link{make.names}}. If more
+  than one matrix or data.frame appear in \dots all rownames from all those objects will be kept in multiple rn.<n> columns. }
+  \item{check.names}{ Just as check.names in \code{\link{data.frame}}(). For example this replaces spaces in column names with
+  period and ensures column names are valid \R object names. }
+  
+  \item{key}{ Character vector of length 1 containing one or more column names separated by comma which is passed to \code{\link{setkey}} }
 }
 \details{
-    This class really does very little. The only reason for its existence is that the white book specifies that data.frame must have rownames.
-    
-    Most of the code is copied from base functions with the code manipulating row.names removed.
-    
-    A data.table is identical to a data.frame other than:\cr
-    it doesn't have rownames\cr
-    [,drop] by default is FALSE, so selecting a single row will always return a single row data.table not a vector\cr
-    The comma is optional inside [], so DT[3] returns the 3rd row as a 1 row data.table\cr
-    [] is like a call to subset()\cr
-    [,...], is like a call to with().  (not yet implemented)\cr
+data.table creates a data.table from its arguments just as data.frame does. DT() is an alias for data.table() and is
+often used instead of as.data.table().
 
-    Motivation:\cr
-    up to 10 times less memory\cr
-    up to 10 times faster to create, and copy\cr
-    simpler R code by allowing column name expressions within []\cr
-    the white book defines rownames, so data.frame itself can't be changed ... => new class\cr
+A data.table is a list of vectors, just like a data.frame, however :
+%\enumerate{
+%\item{1}{ it \emph{never} has rownames. Instead it may have an optional \dfn{key} of one or more columns using \code{\link{setkey}}. This key can be used for row indexing instead of rownames }
+%\item{2}{ when the data.table has over 20 rows the print method displays column names at the bottom as well as at
+%the top to save scrolling up at the console. }
+%\item{3}{ character vectors may be passed in but they are automatically converted to factor. A data.table does not allow character columns for time and space reasons. }
+%\item{4}{ \emph{the main difference} is enhanced functionality in \code{\link{[.data.table}} where most documentation for this package lives. }
+%}
 }
 \value{
-  Identical to the result of data.frame, but without the row.names attribute.
+   A data.table.
 }
-\references{ http://tolstoy.newcastle.edu.au/R/devel/05/12/3439.html }
-\author{ Matt Dowle }
-\note{ }
-\seealso{ \code{\link{data.frame}} }
+\references{  }
+\author{ Matthew Dowle }
+\note{ \code{keep.rownames} and \code{check.names}, if suppplied, must be written in full since they appear after
+the \dots. \R does not allow partial argument names after \dots. For example \code{data.table(DF,keep=TRUE)} will create a
+column called 'keep' containing TRUE and this is correct behaviour. Most likely \code{data.table(DF,keep.rownames=TRUE)} was intended.
+}
+\seealso{ \code{\link{data.frame}}, \code{\link{tables}}, \code{\link{setkey}} }
 \examples{
-nr = 1000000
-D = rep(1:5,nr/5)
-system.time(DF <<- data.frame(colA=D, colB=D))  # 2.08 
-system.time(DT <<- data.table(colA=D, colB=D))  # 0.15  (over 10 times faster to create)
+DF = data.frame(a=1:5, b=letters[1:5])
+DT = data.table(a=1:5, b=letters[1:5])
 identical(as.data.table(DF), DT)
+identical(DT(DF), DT)
 identical(dim(DT),dim(DF))
-object.size(DF)/object.size(DT)                 # 10 times less memory
-
-tt = subset(DF,colA>3)
-ss = DT[colA>3]
-identical(as.data.table(tt), ss)
-
-mean(subset(DF,colA+colB>5,"colB"))
-mean(DT[colA+colB>5]$colB)
-
-tt = with(subset(DF,colA>3),colA+colB)
-ss = with(DT[colA>3],colA+colB)                 # but could be:  DT[colA>3,colA+colB]  (not yet implemented)
-identical(tt, ss)
-
-tt = DF[with(DF,tapply(1:nrow(DF),colB,last)),] # select last row grouping by colB
-ss = DT[tapply(1:nrow(DT),colB,last)]           # but could be:  DT[last,group=colB]  (not yet implemented)
-identical(as.data.table(tt), ss)
-
-Lkp=1:3
-tt = DF[with(DF,colA \%in\% Lkp),]              
-ss = DT[colA \%in\% Lkp]                        # expressions inside the [] can see objects in the calling frame
-identical(as.data.table(tt), ss)
-
+identical(DF$a, DT$a)
+DT
+tables()
+identical(DT(DT,DT), cbind(DT,DT))
+DT2=rbind(DT,DT)
+DT3 = data.table(A=DT, B=DT, key="A.b")
+tables()
 }
 \keyword{ data }
