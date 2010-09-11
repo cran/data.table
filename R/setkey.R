@@ -24,19 +24,32 @@ setkey = function(x, ..., loc=parent.frame())
         miss = !(cols %in% colnames(x))
         if (any(miss)) stop("some columns are not in the data.table: " %+% cols[miss])
     }
-    if (!all( sapply(x,storage.mode)[cols] == "integer")) stop("All keyed columns must be storage mode integer")
     for (i in cols) {
-        # if key columns don't already have sorted levels, sort them, test 150
+        if (is.character(x[[i]])) {
+            x[[i]] = factor(x[[i]])
+            next
+        }
+        if (storage.mode(x[[i]]) == "double") {
+            toint = as.integer(x[[i]])
+            if (identical(all.equal(x[[i]],toint),TRUE)) {
+                x[[i]] = toint
+                next
+            }
+            stop("Column '",i,"' cannot be auto converted to integer without losing information.")
+        }
         if (is.factor(x[[i]])) {
+            # check levels are sorted, if not sort them, test 150
             l = levels(x[[i]])
             if (is.unsorted(l)) {
                 r = rank(l)
                 l[r] = l
                 x[[i]] = structure(r[as.integer(x[[i]])], levels=l, class="factor")
             }
+            next
         }
+        if (!storage.mode(x[[i]]) %in% c("integer","logical")) stop("Column '",i,"' is storage.mode '",storage.mode(x[[i]]),"' which is not accepted by setkey.")
     }
-    o = fastorder(x, cols, na.last=FALSE)
+    o = fastorder(x, cols)
     # We put NAs first because NA is internally a very large negative number. This is relied on in the C binary search.
     ans = x[o]   # TO DO: implement column by column re-order here, so only memory for one column is required, rather than copy of whole table.
     attr(ans,"sorted") = cols
@@ -44,27 +57,29 @@ setkey = function(x, ..., loc=parent.frame())
     invisible()
 }
 
-radixorder1 <- function(x, na.last = FALSE, decreasing = FALSE) {
+radixorder1 <- function(x) {
     if(is.object(x)) x = xtfrm(x) # should take care of handling factors, Date's and others, so we don't need unlist
-    if(!typeof(x) == "integer") # do want to allow factors here, where we assume the levels are sorted as we always do in data.table
+    if(typeof(x) == "logical") return(c(which(is.na(x)),which(!x),which(x))) # logical is a special case of radix sort; just 3 buckets known up front. TO DO - could be faster in C but low priority
+    if(typeof(x) != "integer") # this allows factors; we assume the levels are sorted as we always do in data.table
         stop("radixorder1 is only for integer 'x'")
-    if(is.na(na.last))
-        return(.Internal(radixsort(x, TRUE, decreasing))[seq_len(sum(!is.na(x)))])
-        # this is a work around for what we consider a bug in sort.list on vectors with NA (inconsistent with order)
-    else
-        return(.Internal(radixsort(x, na.last, decreasing)))
+    # Actually, we never set na.last=NA. We rely that NA's are first in the C binary search, lets be safe ...
+    # if(is.na(na.last))
+    #    return(.Internal(radixsort(x, TRUE, decreasing))[seq_len(sum(!is.na(x)))])
+    #    # this is a work around for what we consider a bug in sort.list on vectors with NA (inconsistent with order) reported to r-devel
+    #else
+    return(.Internal(radixsort(x, na.last=FALSE, decreasing=FALSE)))
 }
 
-regularorder1 <- function(x, na.last = FALSE, decreasing = FALSE) {
+regularorder1 <- function(x) {
     if(is.object(x)) x = xtfrm(x) # should take care of handling factors, Date's and others, so we don't need unlist
-    if(is.na(na.last))
-        return(.Internal(order(TRUE, decreasing, x))[seq_len(sum(!is.na(x)))])
-    else
-        return(.Internal(order(na.last, decreasing, x)))
+    #if(is.na(na.last))
+    #    return(.Internal(order(TRUE, decreasing, x))[seq_len(sum(!is.na(x)))])
+    #else
+    return(.Internal(order(na.last=FALSE, decreasing=FALSE, x)))
 }
 
 
-fastorder <- function(lst, which=seq_along(lst), na.last = FALSE, decreasing = FALSE, verbose=getOption("datatable.verbose",FALSE))
+fastorder <- function(lst, which=seq_along(lst), verbose=getOption("datatable.verbose",FALSE))
 {
     # lst is a list or anything thats stored as a list and can be accessed with [[.
     # 'which' may be integers or names
@@ -74,17 +89,17 @@ fastorder <- function(lst, which=seq_along(lst), na.last = FALSE, decreasing = F
     w <- last(which)
     err <- try(silent = TRUE, {
         # Use a radix sort (fast and stable), but it will fail if there are more than 1e5 unique elements (or any negatives)
-        o <- radixorder1(lst[[w]], na.last = na.last, decreasing = decreasing)
+        o <- radixorder1(lst[[w]])
     })
     if (inherits(err, "try-error"))
-        o <- regularorder1(lst[[w]], na.last = na.last, decreasing = decreasing)
+        o <- regularorder1(lst[[w]])
     # If there is more than one column, run through them back to front to group columns.
     for (w in rev(take(which))) {
         err <- try(silent = TRUE, {
-            o <- o[radixorder1(lst[[w]][o], na.last = na.last, decreasing = decreasing)]
+            o <- o[radixorder1(lst[[w]][o])]
         })
         if (inherits(err, "try-error"))
-            o <- o[regularorder1(lst[[w]][o], na.last = na.last, decreasing = decreasing)]
+            o <- o[regularorder1(lst[[w]][o])]
     }
     if (printdone) {cat("done\n");flush.console()}   # TO DO - add time taken
     o

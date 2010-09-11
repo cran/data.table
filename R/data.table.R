@@ -39,17 +39,17 @@ format.data.table <- function (x, ..., justify = "none") {
 is.data.table = function(x) inherits(x, "data.table")
 is.ff = function(x) inherits(x, "ff")  # define this in data.table so that we don't have to require(ff), but if user is using ff we'd like it to work
 
-NCOL = function(x) {
-    # copied from base, but additionally covers data.table via is.list()
-    # because NCOL in base explicity tests using is.data.frame()
-    if (is.list(x) && !is.ff(x)) return(length(x))
-    if (is.array(x) && length(dim(x)) > 1) ncol(x) else as.integer(1)
-}
-NROW = function(x) {
-    if (is.data.frame(x) || is.data.table(x)) return(nrow(x))
-    if (is.list(x) && !is.ff(x)) stop("List is not a data.frame or data.table. Convert first before using NROW")   # list may have different length elements, which data.table and data.frame's resolve.
-    if (is.array(x)) nrow(x) else length(x)
-}
+#NCOL = function(x) {
+#    # copied from base, but additionally covers data.table via is.list()
+#    # because NCOL in base explicity tests using is.data.frame()
+#    if (is.list(x) && !is.ff(x)) return(length(x))
+#    if (is.array(x) && length(dim(x)) > 1) ncol(x) else as.integer(1)
+#}
+#NROW = function(x) {
+#    if (is.data.frame(x) || is.data.table(x)) return(nrow(x))
+#    if (is.list(x) && !is.ff(x)) stop("List is not a data.frame or data.table. Convert first before using NROW")   # list may have different length elements, which data.table and data.frame's resolve.
+#    if (is.array(x)) nrow(x) else length(x)
+#}
 
 # removed DT alias as j=list() is much faster with new dogroups ... DT = function(...) data.table(...)  # DT is alias for data.table intended for use in j expressions.
 
@@ -63,7 +63,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
     # DONE: if M is a matrix with cols a,b and c,  data.table(A=M,B=M) will create colnames A.a,A.b,A.c,B.a,B,b,B.c.  Also  data.table(M,M) will use make.names to make the columns unique (adds .1,.2,.3)
     # NOTE: It may be faster in some circumstances to create a data.table by creating a list l first, and then class(l)="data.table" at the expense of checking.
     x <- list(...)
-    if (identical(x, list(NULL))) return( structure(NULL,class="data.table") )
+    if (identical(x, list(NULL))) return( structure(NULL,class=c("data.table","data.frame"),row.names=.set_row_names(0)) )
     if (length(x) == 1 && is.list(x[[1]]) && !is.data.frame(x[[1]]) && !is.data.table(x[[1]]) && !is.ff(x[[1]])) {
         # a list was passed in. Constructing a list and passing it in, should be the same result as passing in each column as arguments to the function.
         x = x[[1]]
@@ -90,7 +90,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
     # so now finally we have good column names. We also will use novname later to know which were explicitly supplied in the call.
     n <- length(x)
     if (n < 1)
-        return(structure(list(), class = "data.table"))
+        return(structure(list(), class = c("data.table","data.frame"), row.names=.set_row_names(0)))
     if (length(vnames) != n) stop("logical error in vnames")
     vnames <- as.list(vnames)
     # ncols <- integer(n)        # the nrows and ncols of each of the inputs (could be varying lengths)
@@ -168,7 +168,8 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
     if (check.names)
         vnames <- make.names(vnames, unique = TRUE)
     names(value) <- vnames
-    attr(value, "class") <- "data.table"
+    attr(value,"row.names") = .set_row_names(nr)
+    attr(value, "class") <- c("data.table","data.frame")
     if (!is.null(key)) {
       if (!is.character(key) || !length(key)==1) stop("key must be character vector length 1 containing comma seperated column names")
       eval(parse(text=paste("setkey(value,",paste(key,collapse=","),")",sep="")))
@@ -177,9 +178,12 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
 }
 
 
-"[.data.table" = function (x, i, j, by=NULL, with=TRUE, nomatch=NA, mult="first", roll=FALSE, rolltolast=FALSE, which=FALSE, bysameorder=FALSE, verbose=getOption("datatable.verbose",FALSE))
+"[.data.table" = function (x, i, j, by=NULL, with=TRUE, nomatch=NA, mult="first", roll=FALSE, rolltolast=FALSE, which=FALSE, bysameorder=FALSE, verbose=getOption("datatable.verbose",FALSE), drop=NULL)  # the drop is to sink drop argument when dispatch to [.data.frame, but we don't use ... as that stops test 147
 {
-    # To add to documentation: DT[i,"colA"] will return a one-column data.table. To get a vector do DT[i,"colA"][[1]].  Neater than DT[i,"colA",drop=TRUE]. Instead of DT[,"colA"][[1]], just do DT$colA, if there is no subset i required.
+    if (!cedta()) {
+        if (missing(drop)) return(`[.data.frame`(x,i,j))
+        else return(`[.data.frame`(x,i,j,drop))
+    }
     if (!missing(by) && missing(j)) stop("'by' is supplied but not j")
     if (!mult %in% c("first","last","all")) stop("mult argument can only be 'first','last' or 'all'")   # Since SQL inherently is not ordered it can't do first or last without another sub-query and compute time.
     if (roll && rolltolast) stop("roll and rolltolast cannot both be true")
@@ -188,25 +192,17 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
     if (which && !missing(j)) stop("'which' is true but 'j' is also supplied")
     cols <- names(x)
     if (!missing(i)) {
-        if (mode(substitute(i))=="call") {
-            # so 'i' can be any expression of column names, like the 'where' clause of SQL.
-            # i can also include objects from the calling frame e.g. TABLE[ColA %in% Lkp] where Lkp is a vector defined in the calling frame.
-            if (substring(deparse(substitute(i))[1],1,2) %in% c("J(","SJ","CJ")) {
-                # We want the join table to be constructed in the frame of the caller, not inside the data.table.
-                # If "ids" exists as a column name of x, we don't want those to be used by the join function.
-                # It doesn't matter if there are no column names the same as variables in the caller.
-                i = try(eval(substitute(i), envir=parent.frame(), enclos=parent.frame()),silent=TRUE)
-            } else {
-                # Usual where clause via vector scan, no join. For example  DT[id=="A"]
-                i = try(eval(substitute(i), envir=x, enclos=parent.frame()),silent=TRUE)
-            }
-            if (inherits(i,"try-error")) {
-                cat("Error hint: the i expression sees the column variables. Column names (variables) will mask variables in the calling frame. Check for any conflicts.\n")
-                stop(i)
-            }
-            if (is.logical(i)) i[is.na(i)] = FALSE  # To simplify statement so don't have to do TABLE[!is.na(ColA) & ColA==ColB]
-        }
-        if (is.null(i)) return(structure(NULL,class="data.table"))
+        isub = substitute(i)
+        isubl = as.list(isub)
+        if (identical(isubl[[1]],quote(eval))) {
+            isub = eval(isubl[[2]],parent.frame())  # same reason doing it this way as comment further down for bysub
+        } 
+        i = eval(isub, envir=x, enclos=parent.frame())
+        if (is.logical(i)) {
+            if (identical(i,NA)) i = NA_integer_  # see DT[NA] thread re recycling of NA logical
+            else i[is.na(i)] = FALSE              # To simplify statement so don't have to do TABLE[!is.na(ColA) & ColA==ColB]
+        }    
+        if (is.null(i)) return(structure(NULL,class=c("data.table","data.frame"),row.names=.set_row_names(0)))
         if (is.character(i)) {
             # user can feel like they are using rownames if they like
             if (!haskey(x)) stop("The data.table has no key but i is character. Call setkey first, see ?setkey.")
@@ -217,7 +213,8 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             if (!haskey(x)) stop("When i is a data.table, x must be sorted to avoid a vector scan of x per row of i")
             rightcols = match(key(x),colnames(x))
             if (any(is.na(rightcols))) stop("sorted columns of x don't exist in the colnames. data.table is not a valid data.table")
-            for (a in rightcols) if (!storage.mode(x[[a]]) %in% c("integer")) stop("sorted column ",colnames(x)[a], " in x is not storage.mode integer")
+            for (a in rightcols) if (!typeof(x[[a]]) %in% c("integer","logical")) stop("sorted column ",colnames(x)[a], " in x is not internally type integer")
+            byval = i
             if (haskey(i)) {
                 leftcols = match(key(i),colnames(i))
                 if (any(is.na(leftcols))) stop("sorted columns of i don't exist in the colnames of i. data.table is not a valid data.table")
@@ -227,7 +224,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
                     # When/if we move to character, this entire for() will not be required.
                     lc = leftcols[a]
                     rc = rightcols[a]
-                    if (storage.mode(i[[lc]])!="integer") stop("sorted column ",colnames(i)[lc], " of i must be storage.mode integer")
+                    if (!typeof(i[[lc]])%in%c("integer","logical")) stop("sorted column ",colnames(i)[lc], " of i must be internally type integer")
                     if (is.factor(i[[lc]])) {
                         if ((roll || rolltolast) && a==length(leftcols)) stop("Attempting roll join on factor column i.",colnames(i)[lc],". Only integer columns (i.e. not factors) may be roll joined.")   # because the sortedmatch a few lines below returns NA for missing chars in x (rather than some integer greater than existing). Using character rather than factor solves this if we get over the speed issues with character.
                         if (!is.factor(x[[rc]])) stop("i.",colnames(i)[lc]," is a factor joining to x.",colnames(x)[rc]," which is not a factor. Factors must join to factors.")
@@ -249,7 +246,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
                 for (lc in leftcols) {
                     # When/if we move to character, this entire for() will not be required.
                     rc = rightcols[lc]
-                    if (storage.mode(i[[lc]])!="integer") stop("unsorted column ",colnames(i)[lc], " of i is not storage.mode integer.")
+                    if (!typeof(i[[lc]])%in%c("integer","logical")) stop("unsorted column ",colnames(i)[lc], " of i is not internally type integer.")
                     if (is.factor(i[[lc]])) {
                         if ((roll || rolltolast) && lc==last(leftcols)) stop("Attempting roll join on factor column i.",colnames(i)[lc],". Only integer columns (i.e. not factors) may be roll joined.")
                         if (!is.factor(x[[rc]])) stop("i.",colnames(i)[lc]," is a factor but the corresponding x.",colnames(x)[rc]," is not a factor, Factors must join to factors.")
@@ -277,7 +274,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             if (is.na(nomatch) || nomatch!=0) irows[irows==0] = nomatch   # typically you would say nomatch=NA to obtain an outer join, and nomatch=0 for an inner join (i.e. to remove rows with no match)
         } else {
             # i is not a data.table
-            if (!is.logical(i) && !is.numeric(i)) stop("i has not evaluated to integer or double")
+            if (!is.logical(i) && !is.numeric(i)) stop("i has not evaluated to logical, integer or double")
             # i was passed in as integer row numbers, or the i expression evaluation to integer rows
             # i out of bounds is now allowed and just returns NA as a data.frame does. i==0 returns an empty template (see FAQ 2.03)
             irows = i
@@ -286,25 +283,35 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
     } # end of  if !missing(i)
     if (!missing(j)) {
         jsub = substitute(j)
+        jsubl = as.list(jsub)
+        if (identical(jsubl[[1]],quote(eval))) {
+            jsub = eval(jsubl[[2]],parent.frame())  # same reason doing it this way as comment further down for bysub
+        }
         o__ = as.integer(NULL)
-        if (with && mode(jsub) %in% c("call","name")) {
-            # Note that virtually every expression is either call or name. So really the only
-            # way not to get to this point is setting with=FALSE.
+        if (with) {
+            # j will be evaluated within the frame of data.table, even if it is a single column number or character name, see FAQ 1.1 and 1.2
             if (mult=="all" && missing(by)) {
                 # Like a 'by' but without using 'by'.  The groupings come instead from each row of the i data.table.
                 # Useful for a few known groups rather than a 'by' on the whole table followed by a subset afterwards.
                 f__ = idx.start
                 len__ = as.integer(idx.end-idx.start+1)
-                len__ = len__[f__>0]
-                byval = i[f__>0]  # the levels on x trickle through to byval here, via the trickle above where i factors are mapped to x factors.
-                names(byval) = iby  # the names of the group columns come from x since those are the cols we're joining to.  inci argument might later include i columns as they are.
-                f__ = f__[f__>0]
+                #len__[idx.start==0] = 0L
+                # byval = i
+                names(byval) = iby
+                #if (!is.na(nomatch) && nomatch==0) {
+                #    len__ = len__[f__>0]
+                #    byval = i[f__>0]  # the levels on x trickle through to byval here, via the trickle above where i factors are mapped to x factors.
+                #    #names(byval) = iby  # the names of the group columns come from x since those are the cols we're joining to.  inci argument might later include i columns as they are.
+                #    f__ = f__[f__>0]
+                #}
                 bysameorder = haskey(i) #TRUE  # think of a mult='all' as by'ing by the join. Setting 'bysameorder' now is more of a fudge to avoid the o__[f__] later.
                 if (!is.data.table(i)) stop("logicial error. i is not data.table, but mult='all' and 'by' is missing")
             } else {
-                if (!missing(i)) x = x[irows, nomatch=nomatch, roll=roll, rolltolast=rolltolast, mult=mult]   # note this is a once only recursive call to [.data.table since j is missed here
-                # TO DO: can speed up, when i is present, by not taking a subset of the whole table first, just the grouping columns.
-                if (missing(by)) {
+                if (!missing(i)) {
+                    x = x[irows, nomatch=nomatch, roll=roll, rolltolast=rolltolast, mult=mult]   # note this is a once only recursive call to [.data.table since j is not passed into this call
+                    # TO DO: can speed up when i is present by not taking a subset of the whole table first, just the grouping columns.
+                }
+                if (missing(by) || nrow(x)<1) {
                     if (mode(jsub)!="name" && as.character(jsub[[1]]) %in% c("list","DT")) {
                         jdep = deparse(jsub)
                         jdep = gsub("^list","data.table",jdep)   # we need data.table here because i) it grabs the column names from objects and ii) it does the vector expansion 
@@ -321,18 +328,42 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
                 
                 # by is not missing at this point, and mult may be any value ("all", "first" or "last")
                 # Find the groups, using by ...
-                bysub = substitute(by)
-                if (mode(bysub) %in% c("name","character")) {
-                    # name : j may be a single unquoted column name but it must evaluate to list so this is a convenience to users
-                    # character: for backwards compatibility with v1.2 syntax passing single character to 'by' rather than list()
-                    bysub = parse(text=paste("list(",bysub,")",sep=""))[[1]]
-                }
+                
                 # The by expression also see variables in the calling frame, just like j.
                 # Note that 'by' may be a variable in the calling frame if for example several groupings are
                 # required with the same long and complicated 'by' but different j.  This used to be a character
-                # vector length one,  but from v1.3 is e.g. bycriteria = quote(list(colA,colB%%100)); DT[...,by=bycriteria]
-            
-                byvars = all.vars(bysub)   # not a perfect test but works most of the time
+                # vector length one,  but from v1.3 is e.g. bycriteria = quote(list(colA,colB%%100)); DT[...,by=eval(bycriteria)]
+                
+                bysub = substitute(by)
+                bysubl = as.list(bysub)
+                if (identical(bysubl[[1]],quote(eval))) {
+                    bysub = eval(bysubl[[2]],parent.frame())  # [[2]] might be say 'grp' holding an expression. Its done this way so it still works if there happens to be a column called grp [we know a column is data not an expression, so its the level above we look]                  
+                    bysubl = as.list(bysub)
+                }
+                if (mode(bysub) == "character") {
+                    # character: for backwards compatibility with v1.2 syntax passing single comma separated character to 'by' rather than list()
+                    bysub = parse(text=paste("list(",bysub,")",sep=""))[[1]]
+                    bysubl = as.list(bysub)
+                }
+                byval = eval(bysub, x, parent.frame())
+                if (is.atomic(byval)) {
+                    byval = list(byval) # name : by may be a single unquoted column name but it must evaluate to list so this is a convenience to users
+                    names(byval) = as.character(bysub)
+                }
+                if (!is.list(byval)) stop("by must evaluate to vector or list of vectors")
+                for (jj in seq_len(length(byval))) if (!typeof(byval[[jj]]) %in% c("integer","logical")) stop("column or expression ",jj," of 'by' is not internally type integer. Do not quote column names. Example: by=list(colA,month(colB))")
+                tt = sapply(byval,length)
+                if (any(tt!=nrow(x))) stop("Each item in the 'by' list must be same length as rows in x (",nrow(x),"): ",paste(tt,collapse=","))
+                bynames = names(byval)
+                if (is.null(bynames)) bynames = rep("",length(byval))
+                if (any(bynames=="")) {
+                    if (length(bysubl)<2) stop("When by is list() we expect something inside the brackets")
+                    for (jj in seq_along(bynames)) {
+                        if (bynames[jj]=="") bynames[jj] = all.vars(bysubl[[jj+1]])[1]
+                    }
+                    names(byval) = bynames
+                }
+                byvars = all.vars(bysub)   # not a perfect test but works most of the time. When it doesn't work, it just misses opportunity not to re-sort.
                 if (missing(bysameorder) && length(byvars) <= length(key(x)) && identical(byvars,head(key(x),length(byvars)))) {
                     bysameorder=TRUE
                     # table is already sorted by the group criteria, no need to sort
@@ -340,22 +371,8 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
                     # TO DO: turn off bysameorder, and always call fastorder ?
                     # TO DO++: hash the key so sorting never required (hence shash query to r-devel)
                 }
-                if (verbose) {last.started.at=proc.time()[3];cat("Finding groups (bysameorder=",bysameorder,") ... ",sep="");flush.console()}        
-                byval = with(x, eval(bysub))
-                if (!is.list(byval)) stop("by must evaluate to list")
-                for (jj in seq_len(length(byval))) if (storage.mode(byval[[jj]]) != "integer") stop("column ",jj," of 'by' list does not evaluate to integer e.g. the by should be a list of expressions. Do not quote column names when using by=list(...).")
-                tt = sapply(byval,length)
-                if (any(tt!=nrow(x))) stop("Each item in the 'by' list must be same length as rows in x (",nrow(x),"): ",paste(tt,collapse=","))
-                bynames = names(byval)
-                if (is.null(bynames)) bynames = rep("",length(byval))
-                if (any(bynames=="")) {
-                    bysubl = as.list(bysub)
-                    if (length(bysubl)<2) stop("When by is list() we expect something inside the brackets")
-                    for (jj in seq_along(bynames)) {
-                        if (bynames[jj]=="") bynames[jj] = all.vars(bysubl[[jj+1]])[1]
-                    }
-                    names(byval) = bynames
-                }
+                if (verbose) {last.started.at=proc.time()[3];cat("Finding groups (bysameorder=",bysameorder,") ... ",sep="");flush.console()}
+
                 if (bysameorder) {
                     f__ = duplist(byval)
                     for (jj in seq_along(byval)) byval[[jj]] = byval[[jj]][f__]
@@ -419,13 +436,18 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             }
 
             
-            if (verbose) {last.started.at=proc.time()[3];cat("Starting dogroups ... ");flush.console()}
+            if (verbose) {last.started.at=proc.time()[3];cat("Starting dogroups ...\n");flush.console()}
             # byretn is all about trying to allocate the right amount of memory for the result, first time. Then there
             # will be no need to grow it as the 'by' proceeds, or use memory for a temporary list of the results.
-            itestj = seq(f__[1],length=len__[1])
-            if (length(o__)) itestj = o__[itestj]
-            .SD = x[itestj, vars, with=FALSE]
-            testj = with(.SD, eval(jsub))    # our test is now the first group. problems before with the largest being repeated.
+            if (f__[1]==0 && is.na(nomatch)) {
+                itestj = NA
+            } else {
+                itestj = seq(f__[1],length=len__[1])
+                if (length(o__)) itestj = o__[itestj]
+            }
+            SDenv = new.env(parent=parent.frame()) # use an environment to get the variable scoping right
+            SDenv$.SD = x[itestj, vars, with=FALSE]
+            testj = eval(jsub, SDenv$.SD, enclos = SDenv)    # our test is now the first group. problems before with the largest being repeated.
             maxn=0
             if (!is.null(testj)) {
                 if (is.atomic(testj)) {
@@ -457,35 +479,33 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             # the subset above keeps factor levels in full
             # TO DO: drop factor levels altogether (as option later) ... for (col in 1:ncol(.SD)) if(is.factor(.SD[[col]])) .SD[[col]] = as.integer(.SD[[col]])
             xcols = as.integer(match(vars,colnames(x)))
-            #browser()
+            # browser()
             
-            ans = .Call("dogroups",x,.SD,xcols,o__,f__,len__,jsub,new.env(parent=parent.frame()),testj,byretn,byval,PACKAGE="data.table")
+            ans = .Call("dogroups",x,.SD,xcols,o__,f__,len__,jsub,new.env(parent=parent.frame()),testj,byretn,byval,is.na(nomatch),verbose,PACKAGE="data.table")
             
             # TO DO : play with hash and size arguments of the new.env().
-            if (verbose) {cat("done in",round(proc.time()[3]-last.started.at,3),"secs\n");flush.console}
-            if (byretn==0) return(NULL)  # user wanted side effects only (e.g. plotting).
+            if (verbose) {cat("... done dogroups in",round(proc.time()[3]-last.started.at,3),"secs\n");flush.console}
+            # if (byretn==0) return(NULL)  # user wanted side effects only (e.g. plotting).
             ww = which(jvnames=="")
             if (any(ww)) jvnames[ww] = paste("V",ww,sep="")
             names(ans) = c(names(byval), jvnames)
-            ww = which(sapply(byval,is.factor))
-            for (jj in ww) {levels(ans[[jj]]) = levels(byval[[jj]]); class(ans[[jj]])="factor"}
-            ww = which(sapply(testj,is.factor))
-            for (jj in ww) {levels(ans[[length(byval)+jj]]) = levels(testj[[jj]]); class(ans[[length(byval)+jj]])="factor"}
+            if (length(ans[[1]])) {
+                ww = which(sapply(byval,is.factor))
+                for (jj in ww) {levels(ans[[jj]]) = levels(byval[[jj]]); class(ans[[jj]])="factor"}
+                ww = which(sapply(testj,is.factor))
+                for (jj in ww) {levels(ans[[length(byval)+jj]]) = levels(testj[[jj]]); class(ans[[length(byval)+jj]])="factor"}
             
-            # bit of a klude to retain the classes. Rather than allocating in C, we could allocate ans in R before dogroups, and create the right class at that stage
-            for (jj in seq_along(byval)) class(ans[[jj]]) = class(byval[[jj]])
-            for (jj in seq_along(testj)) class(ans[[length(byval)+jj]]) = class(testj[[jj]])            
-
-            class(ans) = "data.table"
-            #if (!incbycols) {
-            #    warning("Removing by cols now for backwards compatibility. incbycols will be deprecated in future since 'by' is now fast.")
-            #    ans = ans[,-seq_len(length(byval)),with=FALSE]
-            #} else {
-                if ((!missing(by) && bysameorder) || (!missing(i) && haskey(i))) {
-                    # either a spliced join, likely i was SJ() or a table already with a key,  or a by to the key columns in order
-                    setkey("ans",colnames(ans)[seq_along(byval)])
-                }
-            #}   
+                # bit of a klude to retain the classes. Rather than allocating in C, we could allocate ans in R before dogroups, and create the right class at that stage
+                for (jj in seq_along(byval)) class(ans[[jj]]) = class(byval[[jj]])
+                for (jj in seq_along(testj)) class(ans[[length(byval)+jj]]) = class(testj[[jj]])            
+            }
+            attr(ans,"row.names") = .set_row_names(length(ans[[1]]))
+            class(ans) = c("data.table","data.frame")
+            if ((!missing(by) && bysameorder) || (!missing(i) && haskey(i))) {
+                # either a spliced join, likely i was SJ() or a table already with a key,  or a by to the key columns in order
+                setkey("ans",colnames(ans)[seq_along(byval)])
+                # TO DO - just mark as sorted, does it really need to be re-sorted ?
+            }
             # To delete .. for (s in seq_len(ncol(ans))) if (is.factor(ans[[s]])) ans[[s]] = factor(ans[[s]])  # drop unused levels
             return(ans)
             ##
@@ -525,10 +545,33 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             stop("i and j cannot both be missing in a data.table subset. If you want 'select *', just use the data.table name alone i.e. no []")
         }
     }
-    class(ans) = "data.table"
+    class(ans) = c("data.table","data.frame")
+    attr(ans,"row.names") = .set_row_names(nrow(ans))
     ans
 }
 
+#  [[.data.frame is now dispatched due to inheritance.
+#  The code below tried to avoid that but made things
+#  very slow (462 times faster down to 1 in the timings test).
+#  TO DO. Reintroduce the bvelow but dispatch straight to
+#  .C("do_subset2") or better.
+
+#"[[.data.table" = function(x,...) {
+#    if (!cedta()) return(`[[.data.frame`(x,...))
+#    class(x)=NULL
+#    x[[...]]
+#}
+
+#"[[<-.data.table" = function(x,i,j,value) {
+#    if (!cedta()) return(`[[<-.data.frame`(x,i,j,value))
+#    if (!missing(j)) stop("[[i,j]] assignment not available in data.table, put assignment(s) in [i,{...}] instead, more powerful")
+#    cl = oldClass(x)  # [[<-.data.frame uses oldClass rather than class, don't know why but we'll follow suit
+#    class(x) = NULL
+#    x[[i]] = value
+#    class(x) = cl
+#    x
+#}
+    
 
 as.matrix.data.table = function(x,...)
 {
@@ -616,263 +659,64 @@ as.data.table.matrix = function(x, keep.rownames=FALSE)
         names(value) <- collabs
     else
         names(value) <- paste("V", ic, sep = "")
-    class(value) <- "data.table"
+    attr(value,"row.names") = .set_row_names(nrows)
+    class(value) <- c("data.table","data.frame")
     value
 }
 
 as.data.table.data.frame = function(x, keep.rownames=FALSE)
 {
     if (keep.rownames) return(data.table(rn=rownames(x), x, keep.rownames=FALSE))
-    attr(x,"row.names") = NULL
-    class(x) = "data.table"
+    attr(x,"row.names") = .set_row_names(nrow(x))
+    class(x) = c("data.table","data.frame")
     x
 }
 
 as.data.table.data.table = function(x, keep.rownames=FALSE) return(x)
 
 head.data.table = function(x, n=6, ...) {
+    if (!cedta()) return(NextMethod())
     i = seq(len=min(n,nrow(x)))
     x[i]
 }
 tail.data.table = function(x, n=6, ...) {
+    if (!cedta()) return(NextMethod())
     i = seq(to=nrow(x), length=min(n, nrow(x)))
     x[i]
 }
 
-# TO DO: [[ assignment
-
-"[<-.data.table" <-
-function (x, i, j, value)
-{
-    # TO DO: copied from [<-.data.frame,  remove out all uses of row.names and data.frame
-    # TO DO: test this method of assignment as I've tended to use $ on the left hand side.
-    nA <- nargs()
-    if (nA == 4) {
-        has.i <- !missing(i)
-        has.j <- !missing(j)
+"[<-.data.table" = function (x, i, j, value) {
+    if (!cedta()) return(`[<-.data.frame`(x, i, j, value))
+    if (!missing(i)) { # get i based on data.table-style indexing
+        i <- x[i, which=TRUE, mult="all"]
     }
-    else if (nA == 3) {
-        if (is.atomic(value))
-            names(value) <- NULL
-        if (missing(i) && missing(j)) {
-            i <- j <- NULL
-            has.i <- has.j <- FALSE
-            if (is.null(value))
-                return(x[logical(0)])
-        }
-        else {
-            if (is.logical(i) && is.matrix(i) && all(dim(i) == dim(x))) {
-                nreplace <- sum(i, na.rm = TRUE)
-                if (!nreplace)
-                  return(x)
-                N <- length(value)
-                if (N > 0 && N < nreplace && (nreplace %% N) == 0)
-                  value <- rep(value, length.out = nreplace)
-                if (length(value) != nreplace)
-                  stop("rhs is the wrong length for indexing by a logical matrix")
-                n <- 0
-                nv <- nrow(x)
-                for (v in seq(len = dim(i)[2])) {
-                  thisvar <- i[, v, drop = TRUE]
-                  nv <- sum(thisvar, na.rm = TRUE)
-                  if (nv) {
-                    if (is.matrix(x[[v]]))
-                      x[[v]][thisvar, ] <- value[n + (1:nv)]
-                    else x[[v]][thisvar] <- value[n + (1:nv)]
-                  }
-                  n <- n + nv
-                }
-                return(x)
-            }
-            if (is.matrix(i))
-                stop("only logical matrix subscripts are allowed in replacement")
-            j <- i
-            i <- NULL
-            has.i <- FALSE
-            has.j <- TRUE
-        }
-    }
+    res <- `[<-.data.frame`(x, i, j, value)
+    keycol <- match(key(x), names(x))
+    if (missing(j)) j <- seq_along(x)
+    if (is.character(j)) {
+        jseq <- match(j, names(x))
+    } else if (is.logical(j) || min(j) < 0L) 
+        jseq <- seq_along(x)[j]
     else {
-        stop("need 0, 1, or 2 subscripts")
+        jseq <- j
     }
-    if (has.j && length(j) == 0)
-        return(x)
-    n <- 0
-    nrows <- nrow(x)
-    cl <- oldClass(x)
-    class(x) <- NULL
-    new.cols <- NULL
-    nvars <- length(x)
-    if (has.i) {
-        stop("i not supported, yet")
-    }
-    else iseq <- NULL
-    if (n == 0L)
-        n <- nrows
-    if (has.j) {
-        if (any(is.na(j)))
-            stop("missing values are not allowed in subscripted assignments of data frames")
-        if (is.character(j)) {
-            jj <- match(j, names(x))
-            nnew <- sum(is.na(jj))
-            if (nnew > 0) {
-                n <- is.na(jj)
-                jj[n] <- nvars + 1:nnew
-                new.cols <- j[n]
-            }
-            jseq <- jj
-        }
-        else if (is.logical(j) || min(j) < 0)
-            jseq <- seq(along = x)[j]
-        else {
-            jseq <- j
-            if (max(jseq) > nvars) {
-                new.cols <- paste("V", seq(from = nvars + 1,
-                  to = max(jseq)), sep = "")
-                if (length(new.cols) != sum(jseq > nvars))
-                  stop("new columns would leave holes after existing columns")
-                if (is.list(value) && !is.null(vnm <- names(value))) {
-                  p <- length(jseq)
-                  if (length(vnm) < p)
-                    vnm <- rep(vnm, length.out = p)
-                  new.cols <- vnm[jseq > nvars]
-                }
-            }
-        }
-    }
-    else jseq <- seq(along = x)
-    if (any(duplicated(jseq)))
-        stop("duplicate subscripts for columns")
-    n <- length(iseq)
-    if (n == 0)
-        n <- nrows
-    p <- length(jseq)
-    m <- length(value)
-    if (!is.list(value)) {
-        if (p == 1) {
-            N <- NROW(value)
-            if (N > n)
-                stop(gettextf("replacement has %d rows, data has %d",
-                  N, n), domain = NA)
-            if (N < n && N > 0)
-                if (n%%N == 0 && length(dim(value)) <= 1)
-                  value <- rep(value, length.out = n)
-                else stop(gettextf("replacement has %d rows, data has %d",
-                  N, n), domain = NA)
-            names(value) <- NULL
-            value <- list(value)
-        }
-        else {
-            if (m < n * p && (n * p)%%m)
-                stop(gettextf("replacement has %d items, need %d",
-                  m, n * p), domain = NA)
-            value <- matrix(value, n, p)
-            value <- split(value, col(value))
-        }
-        dimv <- c(n, p)
-    }
-    else {
-        value <- unclass(value)
-        lens <- sapply(value, NROW)
-        for (k in seq(along = lens)) {
-            N <- lens[k]
-            if (n != N && length(dim(value[[k]])) == 2)
-                stop(gettextf("replacement element %d is a matrix/data frame of %d rows, need %d",
-                  k, N, n), domain = NA)
-            if (N > 0 && N < n && n%%N)
-                stop(gettextf("replacement element %d has %d rows, need %d",
-                  k, N, n), domain = NA)
-            if (N > 0 && N < n)
-                value[[k]] <- rep(value[[k]], length.out = n)
-            if (N > n) {
-                warning(gettextf("replacement element %d has %d rows to replace %d rows",
-                  k, N, n), domain = NA)
-                value[[k]] <- value[[k]][1:n]
-            }
-        }
-        dimv <- c(n, length(value))
-    }
-    nrowv <- dimv[1]
-    if (nrowv < n && nrowv > 0) {
-        if (n%%nrowv == 0)
-            value <- value[rep(1:nrowv, length.out = n),] # drop = FALSE
-        else stop(gettextf("%d rows in value to replace %d rows",
-            nrowv, n), domain = NA)
-    }
-    else if (nrowv > n)
-        warning(gettextf("replacement data has %d rows to replace %d rows",
-            nrowv, n), domain = NA)
-    ncolv <- dimv[2]
-    jvseq <- seq(len = p)
-    if (ncolv < p)
-        jvseq <- rep(1:ncolv, length.out = p)
-    else if (ncolv > p)
-        warning(gettextf("provided %d variables to replace %d variables",
-            ncolv, p), domain = NA)
-    if (length(new.cols)) {
-        nm <- names(x)
-        rows <- attr(x, "row.names")
-        x <- c(x, vector("list", length(new.cols)))
-        names(x) <- c(nm, new.cols)
-        attr(x, "row.names") <- rows
-    }
-    if (has.i)
-        for (jjj in seq(len = p)) {
-            jj <- jseq[jjj]
-            vjj <- value[[jvseq[[jjj]]]]
-            if (jj <= nvars) {
-                if (length(dim(x[jj])) != 2)
-                  x[[jj]][iseq] <- vjj
-                else x[[jj]][iseq, ] <- vjj
-            }
-            else {
-                length(vjj) <- nrows
-                x[[jj]] <- vjj
-            }
-        }
-    else if (p > 0)
-        for (jjj in p:1) {
-            jj <- jseq[jjj]
-            x[[jj]] <- value[[jvseq[[jjj]]]]
-            if (is.atomic(x[[jj]]))
-                names(x[[jj]]) <- NULL
-        }
-    if (length(new.cols) > 0) {
-        new.cols <- names(x)
-        if (any(duplicated(new.cols)))
-            names(x) <- make.unique(new.cols)
-    }
-    class(x) <- cl
-    x
+    if (any( jseq %in% keycol ))
+        key(res) <- NULL
+    res
 }
 
-"$<-.data.table" = function (x, i, value)
-{
-    cl <- oldClass(x)
-    nrows <- nrow(x)
-    class(x) <- NULL
-    if (!is.null(value)) {
-        N <- NROW(value)
-        if (N > nrows)
-            stop(gettextf("replacement has %d rows, data has %d",
-                N, nrows), domain = NA)
-        if (N < nrows && N > 0)
-            if (nrows%%N == 0 && length(dim(value)) <= 1)
-                value <- rep(value, length.out = nrows)
-            else stop(gettextf("replacement has %d rows, data has %d",
-                N, nrows), domain = NA)
-        if (is.atomic(value))
-            names(value) <- NULL
-    }
-    x[[i]] <- value
-    class(x) <- cl
-    return(x)
+"$<-.data.table" = function (x, name, value) {
+    res <- `$<-.data.frame`(x, name, value)
+    if (any(name %in% key(x)))
+        key(res) <- NULL
+    res
 }
 
+cbind.data.table = function(...) {
+    data.table(...)    # for ease of use basically since people often think its like a matrix.
+}
 
-cbind.data.table = function(...) data.table(...)    # for ease of use basically since people often think its like a matrix.
-
-rbind.data.table = function (...) {
+rbind.data.table = function (..., deparse.level=1) {
     match.names <- function(clabs, nmi) {
         if (all(clabs == nmi))
             NULL
@@ -885,7 +729,7 @@ rbind.data.table = function (...) {
     allargs <- allargs[sapply(allargs, length) > 0]
     n <- length(allargs)
     if (n == 0)
-        return(structure(list(), class = "data.table"))
+        return(structure(list(), class=c("data.table","data.frame"), row.names=.set_row_names(0)))
 
     if (!all(sapply(allargs, is.data.table))) stop("All arguments must be data.tables")
     if (length(unique(sapply(allargs, ncol))) != 1) stop("All data.tables must have the same number of columns")
@@ -899,7 +743,8 @@ rbind.data.table = function (...) {
     for (i in 1:length(allargs[[1]])) l[[i]] = do.call("c", lapply(allargs, "[[", i))
     # This is why we currently still need c.factor.
     names(l) = nm
-    class(l) = "data.table"
+    attr(l,"row.names")=.set_row_names(length(l[[1]]))
+    class(l) = c("data.table","data.frame")
     return(l)
     # return(data.table(l))
     # much of the code in rbind.data.frame that follows this point is either to do with row.names, or coercing various types (and silent rep) which is already done by data.table. therefore removed.
@@ -914,17 +759,23 @@ as.data.table = function(x, keep.rownames=FALSE)
 
 as.data.frame.data.table = function(x, ...)
 {
-    attr(x,"row.names") = 1:nrow(x) # since R 2.4.0, data.frames can have non-character row names
+    attr(x,"row.names") = .set_row_names(nrow(x))   # since R 2.4.0, data.frames can have non-character row names
     class(x) = "data.frame"
-    attr(x,"sorted") = NULL  # remove so if you convert to df, do something, and convert back, it's not sorted
+    attr(x,"sorted") = NULL  # remove so if you convert to df, do something, and convert back, it is not sorted
     x
 }
 
-
-dimnames.data.table = function(x) list(NULL, names(x))
+dimnames.data.table = function(x) {
+    if (!cedta()) {
+        if (!identical(class(x),c("data.table","data.frame"))) stop("data.table inherits from data.frame (from v1.5) but this data.table does not. Has it been created manually (e.g. by using 'structure' rather than 'data.table') or saved to disk using a prior version of data.table? The correct class is c('data.table','data.frame').")
+        return(`dimnames.data.frame`(x))
+    }
+    list(NULL, names(x))
+}
 
 "dimnames<-.data.table" = function (x, value)   # so that can do  colnames(dt)=<..>  as well as names(dt)=<..>
 {
+    if (!cedta()) return(`dimnames<-.data.frame`(x,value))
     if (!is.list(value) || length(value) != 2) stop("attempting to assign invalid object to dimnames of a data.table")
     if (!is.null(value[[1]])) stop("data.tables do not have rownames")
     if (ncol(x) != length(value[[2]])) stop("can't assign",length(value[[2]]),"colnames to a",ncol(x),"column data.table")
@@ -936,15 +787,16 @@ last = function(x) x[NROW(x)]     # last row for a data.table, last element for 
 
 within.data.table <- function (data, expr, keep.key = FALSE, ...) # basically within.list but with a check to avoid messing up the key
 {
+    if (!cedta()) return(NextMethod())
     parent <- parent.frame()
     e <- evalq(environment(), data, parent)
     eval(substitute(expr), e)
     l <- as.list(e)
     l <- l[!sapply(l, is.null)]
     nD <- length(del <- setdiff(names(data), (nl <- names(l))))
-    data[nl] <- l
+    data[,nl] <- l
     if (nD)
-        data[del] <- if (nD == 1)
+        data[,del] <- if (nD == 1)
             NULL
         else vector("list", nD)
     if (!keep.key) attr(data,"sorted") <- NULL
@@ -954,12 +806,13 @@ within.data.table <- function (data, expr, keep.key = FALSE, ...) # basically wi
 
 transform.data.table <- function (`_data`, ...) # basically transform.data.frame with data.table instead of data.frame
 {
+    if (!cedta()) return(NextMethod())
     e <- eval(substitute(list(...)), `_data`, parent.frame())
     tags <- names(e)
     inx <- match(tags, names(`_data`))
     matched <- !is.na(inx)
     if (any(matched)) {
-        `_data`[inx[matched]] <- e[matched]
+        `_data`[,inx[matched]] <- e[matched]
         `_data` <- data.table(`_data`)
     }
     if (!all(matched))
@@ -967,29 +820,30 @@ transform.data.table <- function (`_data`, ...) # basically transform.data.frame
     else `_data`
 }
 
-subset.data.table <- function (x, subset, select, ...) # not exported or documented, yet
-{
-    if (missing(subset))
-        r <- TRUE
-    else {
-        e <- substitute(subset)
-        r <- eval(e, x, parent.frame())
-        if (!is.logical(r))
-            stop("'subset' must evaluate to logical")
-        r <- r & !is.na(r)
-    }
-    if (missing(select))
-        vars <- 1:ncol(x)
-    else {
-        nl <- as.list(1L:ncol(x))
-        names(nl) <- names(x)
-        vars <- eval(substitute(select), nl, parent.frame())
-    }
-    x[r, vars, with = FALSE]
-}
+#subset.data.table <- function (x, subset, select, ...) # not exported or documented, yet
+#{
+#    if (missing(subset))
+#        r <- TRUE
+#    else {
+#        e <- substitute(subset)
+#        r <- eval(e, x, parent.frame())
+#        if (!is.logical(r))
+#            stop("'subset' must evaluate to logical")
+#        r <- r & !is.na(r)
+#    }
+#    if (missing(select))
+#        vars <- 1:ncol(x)
+#    else {
+#        nl <- as.list(1L:ncol(x))
+#        names(nl) <- names(x)
+#        vars <- eval(substitute(select), nl, parent.frame())
+#    }
+#    x[r, vars, with = FALSE]
+#}
 
 na.omit.data.table <- function (object, ...) 
 {
+    if (!cedta()) return(NextMethod())
     omit = FALSE
     for (i in seq_len(ncol(object))) omit = omit | is.na(object[[i]])
     object[!omit]
@@ -997,15 +851,19 @@ na.omit.data.table <- function (object, ...)
 }
 
 is.na.data.table <- function (x) {
+    if (!cedta()) return(`is.na.data.frame`(x))
     do.call("cbind", lapply(x, "is.na"))
 }
 
-t.data.table <- t.data.frame
-
-Math.data.table <- Math.data.frame
+# not longer needed as inherits ...
+#    t.data.table <- t.data.frame
+#    Math.data.table <- Math.data.frame
+#    summary.data.table <- summary.data.frame
 
 Ops.data.table <- function (e1, e2 = NULL)
 {
+    if (!cedta()) return(`Ops.data.frame`(e1,e2))
+    # TO DO, revisit below,  if the same as Ops.data.frame can we leave it to inheritance?
     isList <- function(x) !is.null(x) && is.list(x)
     unary <- nargs() == 1L
     lclass <- nzchar(.Method[1L])
@@ -1075,7 +933,16 @@ Ops.data.table <- function (e1, e2 = NULL)
     else matrix(unlist(value, recursive = FALSE, use.names = FALSE),
         nrow = nr, dimnames = list(NULL, cn))
 }
+ 
 
-summary.data.table <- summary.data.frame
+split.data.table = function(...) {
+    if (cedta() && getOption("datatable.dfdispatchwarn",TRUE))  # or user can use suppressWarnings
+        warning("split is inefficient. It copies memory. Please use [,j,by=list(...)] syntax. See data.table FAQ.")
+    NextMethod()  # allow user to do it though, split object will be data.table's with 'NA' repeated in row.names silently
+}
+
+# TO DO, add more warnings e.g. for by(), telling user what the data.table syntax is but letting them dispatch to data.frame if they want
+
+
 
 

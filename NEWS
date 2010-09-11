@@ -1,10 +1,99 @@
 
 The ChangeLog for data.table is the SVN commit log itself :
-    svn log svn://svn.r-forge.r-project.org/svnroot/datatable
+    $ svn log svn://svn.r-forge.r-project.org/svnroot/datatable
 
 This NEWS file summarises the main changes.
 
+        *********************************************
+        **                                         **
+        **   CHANGES IN DATA.TABLE VERSION 1.5     **
+        **                                         **
+        *********************************************
 
+
+NEW FEATURES
+
+    o   data.table now *inherits* from data.frame, for functions and
+        packages which _only_ accept data.frame, saving time and
+        memory of conversion. A data.table is a data.frame too;
+        is.data.frame() now returns TRUE.
+    
+    o   Integer-based date and time-of-day classes have been 
+        introduced. This allows dates and times to be used as keys
+        more easily. See as.IDate, as.ITime, and IDateTime.
+        Conversions to and from POSIXct, Date, and chron are
+        supported.
+    
+    o   [<-.data.table and $<-.data.table were revised to check for
+        changes to the key-ed columns. [<-.data.table also now allows
+        data.table-style indexing for i. Both of these changes may
+        introduce incompatibilities for existing code.
+        
+    o   Logical columns are now allowed in keys. Logical columns (and
+        expressions that evaluate to logical) are now allowed in 'by'.
+        Thanks to David Winsemius for highlighting.
+            
+        
+BUG FIXES
+
+    o   DT[,5] now returns 5 as FAQ 1.1 says, for consistency
+        with DT[,c(5)] and DT[,5+0]. DT[,"region"] now returns
+        "region" as FAQ 1.2 says. Thanks to Harish V for reporting.
+        
+    o   When a quote()-ed expression q is passed to 'by' using
+        by=eval(q), the group column names now come from the list
+        in the expression rather than the name 'q' (bug #974) and,
+        multiple items work (bug #975). Thanks to Harish V for
+        reporting.
+        
+    o   quote()-ed i and j expressions receive similar fixes, bugs
+        #977 and #1058. Thanks to Harish V and Branson Owen for
+        reporting.
+        
+    o   Multiple errors (grammar, format and spelling) in intro.Rnw
+        and faqs.Rnw corrected by Dennis Murphy. Thank you.
+        
+    o   Memory is now reallocated in rare cases when the up front
+        allocate for the result of grouping is insufficient. Bug
+        #952 raised by Georg V, and also reported by Harish. Thank
+        you.
+        
+    o   A function call foo(arg=sum(b)) now finds b in DT when foo
+        contains DT[,eval(substitute(arg)),by=a], fixing bug #1026.
+        Thanks to Harish V for reporting.
+        
+    o   If DT contains column 'a' then DT[J(unique(a))] now finds
+        'a', fixing bug #1005. Thanks to Branson Owen for reporting.
+        
+    o   'by' on no data (for example when 'i' returns no rows) now
+        works, fixing bug #709.
+        
+    o   'by without by' now heeds nomatch=NA, fixing bug #1015.
+        Thanks to Harish V for reporting.
+        
+    o   DT[NA] now returns 1 row of NA rather than the whole table
+        via standard NA logical recycling. A single NA logical is
+        a special case and is now replaced by NA_integer_. Thanks
+        to Branson Owen for highlighting the issue.
+        
+    o   NROW removed from data.table, since the is.data.frame() in
+        base::NROW now returns TRUE due to inheritance. Fixes bug
+        #1039 reported by Bradley Buchsbaum. Thank you.
+        
+    o   setkey() now coerces character to factor and double to
+        integer (provided they are all.equal), fixing bug #953.
+        Thanks to Steve Lianoglou for reporting.
+        
+    o   'by' now accepts lists from the calling scope without the
+        work around of wrapping with as.list() or {}, fixing bug
+        #1060. Thanks to Johann Hibschman for reporting.
+        
+        
+NOTES
+
+    o   The package uses the 'default' option of base::getOption,
+        and is therefore dependent on R 2.10.0. Updated DESCRIPTION
+        file accordingly. Thanks to Christian Hudon for reporting.
 
 
         *********************************************
@@ -44,10 +133,14 @@ NEW FEATURES
     o   j should now be a list(), not DT(), of expressions. Use of
     j=DT(...) is caught internally and replaced with j=list(...).
     
-    o   'by' may be a list() of expressions, and a single column name
-    no longer has to be quoted. A comma separated string is ok too,
-    as before. 
-    
+    o   'by' may be a list() of expressions. A single column name
+    is automatically list()-ed for convenience. 'by' may still be
+    a comma separated character string, as before.
+        DT[,sum(x),by=region]                     # new
+        DT[,sum(x),by=list(region,month(date))]   # new
+        DT[,sum(x),by="region"]                   # old, ok too
+        DT[,sum(x),by="region,month(date)"]       # old, ok too
+         
     o   key() and key<- added. More R-style alternatives to getkey()
     and setkey().
     
