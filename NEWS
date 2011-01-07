@@ -6,6 +6,26 @@ This NEWS file summarises the main changes.
 
         *********************************************
         **                                         **
+        **   CHANGES IN DATA.TABLE VERSION 1.5.1   **
+        **                                         **
+        *********************************************
+        
+NEW FEATURES
+
+BUG FIXES
+
+    o   Fixed inheritance for other packages importing or depending
+        on data.table, bugs #1093 and #1132. Thanks to Koert Kuipers
+        for reporting.
+
+    o   data.table queries can now be used at the debugger() prompt,
+        fixing bug #1131 related to inheritance from data.frame.
+
+NOTES
+
+
+        *********************************************
+        **                                         **
         **   CHANGES IN DATA.TABLE VERSION 1.5     **
         **                                         **
         *********************************************
