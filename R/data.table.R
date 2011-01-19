@@ -196,8 +196,12 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         isubl = as.list(isub)
         if (identical(isubl[[1]],quote(eval))) {
             isub = eval(isubl[[2]],parent.frame())  # same reason doing it this way as comment further down for bysub
+            if (is.expression(isub)) isub=isub[[1]]
         } 
-        i = eval(isub, envir=x, enclos=parent.frame())
+        if (!is.name(isub))
+            i = eval(isub, envir=x, enclos=parent.frame())
+        else 
+            i =eval(isub,parent.frame())
         if (is.logical(i)) {
             if (identical(i,NA)) i = NA_integer_  # see DT[NA] thread re recycling of NA logical
             else i[is.na(i)] = FALSE              # To simplify statement so don't have to do TABLE[!is.na(ColA) & ColA==ColB]
@@ -286,6 +290,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         jsubl = as.list(jsub)
         if (identical(jsubl[[1]],quote(eval))) {
             jsub = eval(jsubl[[2]],parent.frame())  # same reason doing it this way as comment further down for bysub
+            if (is.expression(jsub)) jsub = jsub[[1]]
         }
         o__ = as.integer(NULL)
         if (with) {
@@ -337,7 +342,8 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
                 bysub = substitute(by)
                 bysubl = as.list(bysub)
                 if (identical(bysubl[[1]],quote(eval))) {
-                    bysub = eval(bysubl[[2]],parent.frame())  # [[2]] might be say 'grp' holding an expression. Its done this way so it still works if there happens to be a column called grp [we know a column is data not an expression, so its the level above we look]                  
+                    bysub = eval(bysubl[[2]],parent.frame())  # [[2]] might be say 'grp' holding an expression. Its done this way so it still works if there happens to be a column called grp [we know a column is data not an expression, so its the level above we look]    
+                    if (is.expression(bysub)) bysub=bysub[[1]]
                     bysubl = as.list(bysub)
                 }
                 if (mode(bysub) == "character") {
@@ -397,9 +403,10 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             jvnames = NULL
             if (mode(jsub)=="name") {
                 # j is a single unquoted column name, convenience to use to auto wrap it with list()
-                jvnames = deparse(jsub)
-                jsub = call("list",jsub)
-                #jsub = parse(text=paste("list(`",jsub,"`)",sep=""))[[1]]  # the backtick is for when backtick'd names are passed in          
+                if (jsub!=".SD") {
+                    jvnames = deparse(jsub)
+                    jsub = call("list",jsub)  # this should handle backticked names ok too
+                }
             } else if (as.character(jsub[[1]]) %in% c("list","DT")) {
                 jsubl = as.list(jsub)
                 if (length(jsubl)<2) stop("When j is list() or DT() we expect something inside the brackets")
@@ -473,14 +480,13 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
                      else sum(len__)
             # TO DO: we might over allocate above e.g. if first group has 1 row and j is actually a single row aggregate
             # TO DO: user warning when it detects over-allocation is currently off in dogroups.c
+            byretn = max(byretn,maxn) # if the result for the first group is larger than the table itself(!) Unusual case where the optimisations for common query patterns. Probably a join is being done in the j via .SD and the 1-row table is an edge condition of bigger picture.
                 
-            byretn = as.integer(byretn) 
+            byretn = as.integer(byretn)
             .SD = x[seq(length=max(len__)), vars, with=FALSE]  # allocate enough for largest group, will re-use it, the data contents doesn't matter at this point
             # the subset above keeps factor levels in full
             # TO DO: drop factor levels altogether (as option later) ... for (col in 1:ncol(.SD)) if(is.factor(.SD[[col]])) .SD[[col]] = as.integer(.SD[[col]])
             xcols = as.integer(match(vars,colnames(x)))
-            # browser()
-            
             ans = .Call("dogroups",x,.SD,xcols,o__,f__,len__,jsub,new.env(parent=parent.frame()),testj,byretn,byval,is.na(nomatch),verbose,PACKAGE="data.table")
             
             # TO DO : play with hash and size arguments of the new.env().

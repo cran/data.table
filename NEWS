@@ -6,11 +6,43 @@ This NEWS file summarises the main changes.
 
         *********************************************
         **                                         **
+        **   CHANGES IN DATA.TABLE VERSION 1.5.2   **
+        **                                         **
+        *********************************************       
+
+NEW FEATURES
+
+   o    'by' now works when DT contains list() columns i.e.
+        where each value in a column may itself be vector
+        or where each value is a different type. FR#1092.
+
+   o    The result from merge() is now keyed. FR#1244.
+
+
+BUG FIXES
+
+    o   eval of parse()-ed expressions now works without
+        needing quote() in the expression, bug #1243. Thanks
+        to Joseph Voelkel for reporting.
+
+    o   the result from the first group alone may be bigger
+        than the table itself, bug #1245. Thanks to
+        Steve Lianoglou for reporting.
+
+    o   merge on a data.table with a single key'd column only
+        and all=TRUE now works, bug #1241. Thanks to
+        Joseph Voelkel for reporting.
+
+    o   merge()-ing by a column called "x" now works, bug
+        #1229 related to variable scope. Thanks to Steve
+        Lianoglou for reporting.
+
+
+        *********************************************
+        **                                         **
         **   CHANGES IN DATA.TABLE VERSION 1.5.1   **
         **                                         **
         *********************************************
-        
-NEW FEATURES
 
 BUG FIXES
 
@@ -20,8 +52,6 @@ BUG FIXES
 
     o   data.table queries can now be used at the debugger() prompt,
         fixing bug #1131 related to inheritance from data.frame.
-
-NOTES
 
 
         *********************************************
