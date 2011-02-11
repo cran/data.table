@@ -4,6 +4,57 @@ The ChangeLog for data.table is the SVN commit log itself :
 
 This NEWS file summarises the main changes.
 
+
+        *********************************************
+        **                                         **
+        **   CHANGES IN DATA.TABLE VERSION 1.5.3   **
+        **                                         **
+        *********************************************       
+
+NEW FEATURES
+
+   o    .SD no longer includes 'by' columns, FR#978. This resolves
+        the long standing annoyance of duplicated 'by' columns
+        when the j expression returns a subset of rows from .SD. 
+        For example, the following query no longer contains
+        a redundant 'colA.1' duplicate.
+            DT[,.SD[2],by=colA] #  2nd row of each group
+        Any existing code that uses .SD may require simple
+        changes to remove workarounds.
+
+   o    'by' may now be a character vector of column names.
+        This allows syntax such as DT[,sum(x),by=key(DT)].
+
+   o    X[Y] now includes Y's non-join columns, as most users
+        naturally expect, FR#746. Please do use j in one step
+        (i.e. X[Y,j]) since that merges just the columns j uses and
+        is much more efficient than X[Y][,j] or merge(X,Y)[,j].
+
+   o    The 'Join Inherited Scope' feature is back on, FR#1095. This
+        is consistent with X[Y] including Y's non-join columns, enabling
+        natural progression from X[Y] to X[Y,j]. j sees columns in X
+        first then Y. 
+        If the same column name exists in both X and Y, the data in
+        Y can be accessed via a prefix "i." (not yet implemented).
+
+   o    Ad hoc by now coerces double to integer (provided they are
+        all.equal) and character to factor, FR#1051, as setkey
+        already does.
+
+USER-VISIBLE CHANGES
+
+   o    The default for mult is now "all", as planned and
+        prior notice given in FAQ 2.2.
+
+   o    ?[.data.table has been merged into ?data.table and updated,
+        simplified, corrected and formatted.
+
+DEPRECATED & DEFUNCT
+
+   o    The DT() alias is now fully deprecated, as warned
+        in NEWS for v1.4, and FAQs 2.6 and 2.7.
+
+
         *********************************************
         **                                         **
         **   CHANGES IN DATA.TABLE VERSION 1.5.2   **

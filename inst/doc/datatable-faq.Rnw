@@ -107,7 +107,7 @@ We are going to stretch \code{i} and \code{j} much further than this, but to get
 \subsection{OK, I'm starting to see what \code{data.table} is about, but why didn't you enhance \code{data.frame} in \proglang{R}? Why does it have to be a new package?}
 As FAQ 1.1 highlights, \code{j} in \code{[.data.table} is fundamentally different from \code{j} in \code{[.data.frame}. Even something as simple as \code{DF[,1]} would break existing code in many packages and user code.  This is by design, and we want it to work this way for more complicated syntax to work. There are other differences, too.
 
-However, we \emph{have} proposed enhancements to \proglang{R} wherever possible, and some of these have been accepted and included. We intend to continue attempts to contribute to \proglang{R} itself whenever an opportunity arises.
+However, we \emph{have} proposed enhancements to \proglang{R} wherever possible. Some of these have been accepted and included. We intend to continue attempts to contribute to \proglang{R} itself whenever an opportunity arises.
 
 \subsection{Why are the defaults the way they are? Why does it work the way it does?}
 The simple answer is because the author designed it for his own use, and he wanted it that way. He finds it a more natural, faster way to
@@ -117,24 +117,21 @@ write code, which also executes more quickly.
 Some of the features discussed so far are, yes. The package builds upon base functionality. It does the same sorts of things but with
 less code required, and executes many times faster if used correctly.
 
-\subsection{Why does \code{x[y]} just return the columns from x? Shouldn't it return the y columns too?}
-Good question.  The thinking was that, more often than not, you don't actually want the columns from y which aren't in the key. By
-default, we try to keep things efficient.  In general, we don't want to create memory for the union of things, only to select out a
-few columns from it in the end. So if you want the computer to do more work, then you need to tell it do more work. You can either do
-\code{cbind(y,x[y])} or \code{merge(x,y)}.  There are many different ways to do the same thing in \code{data.table}.  It's your choice to understand the
-differences and write good code.
-The other consideration is that \code{x[y]} is after all a subset of x. The ''['' operator does mean subset. 
-By default, we thought it was more consistent with base R for \code{x[y]} to just return the columns from x.
-However, it is now apparent that \code{x[y]} returning all columns from both tables would be useful, so an argument \code{inci} will be added. We
-mentioned the merge method for \code{data.table} too, but does \code{merge(x,y)} mean \code{x[y]} or \code{y[x]}?  Those are different things. Again, it is
-your choice which syntax you prefer and find clearer.\newline
-Finally, although it appears as though \code{x[y]} does not return the columns in y, you can actually use the columns from y in the \code{j}
-expression.  This is what we mean by \emph{join inherited scope}.  Why not just return the union of all the columns from x and y and
-then run expressions on that?  It boils down to efficiency of code and what is quicker to program.  When you write \code{x[y,foo*boo]}, 
-\code{data.table} automatically inspects the \code{j} expression to see which columns it uses.  It will only subset, or group, those columns only.  Memory
-is only created for the columns the \code{j} uses.  Let's say foo is in x, and boo is in y (along with 20 other columns in y). Isn't
-x[y,foo*boo] quicker to program and quicker to run than a merge step followed by another subset step ?
+\subsection{Why does \code{X[Y]} return all the columns from Y too? Shouldn't it return a subset of X?}
+This was changed in v1.5.3. \code{X[Y]} now includes \code{Y}'s non-join columns. We refer to this feature as \emph{join inherited scope} because not only are X columns available to the j expression, so are Y columns. The downside is that \code{X[Y]} is less efficient since every item of Y's non-join columns are duplicated to match the (likely large) number of rows in X that match. We therefore strongly encourage \code{X[Y,j]} instead of \code{X[Y]}. See next FAQ.
 
+\subsection{What is the difference between \code{X[Y]} and \code{merge(X,Y)}?}
+X[Y] is a join, looking up X's rows using Y (or Y's key) as an index.\newline
+Y[X] is a join, looking up Y's rows using X (or X's key) as an index.\newline
+merge(X,Y) does both ways at the same time. The number of rows of X[Y] and Y[X] usually differ; the number of rows returned by merge(X,Y) and merge(Y,X) are the same.
+
+\emph{BUT} that misses the main point. Most tasks require something to be done on the data after a join or merge. Why join (or merge) all the columns of data, only to use a small subset of them afterwards? You may suggest \code{merge(X[,ColsNeeded1],Y[,ColsNeeded2])}, but that takes copies of the subsets of data, and it requires the programmer to work out which columns are needed. \code{X[Y,j]} in data.table does all that in one step for you. When you write \code{X[Y,sum(foo*bar)]}, \code{data.table} automatically inspects the \code{j} expression to see which columns it uses.  It will only subset those columns only. Memory is only created for the columns the \code{j} uses, and \code{Y} columns enjoy standard R recycling rules within the context of each group. Let's say foo is in X, and bar is in Y (along with 20 other columns in Y). Isn't \code{X[Y,sum(foo*bar)]} quicker to program and quicker to run than a merge followed by a subset?
+
+\subsection{Anything else about \code{X[Y,sum(foo*bar)]}?}
+Remember that \code{j} (in this case \code{sum(foo*bar)}) is run for each \emph{group} of \code{X} that each row of \code{Y} matches to. This feature is \emph{by without by}!
+
+\subsection{That's nice but what if I don't want by without by?}
+Mostly, we think most users will most of the time. If you really want j to run once for the whole subset of X then try X[Y][,sum(foo*bar)]. If that needs to be efficient then you will have to work harder (since this is outside the common use-case) and try X[Y,list(foo,bar)][,sum(foo*bar)]. Since list(foo,bar) only needs foo and bar, only those columns will be in the join result.
 
 \section{General syntax}
 
@@ -148,38 +145,33 @@ was intended: \code{DT[,sum(x),by=grp]} and could be 100's of times faster if DT
 called .SD, that's why it has a ''.'' at the start as you are unlikely to really want a column called ''.SD''.
 
 
-\subsection{Why is the default for mult "first" ?  If there are duplicates in the key, shouldn't it return them all by default?}
-Possibly, yes. The default might be changed to "all".
+\subsection{Why is the default for mult now "all"?}
+In v1.5.3 the default was changed to "all". When \code{i} (or \code{i}'s key if it has one) has fewer columns than x's key,  mult was already set to "all" automatically. Changing the default makes this clearer and easier for users as it came up quite often.
 
-In versions up to v1.3, "all" was slower. Internally, "all" was implemented by joining using "first", then again from scratch using "last", after which a diff between them was performed to work out the span of the matches in \code{x} for each row in \code{i}. Most often we join to single rows, though, where "first","last" and "all" return the same result. We prefer maximum
-performance for the majority of situations so the default chosen was "first". If you are working with a non-unique key then you need to specify "all".
+In versions up to v1.3, "all" was slower. Internally, "all" was implemented by joining using "first", then again from scratch using "last", after which a diff between them was performed to work out the span of the matches in \code{x} for each row in \code{i}. Most often we join to single rows, though, where "first","last" and "all" return the same result. We preferred maximum performance for the majority of situations so the default chosen was "first". When working with a non-unique key (generally a single column containing a grouping variable), DT["A"] returned the first row of that group so DT["A",mult="all"] was needed to return all the rows in that group.
 
-In v1.4 the binary search in C was changed to branch at the deepest level to find first and last. Note that branch will likely occur within the same final pages. So there should no longer be a speed disadvantage in defaulting mult to 'all'. The 'all' default would be simpler and easier for the user as this FAQ comes up quite often.
+In v1.4 the binary search in C was changed to branch at the deepest level to find first and last. That branch will likely occur within the same final pages of RAM so there should no longer be a speed disadvantage in defaulting mult to 'all'. We warned that the default might change, and made the change in v1.5.3.
 
-A future version of \code{data.table} may allow a distinction between a key and a unique key. The \code{mult} argument could then be defaulted more
-wisely.  \code{data.table} would then need to add checks on insert and update to make sure a unique key is maintained. That would be
-one of the advantages to the user of specifying a unique key; i.e., \code{data.table} would make sure a duplicate could not be inserted.
+A future version of \code{data.table} may allow a distinction between a key and a \emph{unique key}. Internally mult="all" would perform more like mult="first" in the case that all x's key columns were joined to, and x's key was a unique key. \code{data.table} would need checks on insert and update to make sure a unique key is maintained. An advantage of specifying a unique key would be that \code{data.table} would ensure no duplicates could be inserted.
 
 
-Note that when \code{i} (or \code{i}'s key if it has one) has fewer columns than x's key,  mult is automatically set to "all". This is why
-grouping by \code{i} works; e.g., \code{DT[J(id),mean(v)]} where \code{key(DT)} has 2 or more columns.
 
 \subsection{I'm using \code{c()} in the j and getting strange results.}
 This is a common source of confusion. In \code{data.frame} you are used to, for example:
 <<>>=
-df = data.frame(x=1:3,y=4:6,z=7:9)
-df
-df[,c("y","z")]
+DF = data.frame(x=1:3,y=4:6,z=7:9)
+DF
+DF[,c("y","z")]
 @
 which returns the two columns. In \code{data.table} you know you can use the column names directly and might try :
 <<>>=
-dt = data.table(df)
-dt[,c(y,z)]
+DT = data.table(DF)
+DT[,c(y,z)]
 @
-but this returns one vector.  Remember that the \code{j} expression is evaluated within the environment of \code{dt},
+but this returns one vector.  Remember that the \code{j} expression is evaluated within the environment of \code{DT},
 and \code{c()} returns a vector.  If 2 or more columns are required, use list() instead:
 <<>>=
-dt[,list(y,z)]
+DT[,list(y,z)]
 @
 \code{c()} can be useful in a \code{data.table} too, but its behaviour is different from that in a \code{data.frame}.
 
@@ -202,21 +194,20 @@ the alias yourself:
 \code{DT = function(...) data.table(...)}
 
 \subsection{But my code uses \code{j=DT(...)} and it works. The previous FAQ says that \code{DT()} has been removed.}\label{faq:DTremove2}
-\code{[.data.table} inspects the \code{j} expression that is passed to it. If it finds that the expression starts with a call
-to \code{DT()} it automatically replaces it with a call to \code{list()}. This is to help existing users. Please don't
-use \code{j=data.table(...)} as that may be slow. Use \code{j=list(...)}.
+Then you are using a version prior to 1.5.3. Prior to 1.5.3 \code{[.data.table} detected use of DT() in the j and automatically replaced it with a call to \code{list()}. This was to help the transition for existing users. Please do not use \code{j=data.table(...)} as that may be slow. Please use \code{j=list(...)}.
 
 \subsection{What are the scoping rules for j expressions?}
 Think of the subset as an environment where all the column names are
-variables. When a variable is used in the \code{j} expression, it is looked for in the following order :
+variables. When a variable \code{foo} is used in the \code{j} of a query such as \code{X[Y,sum(foo)]}, \code{foo} is looked for in the following order :
 \begin{enumerate}
-\item The scope of the subset, i.e., the column names.
+\item The scope of X's subset, i.e., X's column names.
+\item The scope of each row of Y, i.e. Y's column names (known as Join Inherited Scope)
 \item The scope of the calling frame; e.g., the line that appears before the \code{data.table} query.
-\item Exercise for reader: does it then ripple up or go straight to .GlobalEnv?
+\item Exercise for reader: does it then ripple up the calling frames, or go straight to .GlobalEnv?
 \item The global environment .GlobalEnv
 \end{enumerate}
 This is \emph{lexical scoping} as explained in \href{http://cran.r-project.org/doc/FAQ/R-FAQ.html#Lexical-scoping}{R FAQ 3.3.1}.
-The environment that the function was created is not relevant, though, because there is no function. No anonymous \emph{function}
+The environment that the function was created is not relevant, though, because there is \emph{no function}. No anonymous \emph{function}
 is passed to the \code{j}. Instead, an anonymous \emph{body} is passed to the \code{j}; for example,
 <<>>=
 DT = data.table(x=rep(c("a","b"),c(2,3)),y=1:5)
@@ -256,6 +247,28 @@ When \code{i} is a single name such as \code{Y} it is evaluated in the calling f
 \subsection{\code{X[Z[Y]]} is failing because \code{X} contains a column \code{"Y"}. I want it to use the table Y in calling scope.}
 The \code{Z[Y]} part is not a single name so that is evaluated within the frame of \code{X} and the problem occurs. Try \code{tmp=Z[Y];X[tmp]}. This is robust to \code{X} containing a column \code{"tmp"} because \code{tmp} is a single name. If you often encounter conflics of this type, one simple solution may be to name all tables in uppercase and all column names in lowercase, or some similar scheme.
 
+\subsection{Can you explain further why data.table is inspired by A[B] syntax in base?}
+
+\subsection{I've heard that the syntax is analogous to SQL?}
+nomatch=NA is like an outer join in SQL i.e. rows containing NA are returned for rows in i not in x. nomatch=0 is like an inner join in SQL i.e. no rows are returned for rows in i not in x.
+ "all" is analogous to inner join behaviour in SQL. SQL has no first and last concept since it's data is inherently unordered (note that select top x * can not reliably return the same rows over time in SQL
+
+\subsection{What is the thinking behind rolling joins?}
+By default an equi-join is performed on each column in turn. For example given x=data.table(id,datetime), where the datetime is irregular, we look for the exact datetime in the i table occurring in the x table. In R we often roll data on through missing periods using a function such as fill.na so that we can then equi-join to the regular time series. However this takes programming time, compute time and storage space, sometimes very significantly. roll=TRUE applies to the last column of x's key. It returns the last available observation \emph{on or before} the datetime (or any numeric) in the last column of the i table. The datetimes in x that are joined \emph{to} are returned, as this is useful information. This may at first seem like an error (since duplicates are returned when roll=TRUE) but is correct. If the dates in the i table are required, these can be appended afterwards, but this is rarely needed in practice. See examples.
+
+\subsection{ Difference to [.data.frame ?}
+Like a data.frame, the comma is optional inside [] when j is missing. However unlike with a data.frame a single unnamed argument refers to i rather than j. For example DT[3] returns the 3rd row as a 1 row data.table rather than DF[3] which returns the 3rd column as a vector. DT[3] is identical to DT[3,] unlike data.frame's. The i argument of matrix, data.frame and data.table subsetting using '[' is analogous to the 'where' clause in SQL. In data.table's when long expressions of column names appear as the i, or a join expression, we do not have to remember the comma at the end of the line. In a data.table if the i is missing, thats when you have to remember the comma, but at the beginning, so that the argument aligns to the j (j is analogous to 'select' clause in SQL). data.table's can be treated as a list (since they are a list as are data.frame's) by column index using [[ just as a data.frame e.g. DT[[3]] is identical to DF[3] and DF[[3]].
+
+As with a data.frame a 1 row subset returns a 1 row data.table. As with data.frame a 1 column subset (or in data.table an expression of column names returning a vector) returns a vector. However unlike data.frame there is no drop argument. The type of j's result determines the result e.g. DT[,b] returns a vector, DT[,list(b)] returns a 1-column data.table. When no j clause is present, a data.table subset will always return a data.table even if only one row is returned (unlike matrix subsetting, but like data.frame subsetting).
+
+is analogous to 'select * from DT where a>3 order by b' in SQL. Ordering is a select of all the rows, but in a different order. Another analogy is DT[,sum(b),by="c"][c=="foo"] compared to "select sum(b) from DT group by c having c=='foo'". However, as noted under 'by' above this is more efficiently implemented using \code{setkey(DT,c);DT["foo",sum(b),mult="all"]}.
+
+
+If the j expression returns data and has side-effects but only the side-effects are required, the j expression can be wrapped with \code{invisible()}, eg: DT[,hist(colB),by=colA].
+
+
+
+
 \section{Questions relating to compute time}
 
 \subsection{I have 20 columns in \code{data.table} x. Why is an expression of one column so quick?}
@@ -282,19 +295,17 @@ copied in bulk rather than looping.
 \subsection{\code{Could not find function "DT"}}
 See FAQ \ref{faq:DTremove1} and FAQ \ref{faq:DTremove2}.
 
-\subsection{I have created a package that depends on \code{data.table}. It works fine in development but when I release it as a package I get \code{data.frame} errors.}
-Make sure you use \code{require(data.table)} rather than \code{library(data.table)}. The \code{require()}
-function is very similar to \code{libary()} but also adds \code{data.table} to the hidden \code{.Depends} vector and this makes
-your package \emph{data.table aware}. This is important from v1.5 when \code{data.table} started to
-inherit from \code{data.frame}. Calls to \code{[.data.table} from non \code{data.table} aware packages, such as base
-and ggplot2, are redirected to \code{[.data.frame} by \code{[.data.table}. When those packages use the usual \code{[.data.frame} syntax (e.g. \code{x[,5]}) when x is a \code{data.table}, x appears to behave as a \code{data.frame} would. You have likely been developing and testing your package in .GlobalEnv which is always considered \code{data.table} aware by \code{data.table}.
+\subsection{I have created a package that depends on \code{data.table}. How do I ensure my package is datatable-aware so that inheritance from data.frame still works?}
+You don't need to do anything special. As long as your package imports or depends on data.table, your package is detected as datatable-aware.
 
 \subsection{Why does \code{[.data.table} now have a \code{drop} argument from v1.5?}
 So that \code{data.table} can inherit from \code{data.frame} without using \code{...}. If we used \code{...} then
 invalid argument names would not be caught and the convenience of test 147 would be lost.
 
-The drop argument is never used by \code{[.data.table}; it is a placeholder for non \code{data.table} aware packages when they treat the \code{data.table} as if it were a \code{data.frame}. See previous FAQ.
+The drop argument is never used by \code{[.data.table}; it is a placeholder for non \code{data.table} aware packages when they treat the \code{data.table} as if it were a \code{data.frame}.
 
+\subsection{\code{unused argument(s) (MySum = sum(v))}}
+This error is generated by \code{DT[,MySum=sum(v)]}. \code{DT[,list(MySum=sum(v))]} was intended, or \code{DT[,j=list(MySum=sum(v))]}.
 
 \section{General questions about the package}
 
@@ -317,19 +328,15 @@ Yes, for both 32-bit and 64-bit on all platforms. Thanks to CRAN and R-Forge. Th
 Please send suggestions, bug reports and enhancement requests to \href{mailto:datatable-help@lists.r-forge.r-project.org}{datatable-help@lists.r-forge.r-project.org}. 
 This helps make the package better. The list is public and archived.
 
-You can vote for packages at \url{http://crantastic.org/}. This helps encourage the developers. If
-you have time to write a comment too, that helps others in the community; e.g., some users have
-mentioned the types of data they use \code{data.table} to analyse.
+Please do vote for the package at \url{http://crantastic.org/packages/data-table}. This helps encourage the developers. If you have time to write a comment too, that can help others in the community. Just simply clicking that you use the package, though, is much appreciated.
 
 You can join the project and change the code and/or documentation yourself.
 
 \subsection{I think it's not great. How do I warn others about my experience?}
-Please put your vote and comments on \url{http://crantastic.org/}. Make it constructive, so we have a chance to improve.
+Please put your vote and comments on \url{http://crantastic.org/packages/data-table}. Please make it constructive so we have a chance to improve.
 
-\subsection{I have a question. I know the posting guide tells me to contact the maintainer, but that's just one person. Isn't
-there a group of people I can ask ?}
-Yes. You can post to \href{mailto:datatable-help@lists.r-forge.r-project.org}{datatable-help@lists.r-forge.r-project.org}. It's
-like r-help, but just for this package. Feel free to answer questions there, too.
+\subsection{I have a question. I know the posting guide tells me to contact the maintainer (\emph{NOT} r-help), but that's just two people. Is there a larger group of people I can ask?}
+Yes. You can post to \href{mailto:datatable-help@lists.r-forge.r-project.org}{datatable-help@lists.r-forge.r-project.org}. It's like r-help, but just for this package. Feel free to answer questions there, too.
 
 \subsection{Where are the datatable-help archives?}
 \url{http://lists.r-forge.r-project.org/pipermail/datatable-help/}
@@ -337,24 +344,20 @@ like r-help, but just for this package. Feel free to answer questions there, too
 \subsection{I'd prefer not to contact datatable-help, can I mail just one or two people privately?}
 Sure. You're more likely to get a faster answer from datatable-help, though.
 
-\subsection{Why is this FAQ a pdf? Can we have the FAQ on a website?}
-This FAQ is a vignette written using Sweave. The benefits of Sweave include the following:
+\subsection{Why is this FAQ a pdf? Can the FAQ moved to a website?}
+This FAQ is a \emph{vignette} written using Sweave. The benefits of Sweave include the following:
 \begin{itemize}
-\item We include R code in the answers. This is actually run when the file is created, not copy and pasted. 
-\item This document is reproducible. Grab the .Rnw and you can run it yourself.
-\item This file is built every night on R-Forge so it's another way we check the package.
-\item This file is bound into each version of the package. The package is not accepted on CRAN unless this file passes checks. Each version of the
-package will have its own FAQ file which will be relevant for that version.  Contrast this to a single website, which can be ambiguous if the answer
-depends on the version.
-\item You can open it offline, from your R prompt using vignette().
-\item You can extract the code from the document and play with it using\newline \code{edit(vignette("datatable-timings"))}.
+\item We include R code in the vignettes. This code is \emph{actually run} when the file is created, not copy and pasted.
+\item This document is \emph{reproducible}. Grab the .Rnw and you can run it yourself.
+\item CRAN checks the package (including running vignettes) every night on Linux, Mac and Windows, both 32bit and 64bit. Results are posted to \url{http://cran.r-project.org/web/checks/check_results_data.table.html}. Included there are results from r-devel (i.e. not yet released R). That serves as a very useful early warning system for any potential future issues as R itself develops.
+\item This file is bound into each version of the package. The package is not accepted on CRAN unless this file passes checks. Each version of the package will have its own FAQ file which will be relevant for that version.  Contrast this to a single website, which can be ambiguous if the answer depends on the version.
+\item You can open it offline, from your R prompt using \code{vignette()}.
+\item You can extract the code from the document and play with it using\newline \code{edit(vignette("datatable-faq"))} or \code{edit(vignette("datatable-timings"))}.
 \item It prints out easily.
 \item It's quicker and easier for us to write and maintain the FAQ in .Rnw form.
 \end{itemize}
-
+Having said all that, a wiki format may be quicker and easier for users to contribute documentation and examples.
 
 \end{document}
-
-
 
 

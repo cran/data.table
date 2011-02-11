@@ -2,10 +2,10 @@ test.data.table = function()
 {
     nfail = ntest = 0
     test = function(num,x,y=NULL) {
-        assign("ntest",num,envir=parent.frame())
+        ntest <<- ntest + 1
         if (inherits(err<-try(x,TRUE),"try-error") || inherits(err<-try(y,TRUE),"try-error")) {
             cat("Test",num,err)
-            assign("nfail",nfail+1,envir=parent.frame())
+            nfail <<- nfail + 1
             return()
         }
         if (missing(y)) {
@@ -32,11 +32,12 @@ test.data.table = function()
         if (is.data.table(x)) print(key(x))
         print(y)
         if (is.data.table(y)) print(key(y))
-        assign("nfail",nfail+1,envir=parent.frame())
+        nfail <<- nfail + 1
     }
     started.at = Sys.time()
     TESTDT = data.table(a=as.integer(c(1,3,4,4,4,4,7)), b=as.integer(c(5,5,6,6,9,9,2)), v=1:7)
-    a=b=v=z=NAME=DT=B=.SD=y=V1=V2=b_1=`a 1`=a.1=d=grp=buniquename314=onekey=A1=xkey=NA    # For R CMD check "no visible binding for global variable"
+    a=b=v=z=NAME=DT=B=.SD=y=V1=V2=b_1=`a 1`=a.1=d=grp=buniquename314=onekey=A1=xkey=foo=bar=NA
+    # For R CMD check "no visible binding for global variable"
     setkey(TESTDT,a,b)
     # i.e.       a b v
     #       [1,] 1 5 1
@@ -56,9 +57,9 @@ test.data.table = function()
     test(5, TESTDT[SJ(c(4,4,4),c(6,6,7)),v,mult="last",rolltolast=TRUE], INT(4,4,4))
     test(6, TESTDT[SJ(c(4,4,4),c(9,9,10)),v,mult="last",rolltolast=TRUE], INT(6,6,NA))
     test(7, TESTDT[SJ(c(4,4,4),c(9,9,10)),v,mult="first",rolltolast=TRUE], INT(5,5,NA))
-    test(8, TESTDT[SJ(c(-9,1,4,4,8),c(1,4,4,10,1)),v], INT(NA,NA,NA,NA,NA))
-    test(9, TESTDT[SJ(c(-9,1,4,4,8),c(1,4,4,10,1)),v,roll=TRUE], INT(NA,NA,NA,6,NA))
-    test(10, TESTDT[SJ(c(-9,1,4,4,8),c(1,4,4,10,1)),v,rolltolast=TRUE], INT(NA,NA,NA,NA,NA))
+    test(8, TESTDT[SJ(c(-9,1,4,4,8),c(1,4,4,10,1)),v]$v, INT(NA,NA,NA,NA,NA))
+    test(9, TESTDT[SJ(c(-9,1,4,4,8),c(1,4,4,10,1)),v,roll=TRUE]$v, INT(NA,NA,NA,6,NA))
+    test(10, TESTDT[SJ(c(-9,1,4,4,8),c(1,4,4,10,1)),v,rolltolast=TRUE]$v, INT(NA,NA,NA,NA,NA))
     test(11, TESTDT[SJ(c(-3,2,4,4,5,7,8)),v,mult="first"], INT(NA,NA,3,3,NA,7,NA))
     test(12, TESTDT[SJ(c(-3,2,4,4,5,7,8)),v,mult="first",roll=TRUE], INT(NA,1,3,3,6,7,7))
     test(13, TESTDT[SJ(c(-3,2,4,4,5,7,8)),v,mult="last"], INT(NA,NA,6,6,NA,7,NA))
@@ -97,9 +98,9 @@ test.data.table = function()
     test(29, TESTDT[J(c(4,4,4),c(7,6,6)),v,mult="last",rolltolast=TRUE], INT(4,4,4))
     test(30, TESTDT[J(c(4,4,4),c(10,9,9)),v,mult="last",rolltolast=TRUE], INT(NA,6,6))
     test(31, TESTDT[J(c(4,4,4),c(10,9,9)),v,mult="first",rolltolast=TRUE], INT(NA,5,5))
-    test(32, TESTDT[J(c(8,1,4,4,-9),c(1,4,4,10,1)),v], INT(NA,NA,NA,NA,NA))
-    test(33, TESTDT[J(c(8,1,4,4,-9),c(1,4,4,10,1)),v,roll=TRUE], INT(NA,NA,NA,6,NA))
-    test(34, TESTDT[J(c(8,1,4,4,-9),c(1,4,7,10,1)),v,rolltolast=TRUE], INT(NA,NA,4,NA,NA))
+    test(32, TESTDT[J(c(8,1,4,4,-9),c(1,4,4,10,1)),v]$v, INT(NA,NA,NA,NA,NA))
+    test(33, TESTDT[J(c(8,1,4,4,-9),c(1,4,4,10,1)),v,roll=TRUE]$v, INT(NA,NA,NA,6,NA))
+    test(34, TESTDT[J(c(8,1,4,4,-9),c(1,4,7,10,1)),v,rolltolast=TRUE]$v, INT(NA,NA,4,NA,NA))
     test(35, TESTDT[J(c(5,4,-3,8,4,7,2)),v,mult="first"], INT(NA,3,NA,NA,3,7,NA))
     test(36, TESTDT[J(c(5,4,-3,8,4,7,2)),v,mult="first",roll=TRUE], INT(6,3,NA,7,3,7,1))
     test(37, TESTDT[J(c(5,4,-3,8,4,7,2)),v,mult="last"], INT(NA,6,NA,NA,6,7,NA))
@@ -120,8 +121,8 @@ test.data.table = function()
     test(196, TESTDT[J(c(-9,1,4,4,4,4,8),c(1,5,5,6,7,10,3)),v,mult="all",rolltolast=TRUE,nomatch=NA][[3]], INT(NA,1,NA,3:4,4,NA,NA))
     test(48, TESTDT[J(c(-9,NA,4,NA,1,4,4),c(1,5,9,6,5,9,10)),v,mult="all",roll=TRUE,nomatch=0][[3]], INT(5:6,1,5:6,6))  # this time the NAs stay where they are. Compare to test 24 above.
     test(197, TESTDT[J(c(-9,NA,4,NA,1,4,4),c(1,5,9,6,5,9,10)),v,mult="all",roll=TRUE,nomatch=NA][[3]], INT(NA,NA,5:6,NA,1,5:6,6))
-    test(49, TESTDT[J(c(4,1,0,5,3,7,NA,4,1),c(6,5,1,10,5,2,1,6,NA)),v,nomatch=0], INT(3,1,2,7,3))
-    test(198, TESTDT[J(c(4,1,0,5,3,7,NA,4,1),c(6,5,1,10,5,2,1,6,NA)),v,nomatch=NA], INT(3,1,NA,NA,2,7,NA,3,NA))
+    test(49, TESTDT[J(c(4,1,0,5,3,7,NA,4,1),c(6,5,1,10,5,2,1,6,NA)),v,nomatch=0]$v, INT(3,4,1,2,7,3,4))
+    test(198, TESTDT[J(c(4,1,0,5,3,7,NA,4,1),c(6,5,1,10,5,2,1,6,NA)),v,nomatch=NA]$v, INT(3,4,1,NA,NA,2,7,NA,3,4,NA))
     test(50, TESTDT[J(c(4,1,0,5,3,7,NA,4,1),c(6,5,1,10,5,2,1,6,NA)),v,mult="last",nomatch=0], INT(4,1,2,7,4))
     test(199, TESTDT[J(c(4,1,0,5,3,7,NA,4,1),c(6,5,1,10,5,2,1,6,NA)),v,mult="last",nomatch=NA], INT(4,1,NA,NA,2,7,NA,4,NA))
     
@@ -208,8 +209,8 @@ test.data.table = function()
 
     test(82, TESTDT[,c("a","b")], c("a","b"))
     test(83, TESTDT[,list("a","b")], data.table("a","b"))
-    #  test(84, TESTDT[1:2,list(a,b)], list(c("a","c"), c("e","e")))  # should be a data.table
-    test(85, TESTDT[1:2,DT(a,b)], data.table(a=c("a","c"), b=c("e","e")))
+    # test(84, TESTDT[1:2,list(a,b)], list(c("a","c"), c("e","e")))  # should be a data.table
+    # test(85, TESTDT[1:2,DT(a,b)], data.table(a=c("a","c"), b=c("e","e")))  #DT now deprecated
 
     test(86, TESTDT[,sum(v),by="b"], data.table(b=c("b","e","f","i"),V1=INT(7,3,7,11)))  # TESTDT is key'd by a,b, so correct that grouping by b should not be key'd in the result by default
     test(87, TESTDT[,DT(MySum=sum(v)),by="b"], data.table(b=c("b","e","f","i"),MySum=INT(7,3,7,11)))
@@ -221,10 +222,10 @@ test.data.table = function()
     test(91, TESTDT[SJ(c("f","i")),sum(v),mult="all"], data.table(b=c("f","i"),V1=c(7L,11L),key="b"))  # aggregation via groups passed into i and mult="all"
     # Test 92 dropped same reason as 89 ... test(TESTDT[92, J(c("f","i")),sum(v),mult="all",simplify=FALSE], list(7L,11L))
 
-    test(93, TESTDT[J(c("f","i")), which=TRUE], INT(4,6))
-    test(94, TESTDT[J(c("i","f")), mult="last", which=TRUE], INT(7,5))
+    test(93, TESTDT[c("f","i"), which=TRUE], 4:7)
+    test(94, TESTDT[c("i","f"), mult="last", which=TRUE], INT(7,5))
 
-    test(95, TESTDT["f",v], 3L)
+    test(95, TESTDT["f",v]$v, 3:4)
     test(96, TESTDT["f",v,mult="all"], data.table(b="f",v=3:4))
     test(97, TESTDT[c("f","i","b"),DT(GroupSum=sum(v)),mult="all"], data.table(b=c("f","i","b"), GroupSum=c(7L,11L,7L)))  # mult="all" is required here since only b is key'd
     # that line above doesn't create a key on the result so that the order fib is preserved.
@@ -244,7 +245,7 @@ test.data.table = function()
 
     # test .SD object
     test(103, dt[, sum(.SD$B), by = "A"], dt[, sum(B), by = "A"])
-    test(104, dt[, transform(.SD, D = min(B)), by = "A"], dt[, DT(A,B,C,D=min(B)), by = "A"])
+    test(104, dt[, transform(.SD, D = min(B)), by = "A"], dt[, DT(B,C,D=min(B)), by = "A"])
 
     # test numeric and comparison operations on a data table
     test(105, all(dt + dt > dt))
@@ -304,15 +305,15 @@ test.data.table = function()
     test(125, inherits(t,"try-error"))
     test(126, length(grep("The data.table has no key", t)))
 
-    TESTDT = data.table(a=3L,v=2,key="a")  # testing 1-row table
+    TESTDT = data.table(a=3L,v=2L,key="a")  # testing 1-row table
     test(127, TESTDT[J(3)], TESTDT)
-    test(128, TESTDT[J(4)], TESTDT[NA])   # see tests 206-207 too re the [NA]
-    test(129, TESTDT[J(4),roll=TRUE], TESTDT)
-    test(130, TESTDT[J(4),rolltolast=TRUE], TESTDT[NA])
-    test(131, TESTDT[J(-4),roll=TRUE], TESTDT[NA])
+    test(128, TESTDT[J(4)], data.table(a=4L,v=NA_integer_,key="a"))   # see tests 206-207 too re the [NA]
+    test(129, TESTDT[J(4),roll=TRUE], data.table(a=4L,v=2L,key="a"))  # the i values are in the result now (which make more sense for rolling joins, the x.a can still be accessed if need be)
+    test(130, TESTDT[J(4),rolltolast=TRUE], data.table(a=4L,v=NA_integer_,key="a"))
+    test(131, TESTDT[J(-4),roll=TRUE], data.table(a=-4L,v=NA_integer_,key="a"))
 
     test(132, ncol(TESTDT[0]), 2L)
-    test(133, TESTDT[0][J(3)], TESTDT[NA])
+    test(133, TESTDT[0][J(3)], data.table(a=3L,v=NA_integer_,key="a"))
 
     # tests on data table names
     x = 2L; `1x` = 4L
@@ -342,9 +343,7 @@ test.data.table = function()
     test(143, tail(dt), dt)  # tail was failing if a column name was called x.
     
     dt <- data.table(a = rep(1:3, each = 4), b = LETTERS[1:4], b2 = LETTERS[1:4])
-    tt = data.table(b=LETTERS[1:4],a=3L,b=LETTERS[1:4], b2=LETTERS[1:4])
-    colnames(tt)[3] = "b"
-    test(144, dt[, .SD[3,], by=b], tt)
+    test(144, dt[, .SD[3,], by=b], data.table(b=LETTERS[1:4],a=3L,b2=LETTERS[1:4]))
     
     DT = data.table(x=rep(c("a","b"),c(2,3)),y=1:5)
     xx = capture.output(ans <- DT[,{print(x);sum(y)},by=x])
@@ -355,16 +354,16 @@ test.data.table = function()
     test(147, inherits(t,"try-error") && length(grep("unused argument", tt)))   # user meant DT[,list(MySum=sum(v))]
     
     dt = data.table(a=c(1L,4L,5L), b=1:3, key="a")
-    test(148, dt[CJ(2:3),roll=TRUE], data.table(a=c(1L,1L),b=c(1L,1L),key="a"))
-    test(149, dt[J(2:3),roll=TRUE], data.table(a=c(1L,1L),b=c(1L,1L)))
+    test(148, dt[CJ(2:3),roll=TRUE], data.table(a=c(2L,3L),b=c(1L,1L),key="a"))
+    test(149, dt[J(2:3),roll=TRUE], data.table(a=c(2L,3L),b=c(1L,1L)))  # in future this will detect the subset is ordered and retain the key
     
     # 150:158 test out of order factor levels in key columns
     dt = data.table(x=factor(c("c","b","a"),levels=c("b","a","c")),y=1:3)
     key(dt) = "x"
-    test(150, dt["b",y], 2L)
+    test(150, dt["b",y]$y, 2L)
     # from Tom's post :
     a = data.table(a=rep(1:5, 2), b=factor(letters[rep(1:5, each =2)], levels=letters[5:1]), key="b")  
-    test(151, a[J("b"),a], 3L)
+    test(151, a[J("b"),a]$a, 3:4)
     # stretch tests further, two out of order levels, one gets key'd the other not :
     a = data.table(x=factor(letters[rep(1:5, each =2)], levels=letters[5:1]),
                    y=factor(letters[rep(c(6,9,7,10,8), each =2)], levels=letters[10:6]),
@@ -405,7 +404,6 @@ test.data.table = function()
         # From examples, the library(ggplot2) is done first, so that 'R CMD check' does include tests 167 and 168 
     }
     # test of . in formula, using inheritance
-    # never mind that grp column is included (NA coef), thats another todo for later.
     DT = data.table(y=1:100,x=101:200,y=201:300,grp=1:5)
     test(169,DT[,as.list(lm(y~0+.,.SD)$coef),by=grp][2,x]-2<1e-10, TRUE)
     
@@ -455,23 +453,23 @@ test.data.table = function()
     # Test logical in a key
     DT = data.table(a=rep(1:3,each=2),b=c(TRUE,FALSE),v=1:6)
     setkey(DT,a,b)
-    test(180, DT[J(2,FALSE),v], 4L)
+    test(180, DT[J(2,FALSE),v]$v, 4L)
     test(181, DT[,sum(v),by=b][,V1], c(12L,9L))
 
     # Test fix for bug 1026 reported by Harish V
     rm(buniquename314)
     colnames(DT)[2] = "buniquename314"  # this test needed a unique var name to generate error 'object 'b' not found'. Otherwise it finds 'b' in local scope.   
-    boo = function( data, fcn ) {
+    bar = function( data, fcn ) {
         q = substitute( fcn )
         xx = data[,eval(q),by=a]
         yy = data[,eval(substitute(fcn)),by=a]
         identical(xx,yy)
     }
-    test(182, boo( DT, sum(buniquename314) ), TRUE)
+    test(182, bar( DT, sum(buniquename314) ), TRUE)
     
     # Test bug 1005 reported by Branson Owen
     DT = data.table(A = c("o", "x"), B = 1:10, key = "A")
-    test(183, DT[J(unique(A)), B], 1:2)
+    test(183, DT[J(unique(A)), B]$B, DT$B)
     
     # Test bug 709
     xx = data.table(a=1:5,b=6:10)
@@ -483,8 +481,8 @@ test.data.table = function()
     x <- data.table(a=c("a","b","d","e"),b=c("A","A","B","B"),d=c(1,2,3,4), key="a,b")
     y <- data.table(g=c("a","b","c","d"),h=c("A","A","A","A"))
     test(202, x[y], x[y,mult="all"])
-    test(203, x[y,d], c(1,2,NA,NA))
-    test(204, x[y,list(d)][[1]], c(1,2,NA,NA))
+    test(203, x[y,d]$d, c(1,2,NA,NA))
+    test(204, x[y,list(d)], x[y,d])
     test(205, x[y,list(d),mult="all"][,d], c(1,2,NA,NA))
     
     # Test [NA] returns one NA row. NA is type *logical* so prior to
@@ -505,9 +503,9 @@ test.data.table = function()
     # Test infinite recursion error is trapped when a pre-1.5 data.table
     # is used with 1.5 (bug #1008)
     DT = data.table(a=1:6,key="a")
-    test(212, DT[J(3),a], 3L) # correct class c("data.table","data.frame")
+    test(212, DT[J(3)]$a, 3L) # correct class c("data.table","data.frame")
     class(DT) = "data.table"  # incorrect class
-    tt = try(DT[J(3),a], silent=TRUE)
+    tt = try(DT[J(3)]$a, silent=TRUE)
     test(213, inherits(tt,"try-error"))
     test(214, length(grep("data.table inherits from data.frame", tt)))
     
@@ -516,11 +514,11 @@ test.data.table = function()
     DF = data.frame(a=LETTERS[1:10], b=1:10, stringsAsFactors=FALSE)
     DT = data.table(DF)
     key(DT) = 'a'   # used to complain about character
-    test(215, DT["C",b], 3L)
+    test(215, DT["C",b]$b, 3L)
     DT = data.table(DF,key="a")
-    test(216, DT["C",b], 3L)
+    test(216, DT["C",b]$b, 3L)
     DT = data.table(a=c(1,2,3),v=1:3,key="a")
-    test(217, DT[J(2),v], 2L)
+    test(217, DT[J(2),v]$v, 2L)
     DT = data.table(a=c(1,2.1,3),v=1:3)
     tt = try(setkey(DT,a), silent=TRUE)
     test(218, inherits(tt,"try-error"))
@@ -531,7 +529,7 @@ test.data.table = function()
     q = quote(a>3)
     test(220, DT[eval(q),b], 9:10)
     test(221, DT[eval(parse(text="a>4")),b], 10L)
-    test(222, DT[eval(parse(text="J(2)")),b], 7L)
+    test(222, DT[eval(parse(text="J(2)")),b]$b, 7L)
     
     # lists in calling scope should be ok as single names passed to by, bug #1060
     DT = data.table(a=1:2,b=rnorm(10))
@@ -556,9 +554,9 @@ test.data.table = function()
 
     # special case j=.SD, bug #1247
     DT = data.table(a=rep(1:2,each=2),b=1:4)
-    ans = DT[,list(a,a=a,b)]
-    colnames(ans)[2]="a"
-    test(229,DT[,.SD,by=a],ans)
+    test(229,DT[,.SD,by=a],DT)
+    setkey(DT,a)
+    test(229.1,DT[,.SD,by=key(DT)],DT)
 
     # merge bug with column 'x', bug #1229
     d1 <- data.table(x=c(1,3,8),y1=rnorm(3), key="x")
@@ -591,8 +589,43 @@ test.data.table = function()
     d1 <- data.table(xkey=c(1,3,8),y1=rnorm(3), key="xkey")
     d2 <- data.table(xkey=c(3,8,10),y2=rnorm(3), key="xkey")
     ans2=cbind(d1[2:3],y2=d2[1:2]$y2);setkey(ans2,xkey)
-    test(238, merge(d1, d2, by="xkey"), ans2) 
+    test(238, merge(d1, d2, by="xkey"), ans2)
 
+    # Join Inherited Scope, and X[Y] including Y's non-join columns
+    X=data.table(a=rep(1:3,c(3,3,2)),foo=1:8,key="a")
+    Y=data.table(a=2:3,bar=6:7)
+    test(239, X[Y,sum(foo)], data.table(a=2:3,V1=c(15L,15L)))
+    test(240, X[Y,sum(foo*bar)], data.table(a=2:3,V1=c(90L,105L)))
+    test(241, X[Y], data.table(a=rep(2:3,3:2),foo=4:8,bar=rep(6:7,3:2)))
+    test(242, X[Y,list(foo,bar)][,sum(foo*bar)], 195L)
+    test(243, X[Y][,sum(foo*bar)], 195L)
+    # not sure about these yet :
+    # test(244, X[Y,sum(foo*bar),mult="first"], data.table(a=2:3,V1=c(24L,49L)))
+    # test(245, X[Y,sum(foo*bar),mult="last"], data.table(a=2:3,V1=c(36L,56L)))
+
+    # joining to less than all X's key colums (in examples but can't see formal test)
+    X=data.table(a=rep(LETTERS[1:2],2:3),b=1:5,v=10:14,key="a,b")
+    test(246, X["A"], {tt=X[1:2];key(tt)=key(X);tt})  # key will be retained in future
+    test(247, X["C"]$v, NA_integer_)
+    test(248, nrow(X["C",nomatch=0]), 0L)
+
+    x=data.table( a=c("a","b","c"), b=1:3, key="a" )
+    y=data.table( a=c("b","d","e"), d=c(8,9,10) )
+    test(249, x[y], data.table(a=c("b","d","e"),b=c(2L,NA,NA),d=c(8,9,10)))  # keeps i join cols
+    test(250, x[y,mult="first"], data.table(a=c("b","d","e"),b=c(2L,NA,NA),d=c(8,9,10))) # same
+
+    x=data.table( a=c("a","b","b","c"), b=1:4, key="a" )
+    y=data.table(a=c("b","d","b"), d=c(8,9,10))
+    test(251, x[y], data.table(a=c("b","b","d","b","b"),b=c(2:3,NA,2:3),d=c(8,8,9,10,10)))
+    
+    # auto coerce float to int in ad hoc by (just like setkey), FR#1051
+    DT = data.table(a=c(1,1,1,2,2),v=1:5)
+    test(252, DT[,sum(v),by=a], data.table(a=1:2,V1=c(6L,9L)))
+
+    # auto coerce character to factor in ad hoc by (just like setkey).
+    DT = data.table(a=c("A","A","A","B","B"),v=1:5)
+    DT$a = as.character(DT$a)  # because data.table() coerces to factor currently.
+    test(253, DT[,sum(v),by=a], data.table(a=factor(c("A","B")),V1=c(6L,9L)))
 
     ##########################
     if (nfail > 0) {
