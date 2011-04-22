@@ -136,15 +136,17 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
     for (i in (1:n)[nrows < nr]) {
         xi <- x[[i]]
         if (nr%%nrows[i] == 0) {
-            if (is.vector(xi) || is.factor(xi)) {
+            if (is.atomic(xi) || is.factor(xi)) {   # is.atomic catches as.hexmode(1:100)
                 x[[i]] <- rep(xi, length.out = nr)
                 next
             }
-            if (is.character(xi) && class(xi) == "AsIs") {
-                cl <- class(xi)
-                x[[i]] <- list(structure(rep(xi, length.out = nr), class = cl))
-                next
-            }
+            # don't know why this is here, take it out and see what bites
+            # if (is.character(xi) && class(xi) == "AsIs") {
+            #    cl <- class(xi)
+            #    x[[i]] <- list(structure(rep(xi, length.out = nr), class = cl))
+            #    next
+            #}
+            stop("problem recycling column ",i,", try a simpler type")
         }
         stop("arguments cannot be silently repeated to match max nr: ", paste(unique(nrows), collapse = ", "))
     }
@@ -300,7 +302,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             	ans = vector("list",ncol(x))
                 for (s in seq_len(ncol(x))) ans[[s]] = x[[s]][irows]
                 names(ans) = names(x)
-	        if (haskey(x) && (is.logical(irows) || length(irows)==1)) {
+                if (haskey(x) && (is.logical(irows) || length(irows)==1)) {
                     attr(ans,"sorted") = key(x)
                     # TO DO: detect more ordered subset cases, e.g. if irows is monotonic
                 }
@@ -319,7 +321,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
                 rightcols = head(rightcols,length(leftcols))
                 xnonjoin = seq_len(ncol(x))[-rightcols]
                 for (s in seq_along(xnonjoin)) ans[[s+length(leftcols)]] = x[[xnonjoin[s]]][irows]
-                names(ans) = c(colnames(x)[rightcols],colnames(x)[-rightcols],colnames(i)[-leftcols])
+                names(ans) = make.names(c(colnames(x)[rightcols],colnames(x)[-rightcols],colnames(i)[-leftcols]),unique=TRUE)
                 if (haskey(i) || nrow(i)==1)
                     attr(ans,"sorted") = key(x)
                     # TO DO: detect more ordered subset cases e.g. DT["A"] or DT[c("A","B")] where the
@@ -391,7 +393,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
     } else {
         # Find the groups, using 'by' ...
         if (missing(by)) stop("logical error, by is missing")
-                        
+        
         bysub = substitute(by)
         bysubl = as.list(bysub)
         if (identical(bysubl[[1]],quote(eval))) {
@@ -412,7 +414,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
                 if (!all(byval %in% colnames(x)))
                     stop("'by' seems like a column name vector but these elements are not column names (first 5):",paste(head(byval[!byval%in%colnames(x)],5),collapse=""))
                 byvars = byval
-                byval=x[,byval,with=FALSE]
+                byval=as.list(x[,byval,with=FALSE])
             } else {
                 byval = list(byval) # name : by may be a single unquoted column name but it must evaluate to list so this is a convenience to users
                 names(byval) = as.character(bysub)
@@ -475,7 +477,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             jvnames = deparse(jsub)
             jsub = call("list",jsub)  # this should handle backticked names ok too
         }
-    } else if (as.character(jsub[[1]]) %in% c("list","DT")) {
+    } else if (as.character(jsub[[1]])[1] %in% c("list","DT")) {
         jsubl = as.list(jsub)
         if (length(jsubl)<2) stop("When j is list() or DT() we expect something inside the brackets")
         jvnames = names(jsubl)[-1]   # check list(a=sum(v),v)
@@ -486,7 +488,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         }
         if(class(jsubl[[2]])!="{") jsub = parse(text=paste("list(",paste(as.character(jsub)[-1],collapse=","),")",sep=""))[[1]]  # this does two things : i) changes 'DT' to 'list' for backwards compatibility and ii) drops the names from the list so its faster to eval the j for each group
     } # else maybe a call to transform or something which returns a list.
-    ws = all.vars(jsub)
+    ws = all.vars(jsub,TRUE)  # TRUE to fix bug #1294 which didn't see b in j=fns[[b]](c)
     if (".SD" %in% ws) {
         vars = colnames(x)        
         vars = vars[!vars%in%byvars]
@@ -547,7 +549,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
     # TO DO: drop factor levels altogether (as option later) ... for (col in 1:ncol(.SD)) if(is.factor(.SD[[col]])) .SD[[col]] = as.integer(.SD[[col]])
     xcols = as.integer(match(vars,colnames(x)))
     icols = NULL
-    if (!missing(i)) icols = as.integer(match(ivars,colnames(i)))
+    if (!missing(i) && is.data.table(i)) icols = as.integer(match(ivars,colnames(i)))
     else i=NULL
     ans = .Call("dogroups",x,.SD,xcols,o__,f__,len__,jsub,new.env(parent=parent.frame()),testj,byretn,byval,i,as.integer(icols),i[1,ivars,with=FALSE],is.na(nomatch),verbose,PACKAGE="data.table")
 
