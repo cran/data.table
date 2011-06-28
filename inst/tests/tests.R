@@ -32,9 +32,9 @@ test = function(num,x,y=NULL) {
     }
     cat("Test",num,"ran without errors but failed check:\n")
     print(x)
-    if (is.data.table(x)) print(key(x))
+    if (is.data.table(x)) {cat("Key: ",paste(key(x),collapse=","),"\n")}
     print(y)
-    if (is.data.table(y)) print(key(y))
+    if (is.data.table(y)) {cat("Key: ",paste(key(y),collapse=","),"\n")}
     nfail <<- nfail + 1
 }
 
@@ -352,7 +352,7 @@ test(144, dt[, .SD[3,], by=b], data.table(b=LETTERS[1:4],a=3L,b2=LETTERS[1:4]))
 
 DT = data.table(x=rep(c("a","b"),c(2,3)),y=1:5)
 xx = capture.output(ans <- DT[,{print(x);sum(y)},by=x])
-test(145, xx, c("[1] a a","Levels: a b","[1] b b b","Levels: a b"))
+test(145, xx, c("[1] a","Levels: a b","[1] b","Levels: a b"))
 test(146, ans, data.table(x=c("a","b"),V1=c(3L,12L)))
 
 tt = try(DT[,MySum=sum(v)], silent=TRUE)    # feature request #204 done.
@@ -658,6 +658,105 @@ test(260, DT[,list(fns[[fn]](SCORE_1,SCORE_2,SCORE_3)),by=ID]$V1, c(30:26,6:10))
 # fix for bug #1340 - Duplicate column names in self-joins (but print ok)
 DT <- data.table(id=1:4, x1=c("a","a","b","c"), x2=c(1L,2L,3L,3L), key="x1")
 test(261, DT[DT][id < id.1]$x2.1, 2L)
+
+# "<-" within j now assigns in the same environment for 1st group, as the rest
+# Thanks to Andeas Borg for highlighting on 11 May
+
+dt <- data.table(x=c(0,0,1,0,1,1), y=c(0,1,0,1,0,1), z=1:6)
+groupInd = 0
+test(262, dt[,list(z,groupInd<-groupInd+1),by=list(x,y)]$V2, c(1,2,2,3,3,4))
+test(263, groupInd, 0)
+test(264, dt[,list(z,groupInd<<-groupInd+1),by=list(x,y)]$V2, c(1,2,2,3,3,4))
+test(265, groupInd, 4)
+
+# Tests for passing 'by' expressions that evaluate to character column
+# names in the edge case of 1 row; the character 'by' vector could
+# feasibly be intended to be grouping values. Bug 1404; thanks to Andreas Borg
+# for the detailed report, suggested fix and tests.
+
+DT = data.frame(x=1,y="a",stringsAsFactors=FALSE)
+DT = as.data.table(DT)
+test(266,class(DT$y),"character") # just to check we setup the test correctly
+test(267,DT[,sum(x),by=y]$V1,1)
+test(268,DT[,sum(x),by="y"]$V1,1)
+colvars="y"
+test(269,DT[,sum(x),by=colvars]$V1,1)
+setkey(DT,y)
+test(270,DT[,sum(x),by=key(DT)]$V1,1)
+
+DT = data.table(x=1,y=2)
+key(DT) = names(DT)
+test(271, DT[,length(x),by=key(DT)]$V1, 1L)
+
+DT = data.table(x=c(1,2,1), y=c(2,3,2), z=1:3)
+key(DT) = names(DT)
+test(272, DT[,sum(z),by=key(DT)]$V1, c(1L,3L,2L))
+
+
+# Tests for .BY and implicit .BY
+# .BY is a single row, and by variables are now, too. FAQ 2.10 has been changed accordingly.
+DT = data.table(a=1:6,b=1:2)
+test(273, DT[,sum(a)*b,by=b]$V1, c(9L,24L))
+test(274, DT[,sum(a)*.BY[[1]],by=b], data.table(b=1:2,V1=c(9L,24L)))
+test(275, DT[,sum(a)*bcalc,by=list(bcalc=b+1)], data.table(bcalc=2:3,V1=c(18L,36L)))
+test(276, DT[,sapply(.SD,sum)*b,by=b], data.table(b=1:2,V1=c(9L,24L)))  # .SD should no longer include b, unlike v1.6 and before
+test(277, DT[,sapply(.SD,sum)*bcalc,by=list(bcalc=b+1)], data.table(bcalc=2:3,V1=c(18L,36L)))  # cols used in by expressions are excluded from .SD, but can still be used in j (by name only and may vary within the group e.g. DT[,max(diff(date)),by=month(date)]
+test(278, DT[,sum(a*b),by=list(bcalc=b+1)], data.table(bcalc=2:3,V1=c(9L,24L)))
+
+
+# Test x==y where either column contain NA.
+DT = data.table(x=c(1,2,NA,3,4),y=c(0,2,3,NA,4),z=1:5)
+test(279, DT[x==y,sum(z)], 7L)
+# In data.frame the equivalent is :
+# > DF = as.data.frame(DT)
+# > DF[DF$x==DF$y,]
+#       x  y  z
+# 2     2  2  2
+# NA   NA NA NA
+# NA.1 NA NA NA
+# 5     4  4  5
+# > DF[!is.na(DF$x) & !is.na(DF$y) & DF$x==DF$y,]
+#   x y z
+# 2 2 2 2
+# 5 4 4 5
+
+
+# Test that 0 length columns are expanded with NA to match non-0 length columns, bug fix #1431
+DT = data.table(pool = c(1L, 1L, 2L), bal = c(10, 20, 30))
+test(280, DT[, list(bal[0], bal[1]), by=pool], data.table(pool=1:2, V1=NA_real_, V2=c(10,30)))
+test(281, DT[, list(bal[1], bal[0]), by=pool], data.table(pool=1:2, V1=c(10,30), V2=NA_real_))
+# Test 2nd group too (the 1st is special) ...
+test(282, DT[, list(bal[ifelse(pool==1,1,0)], bal[1]), by=pool], data.table(pool=1:2, V1=c(10,NA), V2=c(10,30)))
+
+# More tests based on Andreas Borg's post of 11 May 2011.
+DT = data.table(x=c(0,0,1,0,1,1), y=c(1,1,0,1,1,1), z=1:6)
+ans = data.table(x=c(0L,1L,1L),y=c(1L,0L,1L),V1=c(1L,1L,2L),V2=c(7L,3L,11L))
+test(283, DT[,list(sum(x[1], y[1]),sum(z)), by=list(x,y)], ans)
+test(284, DT[,list(sum(unlist(.BY)),sum(z)),by=list(x,y)], ans)
+groupCols = c("x", "y")
+test(285, DT[,list(sum(unlist(.BY)),sum(z)),by=groupCols], ans)
+groupExpr = quote(list(x,y))
+test(286, DT[,list(sum(unlist(.BY)),sum(z)),by=groupExpr], ans)
+
+# Bug fix from Damian B on 25 June 2011 :
+DT = data.table(X=c(NA,1,2,3), Y=c(NA,2,1,3))
+key(DT)=c("X","Y")
+test(287, unique(DT), DT)
+
+# Bug fix #1421: using vars in calling scope in j when i is logical or integer.
+DT = data.table(A=c("a","b","b"),B=c(4,5,NA))
+myvar = 6
+test(288, DT[A=="b",B*myvar], c(30,NA))
+
+# Test new feature in 1.6.1 that i can be plain list (such as .BY)
+DT = data.table(grp=c("a","a","a","a","b","b","b"),v=1:7)
+mysinglelookup = data.table(grp=c("a","b"),s=c(42,84),grpname=c("California","New York"),key="grp")
+key(mysinglelookup) = "grp"
+test(289, DT[,sum(v*mysinglelookup[.BY]$s),by=grp], data.table(grp=c("a","b"),V1=c(420,1512)))
+# In v1.6.2 we will change so that single name j returns a vector, regardless of grouping
+test(290, DT[,list(mysinglelookup[.BY]$grpname,sum(v)),by=grp], data.table(grp=c("a","b"),V1=c("California","New York"),V2=c(10L,18L)))
+
+
 
 ## See test-* for more tests
 

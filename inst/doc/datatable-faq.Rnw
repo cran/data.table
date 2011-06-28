@@ -224,21 +224,21 @@ DT[,{
 },by=x]
 @
 
-
 \subsection{Inside each group, why is the group variable a long vector containing the same value repeated?}
-In the previous FAQ, x was \code{"a"} repeated twice in the first group, and \code{"b"}
-repeated three times in the second group. When you group, think of the
-data being split up. Sometimes we want to use the value of the group in
-the expression, though. In that case, we just use the first value.
+Please upgrade to v1.6.1, or later; this is no longer true. In the previous FAQ, \code{x} is a grouping variable
+and now has length 1 for efficiency and convenience. Prior to v1.6.1, \code{x} repeated the group value to match
+the number of rows in that group. There is no longer any difference between the following two statements.
 <<>>=
-DT[,list(g=1,h=2,i=3,j=4,repeatgroupname=x,sum(y)),by=x]     # not intended
-DT[,list(g=1,h=2,i=3,j=4,repeatgroupname=x[1],sum(y)),by=x]  # intended
+DT[,list(g=1,h=2,i=3,j=4,repeatgroupname=x,sum(y)),by=x]     
+DT[,list(g=1,h=2,i=3,j=4,repeatgroupname=x[1],sum(y)),by=x]
 @
-In the first attempt, the aggregate \code{sum(y)} was recycled to match the length of \code{x}.  Recycling can be useful, but
-wasn't intended here.
+Code written prior to v1.6.1 that uses \code{[1]} will still work, but the \code{[1]} is no longer necessary.
 
 \subsection{Only the first 10 rows are printed, how do I print more?}
 Try \code{print(DT,nrows=Inf)} to print all rows, or set nrows to the number of rows you require.
+Recall that when you forget a \code{data.frame} is large and type it's name at the \proglang{R} prompt, \proglang{R}
+appears to hang for a long time while the entire table is formatted. \code{data.table} catches this and just prints
+the first 10 rows of large tables by default.  
 
 \subsection{With an \code{X[Y]} join, what if \code{X} contains a column called \code{"Y"}?}
 When \code{i} is a single name such as \code{Y} it is evaluated in the calling frame. In all other cases such as calls to \code{J()} or other expressions, \code{i} is evaluated within the scope of \code{X}. This facilitates easy \emph{self joins} such as \code{X[J(unique(colA)),mult="first"]}.
@@ -326,6 +326,13 @@ A key advantage of column vectors in \proglang{R} is that they are \emph{ordered
 \item{\code{DT[,"colA",with=FALSE][[1]]} == \code{DF[,"colA"]}.}
 \item{\code{DT[,colA]} == \code{DF[,"colA"]}}
 \item{\code{DT[,list(colA)]} == \code{DF[,"colA",drop=FALSE]}}
+\item{\code{DT[NA]} returns 1 row of \code{NA}, but \code{DF[NA]} returns a copy of \code{DF} containing
+  \code{NA} throughout. The symbol \code{NA} is type logical in \proglang{R}, and
+  is therefore recycled by \code{[.data.frame}. Intention was probably \code{DF[NA\_integer\_]}.
+  \code{[.data.table} does this automatically for convenience.}
+\item{\code{DT[c(TRUE,NA,FALSE)]} treats the \code{NA} as \code{FALSE}, but \code{DF[c(TRUE,NA,FALSE)]} returns
+  \code{NA} rows for each \code{NA}}
+\item{\code{DT[ColA==ColB]} is simpler than \code{DF[!is.na(ColA) \& !is.na(ColB) \& ColA==ColB,]}}
 \end{itemize}
 In \code{[.data.frame} we very often set \code{drop=FALSE}. When we forget, bugs can arise in edge cases where single columns are selected and all of a sudden a vector is returned rather than a single column \code{data.frame}. In \code{[.data.table} we took the opportunity to make it consistent and drop \code{drop}.
 \newline\newline
