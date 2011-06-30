@@ -14,7 +14,7 @@ int sizes[100];  // max appears to be FUNSXP = 99, see Rinternals.h
 
 static SEXP growVector(SEXP x, R_len_t newlen, int size);
 int sizesSet=0;
-SEXP setSizes()
+void setSizes()
 {
     int i;
     for (i=0;i++;i<100) sizes[i]=0;
@@ -25,14 +25,13 @@ SEXP setSizes()
     sizes[STRSXP] = sizeof(SEXP);    // character
     sizes[VECSXP] = sizeof(SEXP *);  // a column itself can be a list()
     sizesSet=1;
-    return(R_NilValue);
 }
 #define SIZEOF(x) sizes[TYPEOF(x)]
 
 SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jexp, SEXP env, SEXP testj, SEXP byretn, SEXP byval, SEXP itable, SEXP icols, SEXP iSD, SEXP nomatchNA, SEXP verbose)
 {
     R_len_t i, j, k, rownum, ngrp, njval, nbyval, ansloc, maxn, r, thisansloc, thislen, any0, newlen, icol, size;
-    SEXP names, inames, bynames, ans, jval, naint, nareal, SD, BY;
+    SEXP names, inames, bynames, ans, jval, naint, nareal, SD, BY, N;
     if (!sizesSet) setSizes();
     if (TYPEOF(order) != INTSXP) error("order not integer");
     if (TYPEOF(starts) != INTSXP) error("starts not integer");
@@ -44,6 +43,7 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jex
     nbyval = length(byval);
     SD = findVar(install(".SD"), env);
     BY = findVar(install(".BY"), env);
+    N = findVar(install(".N"), env);
     
     names = getAttrib(SD, R_NamesSymbol);
     for(i = 0; i < length(SD); i++) {
@@ -156,6 +156,7 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jex
     
     for(i = 1; i < ngrp; i++) {  // 2nd group onwards
         thislen = INTEGER(lens)[i];
+        INTEGER(N)[0] = thislen;
         for (j=0; j<length(iSD); j++) {
             size = SIZEOF(VECTOR_ELT(iSD,j));
             memcpy((char *)DATAPTR(VECTOR_ELT(iSD,j)),

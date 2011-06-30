@@ -756,6 +756,17 @@ test(289, DT[,sum(v*mysinglelookup[.BY]$s),by=grp], data.table(grp=c("a","b"),V1
 # In v1.6.2 we will change so that single name j returns a vector, regardless of grouping
 test(290, DT[,list(mysinglelookup[.BY]$grpname,sum(v)),by=grp], data.table(grp=c("a","b"),V1=c("California","New York"),V2=c(10L,18L)))
 
+# Test user defined attributes are retained, see comment in FR#1006
+DT = data.table(a=as.numeric(1:2),b=3:4)
+attr(DT,"myuserattr") = 42
+setkey(DT,a)  # a is numeric so a change of type to integer occurs too
+test(291, attr(DT,"myuserattr"), 42)
+
+# Test new .N symbol
+DT = data.table(a=c(1,1,1,1,2,2,2),b=c(3,3,3,4,4,4,4))
+test(292, DT[,.N,by=list(a,b)], data.table(a=c(1L,1L,2L),b=c(3L,4L,4L),.N=c(3L,1L,3L)))
+test(293, DT[,list(a+b,.N),by=list(a,b)],  data.table(a=c(1L,1L,2L),b=c(3L,4L,4L),V1=4:6,.N=c(3L,1L,3L)))
+
 
 
 ## See test-* for more tests

@@ -9,9 +9,20 @@ This NEWS file summarises the main changes.
         **   CHANGES IN DATA.TABLE VERSION 1.6.2   **
         **                                         **
         *********************************************
-        
-        
 
+NEW FEATURES
+
+   o    setkey no longer copies the whole table and should be
+        faster for large tables. Each column is reordered by reference
+        (in C) using one column of working memory, FR#1006. User
+        defined attributes on the original table are now also
+        retained (thanks to Thell Fowler for reporting).
+        
+   o    A new symbol .N is now available to j, containing the
+        number of rows in the group. This may be useful when
+        the column names are not known in advance, for
+        convenience generally, and for efficiency.
+        
 
         *********************************************
         **                                         **
@@ -26,7 +37,7 @@ NEW FEATURES
         from group to group; e.g., incrementing a group
         counter :
             DT[,list(z,groupInd<-groupInd+1),by=x]
-        Thanks for Andreas Borg for reporting.
+        Thanks to Andreas Borg for reporting.
 
    o    A new symbol .BY is now available to j, containing 1 row
         of the current 'by' variables, type list. 'by' variables
@@ -67,7 +78,8 @@ BUG FIXES
         now be faster.
         
    o    Variables in calling scope can now be used in j when
-        i is logical or integer, fixing bug #1421.
+        i is logical or integer, fixing bug #1421. Thanks
+        to Alexander Peterhansl for reporting.
 
         
 USER-VISIBLE CHANGES
