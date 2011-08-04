@@ -51,7 +51,6 @@ is.ff = function(x) inherits(x, "ff")  # define this in data.table so that we do
 #    if (is.array(x)) nrow(x) else length(x)
 #}
 
-# removed DT alias as j=list() is much faster with new dogroups ... DT = function(...) data.table(...)  # DT is alias for data.table intended for use in j expressions.
 # TO DO: now data.table inherits from data.frame, do we need data.table creation at all?
 
 data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
@@ -174,19 +173,23 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
     attr(value,"row.names") = .set_row_names(nr)
     attr(value, "class") <- c("data.table","data.frame")
     if (!is.null(key)) {
-      if (!is.character(key) || !length(key)==1) stop("key must be character vector length 1 containing comma seperated column names")
-      eval(parse(text=paste("setkey(value,",paste(key,collapse=","),")",sep="")))
+      if (!is.character(key)) stop("key must be character") 
+      if (length(key)==1)
+          eval(parse(text=paste("setkey(value,",key,")",sep="")))    # e.g. key = "x,y"
+      else
+          key(value) = key     # e.g. key=c("col1","col2")
     }
     value
 }
 
 
-"[.data.table" = function (x, i, j, by=NULL, with=TRUE, nomatch=NA, mult="all", roll=FALSE, rolltolast=FALSE, which=FALSE, bysameorder=FALSE, verbose=getOption("datatable.verbose",FALSE), drop=NULL)
+"[.data.table" = function (x, i, j, by=NULL, with=TRUE, nomatch=NA, mult="all", roll=FALSE, rolltolast=FALSE, which=FALSE, bysameorder=FALSE, .SDcols, verbose=getOption("datatable.verbose",FALSE), drop=NULL)
 {
     # the drop=NULL is to sink drop argument when dispatching to [.data.frame; using '...' stops test 147
     if (!cedta()) {
-        if (missing(drop)) return(`[.data.frame`(x,i,j))
-        else return(`[.data.frame`(x,i,j,drop))
+        ans = if (missing(drop)) `[.data.frame`(x,i,j) else `[.data.frame`(x,i,j,drop)
+        if (!missing(i)) key(ans)=NULL  # See test 304
+        return(ans)
     }
     if (!missing(by) && missing(j)) stop("'by' is supplied but not j")
     if (!mult %in% c("first","last","all")) stop("mult argument can only be 'first','last' or 'all'")
@@ -336,6 +339,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
     } # end of  if !missing(i)
     if (missing(j)) stop("logical error, j missing")
     if (!with) {
+        if (!length(j)) return(data.table(NULL))
         if (is.character(j)) j = match(j, names(x))
         # TO DO:  DT[,"-columntoremove",with=FALSE] might be nice
         if (any(is.na(j))) stop("undefined columns selected")  # TO DO: include which ones in msg
@@ -358,27 +362,60 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         attr(ans,"row.names") = .set_row_names(nrow(ans))
         return(ans)
     }
+    jsub = substitute(j)
+    if (is.null(jsub)) return(NULL)
+    jsubl = as.list(jsub)    
+    
     if (!missing(by) && !missing(i)) {
         x = x[irows]
         # TO DO: efficiency gain by taking only the columns of x that j and by need.
+        bywithoutby=FALSE
     }
-    jsub = substitute(j)
-    if (is.null(jsub)) return(NULL)
-    jsubl = as.list(jsub)
     if (identical(jsubl[[1]],quote(eval))) {
         jsub = eval(jsubl[[2]],parent.frame())
         if (is.expression(jsub)) jsub = jsub[[1]]
     }
+    av = all.vars(jsub,TRUE)
+    if (":=" %in% av) {
+        if (!missing(by)) stop("Combining := in j with by is not yet implemented. Please let maintainer('data.table') know if you are interested in this.")
+        if (bywithoutby && nrow(i)>1) stop("combining bywithoutby with := in j is not yet implemented.")
+        if (as.character(jsub[[1]]) != ":=") stop("Currently only one `:=` may be present in j. This may be expanded in future.")
+        rhsav = all.vars(jsub[[3]],TRUE)
+        if (length(rhsav) && length(rhsvars <- intersect(rhsav,colnames(x)))) {
+            #rhsvars = intersect(rhsav,colnames(x))
+            #if (length(rhsvars)) {
+            tmpx = x[irows,rhsvars,with=FALSE]
+            rhs = eval(jsub[[3]], envir=tmpx, enclos=parent.frame())
+        } else {
+            rhs = eval(jsub[[3]], envir=parent.frame(), enclos=parent.frame())
+        }
+        lhs = as.character(jsub[[2]])
+        clearkey = any(!is.na(match(lhs,key(x))))
+        m = match(lhs,names(x))    # TO DO: move this logic inside .Call assign as it's done a few times
+        if (!is.na(m)) {
+            lhs=m      # type of lhs signals to assign that it's not new column
+            xname = rho = NULL
+        } else {
+            xname = as.character(substitute(x))
+            rho = parent.frame()
+        }
+        ssrows = if (identical(irows,TRUE)) as.integer(NULL) else as.integer(irows)
+        .Call("assign",x,ssrows,lhs,rhs,clearkey,xname,rho,PACKAGE="data.table")
+        if (!missing(verbose) && verbose) cat("Assigned",if (!length(ssrows)) paste("all",nrow(x)) else length(ssrows),"row(s)\n")  # the !missing is for speed to avoid calling getOption() which then calls options().
+        return(x)  # Allows 'update and then' queries such as DT[J(thisitem),done:=TRUE][,sum(done)]
+                   # Could return number of rows updated but even when wrapped in invisible() it seems
+                   # the [.class method doesn't respect invisible, which may be confusing to user.
+        # NB: Tried assign(":=",function(lhs,rhs) {...},envir=parent.frame()) which worked for whole columns
+        # but how to pass a subset of rows that way, or more crucially an assignment within groups (TO DO)
+    }
     if ((missing(by) && !bywithoutby) || nrow(x)<1) {
+        jvars = intersect(av,colnames(x))
         if (!identical(irows,TRUE)) {
-            jvars = intersect(all.vars(jsub,TRUE),colnames(x))
             x = x[irows,jvars,with=FALSE]
         }
         if (mode(jsub)!="name" && as.character(jsub[[1]]) == "list") {
-            jdep = deparse(jsub)
-            jdep = gsub("^list","data.table",jdep)   # we need data.table here because i) it grabs the column names from objects and ii) it does the vector expansion
-            jsub = parse(text=jdep)[[1]]
-            # TO DO: can we just set  jsub[[1]]=data.table
+            jsub[[1]]=as.name("data.table")
+            # we need data.table here because i) it grabs the column names from objects and ii) it does the vector expansion
         }
         return(eval(jsub, envir=x, enclos=parent.frame()))
     }
@@ -467,15 +504,22 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         }
         if (verbose) {last.started.at=proc.time()[3];cat("Finding groups (bysameorder=",bysameorder,") ... ",sep="");flush.console()}
         if (bysameorder) {
-            f__ = duplist(byval)
+            f__ = duplist(byval)   # find group starts, assumes they are grouped. 
             for (jj in seq_along(byval)) byval[[jj]] = byval[[jj]][f__]
+            len__ = as.integer(c(diff(f__), nrow(x)-last(f__)+1))
         } else {
             o__ = fastorder(byval)
             f__ = duplist(byval,order=o__)
-            for (jj in seq_along(byval)) byval[[jj]] = byval[[jj]][o__[f__]]
+            len__ = as.integer(c(diff(f__), nrow(x)-last(f__)+1))
+            firstofeachgroup = o__[f__]
+            origorder = .Internal(order(na.last=FALSE, decreasing=FALSE, firstofeachgroup))
+            # radixsort isn't appropriate in this case. 'firstofeachgroup' are row numbers from the
+            # (likely) large table so if nrow>100,000, range will be >100,000. Save time by not trying radix.
+            f__ = f__[origorder]
+            len__ = len__[origorder]
+            firstofeachgroup = firstofeachgroup[origorder]
+            for (jj in seq_along(byval)) byval[[jj]] = byval[[jj]][firstofeachgroup]
         }
-        if (f__[1] != 1) stop("Logical error in grouping. First item of the first group should always be 1.")
-        len__ = as.integer(c(diff(f__), nrow(x)-last(f__)+1))
         if (verbose) {cat("done in",round(proc.time()[3]-last.started.at,3),"secs\n");flush.console}
         # TO DO: allow secondary keys to be stored, then we see if our by matches one, if so use it, and no need to sort again. TO DO: document multiple keys.
     }
@@ -488,7 +532,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             jvnames = deparse(jsub)
             jsub = call("list",jsub)  # this should handle backticked names ok too
         }
-    } else if (as.character(jsub[[1]])[1] %in% c("list","DT")) {
+    } else if (as.character(jsub[[1]])[1] == "list") {
         jsubl = as.list(jsub)
         if (length(jsubl)<2) stop("When j is list() or DT() we expect something inside the brackets")
         jvnames = names(jsubl)[-1]   # check list(a=sum(v),v)
@@ -497,15 +541,29 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             if (jvnames[jj-1] == "" && mode(jsubl[[jj]])=="name") jvnames[jj-1] = deparse(jsubl[[jj]])
             # TO DO: if call to a[1] for example, then call it 'a' too
         }
-        if(class(jsubl[[2]])!="{") jsub = parse(text=paste("list(",paste(as.character(jsub)[-1],collapse=","),")",sep=""))[[1]]  # this does two things : i) changes 'DT' to 'list' for backwards compatibility and ii) drops the names from the list so its faster to eval the j for each group
+        names(jsub)=""  # drops the names from the list so it's faster to eval the j for each group. We'll put them back aftwards on the result.
     } # else maybe a call to transform or something which returns a list.
     ws = all.vars(jsub,TRUE)  # TRUE fixes bug #1294 which didn't see b in j=fns[[b]](c)
     if (".SD" %in% ws) {
-        xvars = setdiff(colnames(x),union(bynames,allbyvars))
-        # just using .SD in j triggers all non-by columns in the subset even if some of
-        # those columns are not used. It would be tricky to detect whether the j expression
-        # really does use all of the .SD columns or not.
+        if (missing(.SDcols)) {
+            xvars = setdiff(colnames(x),union(bynames,allbyvars))
+            # just using .SD in j triggers all non-by columns in the subset even if some of
+            # those columns are not used. It would be tricky to detect whether the j expression
+            # really does use all of the .SD columns or not, hence .SDcols for grouping
+            # over a subset of columns
+        } else {
+            if (is.numeric(.SDcols)) {
+                if (any(is.na(.SDcols)) || any(.SDcols>ncol(.SDcols)) || any(.SDcols<1)) stop(".SDcols is numeric but out of bounds (or NA)")
+                xvars = colnames(x)[.SDcols]
+            } else {
+                if (!is.character(.SDcols)) stop(".SDcols should be column numbers or names")
+                if (any(is.na(.SDcols)) || any(!.SDcols %in% colnames(x))) stop("Some items of .SDcols are not column names (or are NA)")
+                xvars = .SDcols
+            }
+            # .SDcols might include grouping columns if users wants that, but normally we expect user not to include them in .SDcols   
+        }
     } else {
+        if (!missing(.SDcols)) stop("j doesn't use .SD but .SDcols has been passed in")
         xvars = setdiff(intersect(ws,colnames(x)),bynames)
         # using a few named columns will be faster
         # Consider:   DT[,max(diff(date)),by=list(month=month(date))]
@@ -602,6 +660,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
     }
     ans
 }
+
 
 #  [[.data.frame is now dispatched due to inheritance.
 #  The code below tried to avoid that but made things
@@ -739,30 +798,48 @@ tail.data.table = function(x, n=6, ...) {
 }
 
 "[<-.data.table" = function (x, i, j, value) {
-    if (!cedta()) return(`[<-.data.frame`(x, i, j, value))
-    if (!missing(i)) { # get i based on data.table-style indexing
-        i <- x[i, which=TRUE, mult="all"]
-    }
-    res <- `[<-.data.frame`(x, i, j, value)
-    keycol <- match(key(x), names(x))
-    if (missing(j)) j <- seq_along(x)
+    if (!cedta() || missing(j)) return(`[<-.data.frame`(x, i, j, value))
+    if (!missing(i)) {
+        if (is.atomic(i) && is.numeric(i)) {
+            i=as.integer(i)
+        } else {
+            # get i based on data.table-style indexing  
+            i = x[i, which=TRUE, mult="all"]
+        }
+    } else i = as.integer(NULL)   # meaning (to C code) all rows, without allocating 1:nrow(x) vector
+    if (!is.atomic(j)) stop("j must be atomic vector, see ?is.atomic")
+    if (any(is.na(j))) stop("NA in j")
     if (is.character(j)) {
-        jseq <- match(j, names(x))
-    } else if (is.logical(j) || min(j) < 0L) 
-        jseq <- seq_along(x)[j]
-    else {
-        jseq <- j
+        keycol = any(j %in% key(x))
+        m = match(j,names(x))
+        if (any(is.na(m))) {
+            if (!all(is.na(m))) stop("Some columns exist in this data.table, some don't. Can't mix.")
+        } else {
+            j=m    # signal to .Call assign (via j's type) that it's assignment to existing column(s), not adding
+        }
+    } else {
+        if (!is.numeric(j)) stop("j must be vector of column name or positions")
+        if (j>ncol(x)) stop("Attempt to assign to column position greater than ncol(x). Create the column by name, instead. This logic intends to catch most likely user errors.")
+        keycol = j %in% match(key(x),names(x))
+        j = as.integer(j)  # for convenience e.g. to convert 1 to 1L
     }
-    if (any( jseq %in% keycol ))
-        key(res) <- NULL
-    res
+    if (is.integer(j[1]) && is.character(value) && length(value)<nrow(x) && is.factor(x[[j[1]]])) {
+        # kludge. Doesn't cope with single character on RHS, and multiple columns of varying types on LHS.
+        value = match(value,levels(x[[j[1]]]))
+        if (any(is.na(value))) stop("Some or all RHS not present in factor column levels")
+        # The length(value)<nrow(x) is to allow coercion of factor columns to character, but we'll
+        # do away with factor columns (by default) soon anyway
+    }
+    .Call("assign",x,i,j,value,keycol,NULL,NULL,PACKAGE="data.table")
+    # no copy at all if user calls directly; i.e. `[<-.data.table`(x,i,j,value)
+    # or uses data.table := syntax; i.e. DT[i,j:=value]
+    # but, there is one copy by R in [<- dispatch to `*tmp*`; i.e. DT[i,j]<-value
+    # (IIUC, and, as of R 2.13.0)
 }
 
 "$<-.data.table" = function (x, name, value) {
-    res <- `$<-.data.frame`(x, name, value)
-    if (any(name %in% key(x)))
-        key(res) <- NULL
-    res
+    if (!cedta()) return(`$<-.data.frame`(x, name, value))
+    `[<-.data.table`(x,j=name,value=value)  # important i is missing here
 }
 
 cbind.data.table = function(...) {
@@ -842,18 +919,17 @@ within.data.table <- function (data, expr, keep.key = FALSE, ...) # basically wi
 {
     if (!cedta()) return(NextMethod())
     parent <- parent.frame()
-    e <- evalq(environment(), data, parent)
+    e <- evalq(new.env(), data, parent) # new env inside data that sees column names
     eval(substitute(expr), e)
     l <- as.list(e)
-    l <- l[!sapply(l, is.null)]
-    nD <- length(del <- setdiff(names(data), (nl <- names(l))))
-    data[,nl] <- l
-    if (nD)
-        data[,del] <- if (nD == 1)
-            NULL
-        else vector("list", nD)
-    if (!keep.key) attr(data,"sorted") <- NULL
-    data
+    if (length(l)!=1) stop("Can only assign one column at a time currently via within")
+                      # TO DO: allow multiple RHS in assign.c
+    value = l[[1]]
+    j = names(l)[1]
+    keycol = j %in% key(data)
+    m = match(j,names(data))
+    if (!is.na(m)) j=m
+    .Call("assign",data,i=as.integer(NULL),j,value,keycol,NULL,NULL,PACKAGE="data.table")
 }
 
 
@@ -861,16 +937,20 @@ transform.data.table <- function (`_data`, ...) # basically transform.data.frame
 {
     if (!cedta()) return(NextMethod())
     e <- eval(substitute(list(...)), `_data`, parent.frame())
+    if (length(e)>1) stop("Only 1 at a time")
     tags <- names(e)
     inx <- match(tags, names(`_data`))
     matched <- !is.na(inx)
     if (any(matched)) {
-        `_data`[,inx[matched]] <- e[matched]
-        `_data` <- data.table(`_data`)
+        j = inx[!is.na(inx)]
+        keycol = j %in% names(`_data`)
+        `_data` = .Call("assign",`_data`,i=as.integer(NULL),j,e[[1]],keycol,NULL,NULL,PACKAGE="data.table")
     }
-    if (!all(matched))
-        do.call("data.table", c(list(`_data`), e[!matched]))
-    else `_data`
+    if (!all(matched)) {
+        j = tags[is.na(inx)]        
+        `_data` = .Call("assign",`_data`,i=as.integer(NULL),j,e[[1]],keycol=FALSE,NULL,NULL,PACKAGE="data.table")
+    }
+    `_data`
 }
 
 #subset.data.table <- function (x, subset, select, ...) # not exported or documented, yet

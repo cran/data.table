@@ -15,15 +15,14 @@ setkey = function(x, ..., loc=parent.frame(), verbose=getOption("datatable.verbo
         name = deparse(substitute(x))
         cols = getdots()
     }
-    if (identical(key(x),cols)) return(invisible()) # table is already key'd by those columns
     if (!is.data.table(x)) stop("first argument must be a data.table")
-    if (any(sapply(x,is.ff))) stop("joining to a table with ff columns is not yet implemented")
     if (!length(cols)) {
         cols = colnames(x)   # All columns in the data.table, usually a few when used in this form
     } else {
         miss = !(cols %in% colnames(x))
         if (any(miss)) stop("some columns are not in the data.table: " %+% cols[miss])
     }
+    if (identical(key(x),cols)) return(invisible()) # table is already key'd by those columns
     copied = FALSE   # in future we hope to be able to setkeys on any type, this goes away, and saves more potential copies
     for (i in cols) {
         if (is.character(x[[i]])) {
@@ -53,17 +52,16 @@ setkey = function(x, ..., loc=parent.frame(), verbose=getOption("datatable.verbo
         }
         if (!typeof(x[[i]]) %in% c("integer","logical")) stop("Column '",i,"' is type '",typeof(x[[i]]),"' which is not accepted by setkey.")
     }
+    if (!is.character(cols) || length(cols)<1) stop("'cols' should be character at this point in setkey")
+    o = fastorder(x, cols, verbose=verbose)
+    .Call("reorder",x,o,cols, PACKAGE="data.table")
     if (copied) {
         if (verbose) cat("setkey changed the type of a column, incurring a copy\n")
         assign(name,x,envir=loc)
-        x = get(name,envir=loc)  # so the .Call("reorder" changes by reference a few lines below.
-    }
-    o = fastorder(x, cols)
-    # We put NAs first because NA is internally a very large negative number. This is relied on in the C binary search.
-    .Call("reorder",x,o,cols)
+    }    
     # Was :
     # ans = x[o]   # copy whole table
-    # attr(x,"sorted") <<- cols  # done inside reorder by reference
+    # attr(x,"sorted") <<- cols  # now done inside reorder by reference
     # assign(name,ans,envir=loc)
     invisible()
 }
@@ -95,24 +93,22 @@ fastorder <- function(lst, which=seq_along(lst), verbose=getOption("datatable.ve
     # lst is a list or anything thats stored as a list and can be accessed with [[.
     # 'which' may be integers or names
     # Its easier to pass arguments around this way, and we know for sure that [[ doesn't take a copy but l=list(...) might do.
-    printdone=FALSE
     # Run through them back to front to group columns.
     w <- last(which)
-    err <- try(silent = TRUE, {
-        # Use a radix sort (fast and stable), but it will fail if there are more than 1e5 unique elements (or any negatives)
-        o <- radixorder1(lst[[w]])
-    })
-    if (inherits(err, "try-error"))
+    err <- try(o <- radixorder1(lst[[w]]), silent=TRUE)
+    # Use a radix sort (fast and stable), but it will fail if there are more than 1e5 unique elements (or any negatives)
+    if (inherits(err, "try-error")) {
+        if (verbose) cat("First column",w,"failed radixorder1, reverting to regularorder1\n")
         o <- regularorder1(lst[[w]])
+    }
     # If there is more than one column, run through them back to front to group columns.
     for (w in rev(take(which))) {
-        err <- try(silent = TRUE, {
-            o <- o[radixorder1(lst[[w]][o])]
-        })
-        if (inherits(err, "try-error"))
+        err <- try(o <- o[radixorder1(lst[[w]][o])], silent=TRUE)
+        if (inherits(err, "try-error")) {
+            if (verbose) cat("Non-first column",w,"failed radixorder1, reverting to regularorder1\n")
             o <- o[regularorder1(lst[[w]][o])]
+        }
     }
-    if (printdone) {cat("done\n");flush.console()}   # TO DO - add time taken
     o
 }
 

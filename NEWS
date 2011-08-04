@@ -6,6 +6,130 @@ This NEWS file summarises the main changes.
 
         *********************************************
         **                                         **
+        **   CHANGES IN DATA.TABLE VERSION 1.6.3   **
+        **                                         **
+        *********************************************
+
+NEW FEATURES
+        
+    o   Ad hoc grouping now returns results in the same order each 
+        group first appears in the table, rather than sorting the
+        groups. Thanks to Steve Lianoglou for highlighting. The order
+        of the rows within each group always has and always will be 
+        preserved. For larger datasets a 'keyed by' is still faster;
+        e.g., by=key(DT).
+        
+    o   The 'key' argument of data.table() now accepts a vector of
+        column names in addition to a single comma separated string
+        of column names, for consistency. Thanks to Steve Lianoglou
+        for highlighting.
+        
+    o   A new argument '.SDcols' has been added to [.data.table. This
+        may be character column names or numeric positions and
+        specifies the columns of x included in .SD. This is useful
+        for speed when applying a function through a subset of
+        (possibly very many) columns; e.g.,
+            DT[,lapply(.SD,sum),by="x,y",.SDcols=301:350]
+
+    o   as(character, "IDate") and as(character, "ITime") coercion
+        functions have been added. Enables the user to declaring colClasses
+        as "IDate" and "ITime" in the various read.table (and sister)
+        functions. Thanks to Chris Neff for the suggestion.
+        
+    o   DT[i,j]<-value is now handled by data.table in C rather
+        than falling through to data.frame methods, FR#200. Thanks to
+        Ivo Welch for raising speed issues on r-devel, to Simon Urbanek
+        for the suggestion, and Luke Tierney and Simon for information
+        on R internals.
+
+        [<- syntax still incurs one working copy of the whole
+        table (as of R 2.13.1) due to R's [<- dispatch mechanism
+        copying to `*tmp*`, so, for ultimate speed and brevity,
+        the operator := may now be used in j as follows.
+        
+    o   := is now available to j and means assign to the column by
+        reference; e.g.,
+
+            DT[i,colname:=value]
+        
+        This syntax makes no copies of any part of memory at all.
+        
+        m = matrix(1,nrow=100000,ncol=100)
+        DF = as.data.frame(m)
+        DT = as.data.table(m)
+        
+        system.time(for (i in 1:1000) DF[i,1] <- i)
+             user  system elapsed 
+          287.062 302.627 591.984 
+        
+        system.time(for (i in 1:1000) DT[i,V1:=i])
+             user  system elapsed 
+            1.148   0.000   1.158     ( 511 times faster )
+
+        := in j can be combined with all types of i, such as binary
+        search. It can be used to add and remove columns efficiently,
+        too. Fast assigning within groups will be implemented in
+        future.
+        
+        *Please note*, := is new and experimental.
+        
+
+BUG FIXES
+
+    o   merge()ing two data.table's with user-defined `suffixes`
+        was getting tripped up when column names in x ended in
+        '.1'. This resulted in the `suffixes` parameter being
+        ignored.
+        
+    o   Mistakenly wrapping a j expression inside quotes; e.g.,
+            DT[,list("sum(a),sum(b)"),by=grp]
+        was appearing to work, but with wrong column names. This
+        now returns a character column (the quotes should not
+        be used). Thanks to Joseph Voelkel for reporting.
+        
+    o   setkey has been made robust in several ways to fix issues
+        introduced in 1.6.2: #1465 ('R crashes after setkey')
+        reported by Eugene Tyurin and similar bug #1387 ('paste()
+        by group to create long comma separated strings can crash')
+        reported by Nicolas Servant and Jean-Francois Rami. This
+        bug was not reproducible so we are especially grateful for
+        the patience of these people in helping us find, fix and
+        test it.
+        
+    o   Combining a join, j and by together in one query now works
+        rather than giving an error, fixing bug #1468. Discovered
+        indirectly thanks to a post from Jelmer Ypma.
+        
+    o   Invalid keys are no longer arise when a non-data.table-aware
+        package reorders the data; e.g.,
+            setkey(DT,x,y)
+            plyr::arrange(DT,y)       # same as DT[order(y)]
+        This now drops the key to avoid incorrect results being
+        returned the next time the invalid key is joined to. Thanks
+        to Chris Neff for reporting.
+
+
+USER-VISIBLE CHANGES
+
+    o   The startup banner has been shortened to one line.
+    
+    o   data.table does not support POSIXlt. Almost unbelievably
+        POSIXlt uses 40 bytes to store a single datetime. If it worked
+        before, that was unintentional. Please see ?IDateTime, or any
+        other date class that uses a single atomic vector. This is
+        regardless of whether the POSIXlt is a key column, or not. This
+        resolves bug #1481 by documenting non support in ?data.table.
+        
+
+DEPRECATED & DEFUNCT
+
+   o    Use of the DT() alias in j is no longer caught for backwards
+        compatibility and is now fully removed. As warned in NEWS
+        for v1.5.3, v1.4, and FAQs 2.6 and 2.7.
+
+
+        *********************************************
+        **                                         **
         **   CHANGES IN DATA.TABLE VERSION 1.6.2   **
         **                                         **
         *********************************************

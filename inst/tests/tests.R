@@ -2,8 +2,9 @@
 if (!exists(".devtesting")) {
     require(data.table)   # in dev the package should not be loaded
     require(ggplot2)      # the 2 ggplot tests take so long they get in the way
+    require(plyr)
 }
-
+options(warn=2)
 nfail = ntest = 0
 test = function(num,x,y=NULL) {
     ntest <<- ntest + 1
@@ -32,9 +33,15 @@ test = function(num,x,y=NULL) {
     }
     cat("Test",num,"ran without errors but failed check:\n")
     print(x)
-    if (is.data.table(x)) {cat("Key: ",paste(key(x),collapse=","),"\n")}
+    if (is.data.table(x)) {
+        cat("Key: ",paste(key(x),collapse=","),"\n")
+        cat("Types: ",paste(sapply(x,class),collapse=","),"\n")
+    }
     print(y)
-    if (is.data.table(y)) {cat("Key: ",paste(key(y),collapse=","),"\n")}
+    if (is.data.table(y)) {
+        cat("Key: ",paste(key(y),collapse=","),"\n")
+        cat("Types: ",paste(sapply(y,class),collapse=","),"\n")
+    }
     nfail <<- nfail + 1
 }
 
@@ -211,12 +218,14 @@ test(80, TESTDT[,colsVar,with=FALSE], data.table(b=c("e","e","f","f","i","i","b"
 
 test(82, TESTDT[,c("a","b")], c("a","b"))
 test(83, TESTDT[,list("a","b")], data.table("a","b"))
+test(83.1, TESTDT[,list("sum(a),sum(b)")], data.table("sum(a),sum(b)"))
+test(83.2, TESTDT[,list("sum(a),sum(b)"),by=a], {tt=data.table(a=c("a","c","d","g"),V1="sum(a),sum(b)",key="a");tt$V1=as.character(tt$V1);tt})
 # test(84, TESTDT[1:2,list(a,b)], list(c("a","c"), c("e","e")))  # should be a data.table
 # test(85, TESTDT[1:2,DT(a,b)], data.table(a=c("a","c"), b=c("e","e")))  #DT now deprecated
 
-test(86, TESTDT[,sum(v),by="b"], data.table(b=c("b","e","f","i"),V1=INT(7,3,7,11)))  # TESTDT is key'd by a,b, so correct that grouping by b should not be key'd in the result by default
-test(87, TESTDT[,DT(MySum=sum(v)),by="b"], data.table(b=c("b","e","f","i"),MySum=INT(7,3,7,11)))
-test(88, TESTDT[,DT(MySum=sum(v),Sq=v*v),by="b"][1:2], data.table(b=c("b","e"),MySum=INT(7,3),Sq=INT(49,1))) # silent repetition of MySum to match the v*v vector
+test(86, TESTDT[,sum(v),by="b"], data.table(b=c("e","f","i","b"),V1=INT(3,7,11,7)))  # TESTDT is key'd by a,b, so correct that grouping by b should not be key'd in the result by default
+test(87, TESTDT[,list(MySum=sum(v)),by="b"], data.table(b=c("e","f","i","b"),MySum=INT(3,7,11,7)))
+test(88, TESTDT[,list(MySum=sum(v),Sq=v*v),by="b"][1:3], data.table(b=c("e","e","f"),MySum=INT(3,3,7),Sq=INT(1,4,9))) # silent repetition of MySum to match the v*v vector
 # Test 89 dropped. Simplify argument no longer exists. by is now fast and always returns a data.table  ... test(89, TESTDT[,sum(v),by="b",simplify=FALSE], list(7L,3L,7L,11L))
 
 # Test 88.5 contributed by Johann Hibschman (for bug fix #1294) :
@@ -232,9 +241,9 @@ test(94, TESTDT[c("i","f"), mult="last", which=TRUE], INT(7,5))
 
 test(95, TESTDT["f",v]$v, 3:4)
 test(96, TESTDT["f",v,mult="all"], data.table(b="f",v=3:4))
-test(97, TESTDT[c("f","i","b"),DT(GroupSum=sum(v)),mult="all"], data.table(b=c("f","i","b"), GroupSum=c(7L,11L,7L)))  # mult="all" is required here since only b is key'd
+test(97, TESTDT[c("f","i","b"),list(GroupSum=sum(v)),mult="all"], data.table(b=c("f","i","b"), GroupSum=c(7L,11L,7L)))  # mult="all" is required here since only b is key'd
 # that line above doesn't create a key on the result so that the order fib is preserved.
-test(98, TESTDT[SJ(c("f","i","b")),DT(GroupSum=sum(v)),mult="all"], data.table(b=c("b","f","i"), GroupSum=c(7L,7L,11L), key="b"))
+test(98, TESTDT[SJ(c("f","i","b")),list(GroupSum=sum(v)),mult="all"], data.table(b=c("b","f","i"), GroupSum=c(7L,7L,11L), key="b"))
 # line above is the way to group, sort by group and setkey on the result by group.
 
 (dt <- data.table(A = rep(1:3, each=4), B = rep(1:4, each=3), C = rep(1:2, 6), key = "A,B"))
@@ -242,7 +251,7 @@ test(99, unique(dt), data.table(dt[c(1L, 4L, 5L, 7L, 9L, 10L)], key="A,B"))
 
 # test [<- for column assignment 
 dt1 <- dt2 <- dt
-test(100, {dt1[,"A"] <- 3; dt1}, {dt2$A <- 3; dt2})
+test(100, {dt1[,"A"] <- 3L; dt1}, {dt2$A <- 3L; dt2})
 
 # test transform and within
 test(101, within(dt, {D <- B^2}), transform(dt, D = B^2))
@@ -250,7 +259,7 @@ test(102, within(dt, {A <- B^2}), transform(dt, A = B^2))
 
 # test .SD object
 test(103, dt[, sum(.SD$B), by = "A"], dt[, sum(B), by = "A"])
-test(104, dt[, transform(.SD, D = min(B)), by = "A"], dt[, DT(B,C,D=min(B)), by = "A"])
+test(104, dt[, transform(.SD, D = min(B)), by = "A"], dt[, list(B,C,D=min(B)), by = "A"])
 
 # test numeric and comparison operations on a data table
 test(105, all(dt + dt > dt))
@@ -258,7 +267,7 @@ test(106, all(dt + dt > 1))
 test(107, dt + dt, dt * 2L)
 
 # test a few other generics:
-test(108, dt, data.table(t(t(dt)), key="A,B"))
+test(108, dt, {tt=data.table(t(t(dt)));storage.mode(tt[[2]])="integer";storage.mode(tt[[3]])="integer";tt})
 test(109, all(!is.na(dt)))
 dt2 <- dt
 dt2$A[1] <- NA
@@ -268,10 +277,10 @@ test(112, dt2[2:nrow(dt2),A], na.omit(dt2)$A)
 
 # test [<- assignment:
 dt2[is.na(dt2)] <- 1L
-setkey(dt2, A, B)
 test(113, dt, dt2)
-dt2[, c("A", "B")] <- dt1[, c("A", "B"), with = FALSE]
-test(114, dt1, dt2)
+# want to discourage this going forward (inefficient to create RHS like this)
+# dt2[, c("A", "B")] <- dt1[, c("A", "B"), with = FALSE]
+# test(114, dt1, dt2)
 ## doesn't work, yet:
 ##     dt2[rep(TRUE, nrow(dt)), c("A", "B")] <- dt1[, c("A", "B"), with = FALSE]
 ##     dt2[rep(TRUE, nrow(dt)), c("A")] <- dt1[, c("A"), with = FALSE]
@@ -375,7 +384,7 @@ a = data.table(x=factor(letters[rep(1:5, each =2)], levels=letters[5:1]),
                z=1:10)
 test(152, is.unsorted(levels(a$x)), TRUE)
 test(153, is.unsorted(levels(a$y)), TRUE)
-test(154, a[,sum(z),by=x][1,paste(x,V1)], "e 19")
+test(154, a[,sum(z),by=x][1,paste(x,V1)], "a 3")  # this result seems more correct now that ad hoc by doesn't sort the groups
 before = a[,sum(z),by=y]
 setkey(a,x)
 test(155, is.unsorted(levels(a$x)), FALSE)
@@ -433,16 +442,16 @@ DT <- data.table(
      B=c("x1","x2","x2","x1","x2","x1","x1","x2"),
      C=c(5,2,3,4,9,5,1,9)
      )
-test(174, DT[,C[C-min(C)<3],by=list(A,B)][,V1], c(1,2,4,3,5,9,9))
-test(175, DT[,C[C-min(C)<5],by=list(A,B)][,V1], c(5,1,2,4,3,5,9,9))
+test(174, DT[,C[C-min(C)<3],by=list(A,B)][,V1], c(1,2,3,4,9,9,5))
+test(175, DT[,C[C-min(C)<5],by=list(A,B)][,V1], c(5,1,2,3,4,9,9,5))
 
 # Tests of data.table sub-assignments: $<-.data.table & [<-.data.table
 DT <- data.table(a = c("A", "Z"), b = 1:10, key = "a")
-DT[J("A"),2] <- 100
+DT[J("A"),2] <- 100L  # without L generates nice warning :-)
 DT[J("A"),"b"] <- 1:5
-DT[1:3,"b"] <- 33
+DT[1:3,"b"] <- 33L   
 test(176, DT,  data.table(a = rep(c("A", "Z"), each = 5),
-                          b = c(rep(33, 3), 4:5, seq(2, 10, by = 2)),
+                          b = as.integer(c(rep(33, 3), 4:5, seq(2, 10, by = 2))),
                           key = "a"))
 DT[J("A"),"a"] <- "Z"
 test(177, key(DT), NULL )
@@ -641,7 +650,7 @@ test(254, DT[,sum(b),by=key(DT)]$V1, c(6L,9L))
 # for for bug #1294 (combining scanning i and by)
 # also see test 88.5 contributed by Johann Hibschman above.
 DT = data.table(a=1:12,b=1:2,c=1:4)
-test(255, DT[a>5,sum(c),by=b]$V1, c(7L,12L))
+test(255, DT[a>5,sum(c),by=b]$V1, c(12L, 7L))
 
 # fix for bug #1301 (all.vars() doesn't appear to find fn in fns[[fn]] usage)
 DT = data.table(a=1:6,b=1:2,c=letters[1:2],d=1:6)
@@ -767,11 +776,65 @@ DT = data.table(a=c(1,1,1,1,2,2,2),b=c(3,3,3,4,4,4,4))
 test(292, DT[,.N,by=list(a,b)], data.table(a=c(1L,1L,2L),b=c(3L,4L,4L),.N=c(3L,1L,3L)))
 test(293, DT[,list(a+b,.N),by=list(a,b)],  data.table(a=c(1L,1L,2L),b=c(3L,4L,4L),V1=4:6,.N=c(3L,1L,3L)))
 
+# Test that setkey and := syntax really are by reference, even within functions. You
+# really do need to take a copy first to a new name; force(x) isn't enough.
+
+DT = data.table(a=1:3,b=4:6)
+f = function(x){ force(x)
+                 setkey(x) }
+f(DT)
+test(294,key(DT),c("a","b"))  # The setkey didn't copy to a local variable. Need to copy first to local variable (with a new name) if required.
+
+f = function(x){ force(x)
+                 x[,a:=42L] }
+f(DT)
+test(295,DT,data.table(a=42L,b=4:6))  # := was by reference (fast) and dropped the key, too, because assigned to key column
+
+# new feature added 1.6.3, that key can be vector.
+test(296,data.table(a=1:3,b=4:6,key="a,b"),data.table(a=1:3,b=4:6,key=c("a","b")))
+
+# test .SDcols (not speed, just operation)
+DT = data.table(grp=1:3,A1=1:9,A2=10:18,A3=19:27,B1=101:109,B2=110:118,B3=119:127,key="grp")
+test(297,DT[,list(A1=sum(A1),A2=sum(A2),A3=sum(A3)),by=grp], DT[,lapply(.SD,sum),by=grp,.SDcols=2:4]) 
+
+DT = data.table(a=1:3,b=4:6)
+test(298, {DT$b<-NULL;DT}, data.table(a=1:3))  # delete column (efficiently)
+tt = try(DT$c <- as.character(DT$c), silent=TRUE)
+test(299, inherits(tt,"try-error") && length(grep("zero length", tt)))  # to simulate RHS which could (due to user error) be non NULL but zero length
+DT[,c:=42L]   # add column (efficiently)
+test(299.1, DT, data.table(a=1:3,c=42L))
+tt = try(DT[2,c:=42],silent=TRUE)
+test(299.2, inherits(tt,"try-error") && length(grep("(converted from warning).*Coerced numeric RHS to integer", tt)))  # to simulate RHS which could (due to user error) be non NULL but zero length
+# also see tests 302 and 303.  (Ok, new test file for fast assign would be tidier).
+
+# Test bug fix #1468, combining i and by.
+DT = data.table(a=1:3,b=1:9,v=1:9,key="a,b")
+test(300, DT[J(1),sum(v),by=b], data.table(b=c(1L,4L,7L),V1=c(1L,4L,7L)))
+
+# Test ad hoc by of more than 100,000 levels, see 2nd part of bug #1387
+DT = data.table(A=1:10,B=rnorm(10),C=paste("a",1:100010,sep=""))
+test(301, nrow(DT[,sum(B),by=C])==100010)
+
+# Test fast assign
+DT = data.table(a=c(1,2,2,3),b=4:7,key="a")
+DT[2,b:=42L]
+test(302, DT, data.table(a=c(1L,2L,2L,3L),b=c(4L,42L,6L,7L),key="a"))
+DT[J(2),b:=84L]
+test(303, DT, data.table(a=c(1L,2L,2L,3L),b=c(4L,84L,84L,7L),key="a"))
+
+# Test key is dropped when non-dt-aware packages reorder rows of data.table (for example)
+if ("package:plyr" %in% search()) {
+    DT = data.table(a=1:10,b=1:2,key="a")
+    test(304, haskey(arrange(DT,b)), FALSE)
+} else {
+    cat("Test 304 not run. If required call library(plyr) first.\n")
+}
 
 
 ## See test-* for more tests
 
 ##########################
+options(warn=0)
 if (nfail > 0) {
     stop(nfail," errors in test.data.table()")
     # important to stop here, so than 'R CMD check' fails
