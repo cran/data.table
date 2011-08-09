@@ -4,6 +4,65 @@ The ChangeLog for data.table is the SVN commit log itself :
 
 This NEWS file summarises the main changes.
 
+
+        *********************************************
+        **                                         **
+        **   CHANGES IN DATA.TABLE VERSION 1.6.4   **
+        **                                         **
+        *********************************************
+
+NEW FEATURES
+
+    o   DT[colA>3,which=TRUE] now returns row numbers rather
+        than a logical vector, for consistency.
+
+BUG FIXES
+
+    o   Changing a keyed column name now updates the key, too,
+        so an invalid key no longer arises, fixing #1495.
+        Thanks to Chris Neff for reporting.
+        
+    o   := already warned when a numeric RHS is coerced to
+        match an integer column's type. Now it also warns when
+        numeric is coerced to logical, and integer is coerced
+        to logical, fixing #1500. Thanks to Chris Neff for
+        reporting. 
+
+    o   The result of DT[,newcol:=3.14] now includes the new
+        column correctly, as well as changing DT by reference,
+        fixing #1496. Thanks to Chris Neff for reporting.
+        
+    o   :=NULL to remove a column (instantly, regardless of table
+        size) now works rather than causing a segfault in some
+        circumstances, fixing #1497. Thanks to Timothee Carayol
+        for reporting.
+        
+    o   Previous within() and transform() behaviour restored; e.g.,
+        can handle multiple columns again. Thanks to Timothee Carayol
+        for reporting.
+        
+    o   cbind(DT,DF) now works, as does rbind(DT,DF), fixing #1512.
+        Thanks to Chris Neff for reporting. This was tricky to fix due
+        to nuances of the .Internal dispatch code in cbind and rbind,
+        preventing S3 methods from working in all cases.
+        R will now warn that cbind and rbind have been masked when
+        the data.table package is loaded. These revert to base::cbind
+        and base::rbind when the first argument is not data.table.
+        
+    o   Removing multiple columns now works (again) using
+        DT[,c("a","b")]=NULL, or within(DT,rm(a,b)), fixing #1510.
+        Thanks to Timothee Carayol for reporting.
+        
+
+NOTES
+
+    o   The package uses two features (packageVersion() and \href in Rd) 
+        added to R 2.12.0 and is therefore dependent on that release.
+        A 'spurious warning' when checking a package using \href was
+        fixed in R 2.12.2 patched but we believe that warning can safely
+        be ignored in versions >= 2.12.0 and < 2.12.2 patched.
+                
+        
         *********************************************
         **                                         **
         **   CHANGES IN DATA.TABLE VERSION 1.6.3   **
@@ -67,9 +126,12 @@ NEW FEATURES
             1.148   0.000   1.158     ( 511 times faster )
 
         := in j can be combined with all types of i, such as binary
-        search. It can be used to add and remove columns efficiently,
-        too. Fast assigning within groups will be implemented in
-        future.
+        search, and used to add and remove columns efficiently.
+        Fast assigning within groups will be implemented in future.
+        
+        Reminder that data.frame and data.table both allow columns
+        of mixed types, including columns which themselves may be
+        type list; matrix may be one (atomic) type only.
         
         *Please note*, := is new and experimental.
         
@@ -100,7 +162,7 @@ BUG FIXES
         rather than giving an error, fixing bug #1468. Discovered
         indirectly thanks to a post from Jelmer Ypma.
         
-    o   Invalid keys are no longer arise when a non-data.table-aware
+    o   Invalid keys no longer arise when a non-data.table-aware
         package reorders the data; e.g.,
             setkey(DT,x,y)
             plyr::arrange(DT,y)       # same as DT[order(y)]

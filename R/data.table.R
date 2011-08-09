@@ -298,6 +298,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         } else {
             # i is not a data.table
             if (!is.logical(i) && !is.numeric(i)) stop("i has not evaluated to logical, integer or double")
+            if (is.logical(i)) i = which(i)
             if (which) return(i)  # e.g. DT["A",which=TRUE]
             irows = i
         }
@@ -391,20 +392,26 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         }
         lhs = as.character(jsub[[2]])
         clearkey = any(!is.na(match(lhs,key(x))))
-        m = match(lhs,names(x))    # TO DO: move this logic inside .Call assign as it's done a few times
+        m = match(lhs,names(x))
         if (!is.na(m)) {
-            lhs=m      # type of lhs signals to assign that it's not new column
-            xname = rho = NULL
+            cols = as.integer(m)
+            newcolnames=NULL
+            symbol = rho = NULL
         } else {
-            xname = as.character(substitute(x))
+            symbol = as.name(substitute(x))
             rho = parent.frame()
+            cols = as.integer(ncol(x)+1L)
+            newcolnames=lhs
         }
         ssrows = if (identical(irows,TRUE)) as.integer(NULL) else as.integer(irows)
-        .Call("assign",x,ssrows,lhs,rhs,clearkey,xname,rho,PACKAGE="data.table")
-        if (!missing(verbose) && verbose) cat("Assigned",if (!length(ssrows)) paste("all",nrow(x)) else length(ssrows),"row(s)\n")  # the !missing is for speed to avoid calling getOption() which then calls options().
-        return(x)  # Allows 'update and then' queries such as DT[J(thisitem),done:=TRUE][,sum(done)]
-                   # Could return number of rows updated but even when wrapped in invisible() it seems
-                   # the [.class method doesn't respect invisible, which may be confusing to user.
+        if (!missing(verbose) && verbose) cat("Assigning",if (!length(ssrows)) paste("all",nrow(x)) else length(ssrows),"row(s)\n")
+        # the !missing is for speed to avoid calling getOption() which then calls options().
+        # better to do verbosity before calling C, to make tracing easier if there's a problem in assign.c
+        revcolorder = .Internal(radixsort(cols, na.last=FALSE, decreasing=TRUE))  # currently length 1 anyway here, more relevant in the other .Call to assign. Might need a wrapper around .Call(assign), then
+        return(.Call("assign",x,ssrows,cols,newcolnames,rhs,clearkey,symbol,rho,revcolorder,PACKAGE="data.table"))
+        # Allows 'update and then' queries such as DT[J(thisitem),done:=TRUE][,sum(done)]
+        # Could return number of rows updated but even when wrapped in invisible() it seems
+        # the [.class method doesn't respect invisible, which may be confusing to user. 
         # NB: Tried assign(":=",function(lhs,rhs) {...},envir=parent.frame()) which worked for whole columns
         # but how to pass a subset of rows that way, or more crucially an assignment within groups (TO DO)
     }
@@ -800,41 +807,41 @@ tail.data.table = function(x, n=6, ...) {
 "[<-.data.table" = function (x, i, j, value) {
     if (!cedta() || missing(j)) return(`[<-.data.frame`(x, i, j, value))
     if (!missing(i)) {
-        if (is.atomic(i) && is.numeric(i)) {
-            i=as.integer(i)
-        } else {
-            # get i based on data.table-style indexing  
-            i = x[i, which=TRUE, mult="all"]
-        }
+        #if (is.atomic(i) && is.numeric(i)) {
+        #    i=as.integer(i)
+        #} else {
+            # get i based on data.table-style indexing
+            isub=substitute(i)
+            i = x[eval(isub), which=TRUE, mult="all"]
+        #}
     } else i = as.integer(NULL)   # meaning (to C code) all rows, without allocating 1:nrow(x) vector
     if (!is.atomic(j)) stop("j must be atomic vector, see ?is.atomic")
     if (any(is.na(j))) stop("NA in j")
     if (is.character(j)) {
         keycol = any(j %in% key(x))
-        m = match(j,names(x))
-        if (any(is.na(m))) {
-            if (!all(is.na(m))) stop("Some columns exist in this data.table, some don't. Can't mix.")
-        } else {
-            j=m    # signal to .Call assign (via j's type) that it's assignment to existing column(s), not adding
-        }
+        newcolnames = setdiff(j,names(x))
+        cols = as.integer(match(j, c(names(x),newcolnames)))
+        # We can now mix existing columns and new columns
     } else {
         if (!is.numeric(j)) stop("j must be vector of column name or positions")
-        if (j>ncol(x)) stop("Attempt to assign to column position greater than ncol(x). Create the column by name, instead. This logic intends to catch most likely user errors.")
+        if (any(j>ncol(x))) stop("Attempt to assign to column position greater than ncol(x). Create the column by name, instead. This logic intends to catch most likely user errors.")
         keycol = j %in% match(key(x),names(x))
-        j = as.integer(j)  # for convenience e.g. to convert 1 to 1L
+        cols = as.integer(j)  # for convenience e.g. to convert 1 to 1L
+        newcolnames = NULL
     }
-    if (is.integer(j[1]) && is.character(value) && length(value)<nrow(x) && is.factor(x[[j[1]]])) {
+    if (cols[1]<=ncol(x) && is.character(value) && length(value)<nrow(x) && is.factor(x[[cols[1]]])) {
         # kludge. Doesn't cope with single character on RHS, and multiple columns of varying types on LHS.
-        value = match(value,levels(x[[j[1]]]))
+        value = match(value,levels(x[[cols[1]]]))
         if (any(is.na(value))) stop("Some or all RHS not present in factor column levels")
         # The length(value)<nrow(x) is to allow coercion of factor columns to character, but we'll
         # do away with factor columns (by default) soon anyway
     }
-    .Call("assign",x,i,j,value,keycol,NULL,NULL,PACKAGE="data.table")
+    revcolorder = .Internal(radixsort(cols, na.last=FALSE, decreasing=TRUE))
+    .Call("assign",x,i,cols,newcolnames,value,keycol,NULL,NULL,revcolorder,PACKAGE="data.table")
     # no copy at all if user calls directly; i.e. `[<-.data.table`(x,i,j,value)
     # or uses data.table := syntax; i.e. DT[i,j:=value]
     # but, there is one copy by R in [<- dispatch to `*tmp*`; i.e. DT[i,j]<-value
-    # (IIUC, and, as of R 2.13.0)
+    # (IIUC, and, as of R 2.13.1)
 }
 
 "$<-.data.table" = function (x, name, value) {
@@ -842,11 +849,23 @@ tail.data.table = function(x, n=6, ...) {
     `[<-.data.table`(x,j=name,value=value)  # important i is missing here
 }
 
-cbind.data.table = function(...) {
-    data.table(...)    # for ease of use basically since people often think its like a matrix.
+cbind = function(...) {
+    # according to src/main/bind.c all the items passed to cbind must dispatch to the same
+    # cbind method otherwise it falls through to it's default internal cbind.
+    # base::cbind calls .Internal; it isn't generic. We tried creating cbind.data.table
+    # and cbind.data.frame, and setting both to the same closure but something or other
+    # wouldn't work that way. Hence masking cbind itself.
+    # All so that cbind(DT,data.frame(...)) works as you would expect (test 324)
+    # and also test 230.
+    if (is.data.table(list(...)[[1]]))
+        data.table(...)
+    else
+        base::cbind(...)
 }
 
-rbind.data.table = function (..., deparse.level=1) {
+rbind = function (...) {
+    # see long comments in cbind, same reason here
+    if (!is.data.table(list(...)[[1]])) return(base::rbind(...))
     match.names <- function(clabs, nmi) {
         if (all(clabs == nmi))
             NULL
@@ -861,7 +880,9 @@ rbind.data.table = function (..., deparse.level=1) {
     if (n == 0)
         return(structure(list(), class=c("data.table","data.frame"), row.names=.set_row_names(0)))
 
-    if (!all(sapply(allargs, is.data.table))) stop("All arguments must be data.tables")
+    # if (!all(sapply(allargs, is.data.table))) stop("All arguments must be data.tables")
+    # as of 1.6.4, can rbind a data.frame to a data.table ok
+    
     if (length(unique(sapply(allargs, ncol))) != 1) stop("All data.tables must have the same number of columns")
 
     l = list()
@@ -913,23 +934,39 @@ dimnames.data.table = function(x) {
     x
 }
 
+"names<-.data.table" = function(x,value)
+{
+    # if (!cedta())... not this time. When non data.table aware packages change names, we'd like to maintain the key, too.
+    if (!is.character(value)) stop("names must be type character")
+    if (length(value) != ncol(x)) stop("Can't assign ",length(value)," names to a ",ncol(x)," column data.table")
+    # If user calls names(DT)[2]="newname", R will (conveniently, for us) call this names<-.data.table function (notice no i) with 'value' same length as ncol 
+    m = match(key(x), attr(x,"names"))
+    attr(x,"names") = value  # TO DO: use setAttrib
+    if (haskey(x) && any(!is.na(m))) {
+        w = which(!is.na(m))
+        k = key(x)
+        k[w] = value[m[w]]
+        attr(x,"sorted") = k   # TO DO: use setAttrib
+    }
+    x
+}
+
+
 last = function(x) x[NROW(x)]     # last row for a data.table, last element for a vector.
 
 within.data.table <- function (data, expr, keep.key = FALSE, ...) # basically within.list but with a check to avoid messing up the key
 {
     if (!cedta()) return(NextMethod())
     parent <- parent.frame()
-    e <- evalq(new.env(), data, parent) # new env inside data that sees column names
+    e <- evalq(environment(), data, parent)
     eval(substitute(expr), e)
     l <- as.list(e)
-    if (length(l)!=1) stop("Can only assign one column at a time currently via within")
-                      # TO DO: allow multiple RHS in assign.c
-    value = l[[1]]
-    j = names(l)[1]
-    keycol = j %in% key(data)
-    m = match(j,names(data))
-    if (!is.na(m)) j=m
-    .Call("assign",data,i=as.integer(NULL),j,value,keycol,NULL,NULL,PACKAGE="data.table")
+    l <- l[!sapply(l, is.null)]
+    nD <- length(del <- setdiff(names(data), (nl <- names(l))))
+    if (length(nl)) data[,nl] <- l
+    if (nD) data[,del] <- NULL
+    if (!keep.key) attr(data,"sorted") <- NULL
+    data
 }
 
 
@@ -937,20 +974,16 @@ transform.data.table <- function (`_data`, ...) # basically transform.data.frame
 {
     if (!cedta()) return(NextMethod())
     e <- eval(substitute(list(...)), `_data`, parent.frame())
-    if (length(e)>1) stop("Only 1 at a time")
     tags <- names(e)
     inx <- match(tags, names(`_data`))
     matched <- !is.na(inx)
     if (any(matched)) {
-        j = inx[!is.na(inx)]
-        keycol = j %in% names(`_data`)
-        `_data` = .Call("assign",`_data`,i=as.integer(NULL),j,e[[1]],keycol,NULL,NULL,PACKAGE="data.table")
+        `_data`[,inx[matched]] <- e[matched]
+        `_data` <- data.table(`_data`)
     }
-    if (!all(matched)) {
-        j = tags[is.na(inx)]        
-        `_data` = .Call("assign",`_data`,i=as.integer(NULL),j,e[[1]],keycol=FALSE,NULL,NULL,PACKAGE="data.table")
-    }
-    `_data`
+    if (!all(matched))
+        do.call("data.table", c(list(`_data`), e[!matched]))
+    else `_data`
 }
 
 #subset.data.table <- function (x, subset, select, ...) # not exported or documented, yet

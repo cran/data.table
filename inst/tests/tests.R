@@ -267,17 +267,17 @@ test(106, all(dt + dt > 1))
 test(107, dt + dt, dt * 2L)
 
 # test a few other generics:
-test(108, dt, {tt=data.table(t(t(dt)));storage.mode(tt[[2]])="integer";storage.mode(tt[[3]])="integer";tt})
+test(108, dt, data.table(t(t(dt)),key="A,B"))
 test(109, all(!is.na(dt)))
 dt2 <- dt
-dt2$A[1] <- NA
+dt2$A[1] <- NA   # removes key
 test(110, sum(is.na(dt2)), 1L)
-test(111, dt, na.omit(dt))
+test(111, {key(dt)=NULL;dt}, na.omit(dt))
 test(112, dt2[2:nrow(dt2),A], na.omit(dt2)$A)
 
 # test [<- assignment:
 dt2[is.na(dt2)] <- 1L
-test(113, dt, dt2)
+test(113, {key(dt)=NULL;dt}, dt2)   # key should be dropped because we assigned to a key column
 # want to discourage this going forward (inefficient to create RHS like this)
 # dt2[, c("A", "B")] <- dt1[, c("A", "B"), with = FALSE]
 # test(114, dt1, dt2)
@@ -798,14 +798,21 @@ DT = data.table(grp=1:3,A1=1:9,A2=10:18,A3=19:27,B1=101:109,B2=110:118,B3=119:12
 test(297,DT[,list(A1=sum(A1),A2=sum(A2),A3=sum(A3)),by=grp], DT[,lapply(.SD,sum),by=grp,.SDcols=2:4]) 
 
 DT = data.table(a=1:3,b=4:6)
-test(298, {DT$b<-NULL;DT}, data.table(a=1:3))  # delete column (efficiently)
-tt = try(DT$c <- as.character(DT$c), silent=TRUE)
+test(298, {DT$b<-NULL;DT}, data.table(a=1:3))  # delete column
+tt = try(DT$c <- as.character(DT$c), silent=TRUE) 
 test(299, inherits(tt,"try-error") && length(grep("zero length", tt)))  # to simulate RHS which could (due to user error) be non NULL but zero length
-DT[,c:=42L]   # add column (efficiently)
-test(299.1, DT, data.table(a=1:3,c=42L))
+test(299.1, DT[,c:=42L], data.table(a=1:3,c=42L))  # add column (efficiently), and check result is new table
+test(299.15, DT, data.table(a=1:3,c=42L))   # the := was by reference
+
 tt = try(DT[2,c:=42],silent=TRUE)
-test(299.2, inherits(tt,"try-error") && length(grep("(converted from warning).*Coerced numeric RHS to integer", tt)))  # to simulate RHS which could (due to user error) be non NULL but zero length
+test(299.2, inherits(tt,"try-error") && length(grep("[(]converted from warning[)].*Coerced numeric RHS to integer to match the column's type.*length 3 [(]nrows of entire table[)]", tt)))  
 # also see tests 302 and 303.  (Ok, new test file for fast assign would be tidier).
+test(299.3, DT[,c:=rep(FALSE,nrow(DT))], data.table(a=1:3,c=FALSE))  # replace c column with logical
+tt = try(DT[2,c:=42],silent=TRUE)
+test(299.4, inherits(tt,"try-error") && length(grep("[(]converted from warning[)].*Coerced numeric RHS to logical to match the column's type.*length 3 [(]nrows of entire table[)]", tt)))
+tt = try(DT[2,c:=42L],silent=TRUE)
+test(299.5, inherits(tt,"try-error") && length(grep("[(]converted from warning[)].*Coerced integer RHS to logical to match the column's type.*length 3 [(]nrows of entire table[)]", tt)))
+
 
 # Test bug fix #1468, combining i and by.
 DT = data.table(a=1:3,b=1:9,v=1:9,key="a,b")
@@ -829,6 +836,77 @@ if ("package:plyr" %in% search()) {
 } else {
     cat("Test 304 not run. If required call library(plyr) first.\n")
 }
+
+# Test that changing colnames keep key in sync.
+# TO DO: will have to do this for secondary keys, too, when implemented.
+DT = data.table(x=1:10,y=1:10,key="x")
+names(DT) <- c("a", "b")
+test(305, key(DT), "a")
+names(DT)[1] <- "R"
+test(306, key(DT), "R")
+
+names(DT)[2] <- "S"
+test(307, key(DT), "R")
+colnames(DT) = c("a","b")
+test(308, key(DT), "a")
+colnames(DT)[1] = "R"
+test(309, key(DT), "R")
+
+# Test :=NULL
+DT = data.table(x=1:5,y=6:10,z=11:15,key="y")
+test(310, DT[,x:=NULL], data.table(y=6:10,z=11:15,key="y"))  # delete first
+test(311, DT[,y:=NULL], data.table(z=11:15))    # deleting key column also removes key
+test(312, DT[,z:=NULL], data.table(NULL))      # deleting all
+tt = try(DT[,a:=1:3], silent=TRUE)
+test(313, inherits(tt,"try-error"))   # cannot := a new column to NULL data.table, currently. Must use data.table()
+DT = data.table(a=20:22)
+test(314, {DT[,b:=23:25];DT[,c:=26:28]}, data.table(a=20:22,b=23:25,c=26:28))   # add in series
+test(315, DT[,c:=NULL], data.table(a=20:22,b=23:25))   # delete last
+tt = try(DT[,c:=NULL],silent=TRUE)
+test(316, inherits(tt,"try-error") && length(grep("column is not present", tt)))
+
+
+# Test adding, removing and updating columns via [<- in one step
+DT = data.table(a=1:6,b=1:6,c=1:6)
+DT[,c("a","c","d","e")] <- list(NULL,11:16,42L,21:26)
+test(317, DT, data.table(b=1:6,c=11:16,d=42L,e=21:26))
+
+# Other assignments (covers DT[x==2, y:=5] too, #1502)
+DT[e<24,"b"] <- 99L
+test(318, DT, data.table(b=c(99L,99L,99L,4L,5L,6L),c=11:16,d=42L,e=21:26))
+test(319, DT[b!=99L,b:=99L], data.table(b=99L,c=11:16,d=42L,e=21:26))
+
+# previous within functionality restored, #1498
+DT = data.table(a=1:10)
+test(320, within(DT, {b <- 1:10; c <- a + b})[,list(a,b,c)], data.table(a=1:10,b=1:10,c=as.integer(seq(2,20,length=10))))
+# not sure why within makes columns in order a,c,b, but it seems to be a data.frame thing, too.
+test(321, transform(DT,b=42L,e=a), data.table(a=1:10,b=42L,e=1:10))
+DT = data.table(a=1:5, b=1:5)
+test(322, within(DT, rm(b)), data.table(a=1:5))
+
+# check that cbind dispatches on first argument as expected
+test(323, cbind(DT,DT), data.table(a=1:5,b=1:5,`a.1`=1:5,`b.1`=1:5))
+test(324, cbind(DT,data.frame(c=1:5)), data.table(a=1:5,b=1:5,c=1:5))
+test(325, rbind(DT,DT), data.table(a=c(1:5,1:5),b=1:5))
+test(326, rbind(DT,data.frame(a=6:10,b=6:10)), data.table(a=1:10,b=1:10))
+
+# test removing multiple columns, and non-existing ones, #1510
+DT = data.table(a=1:5, b=6:10, c=11:15)
+test(327, within(DT,rm(a,b)), data.table(c=11:15))
+test(328, within(DT,rm(b,c)), data.table(a=1:5))
+test(329, within(DT,rm(b,a)), data.table(c=11:15))
+tt = try(within(DT,rm(b,c,d)),silent=TRUE)
+test(330, inherits(tt,"try-error") && length(grep("[(]converted from warning[)].*object 'd' not found",tt)))
+test(331, suppressWarnings(within(DT,rm(b,c,d))), data.table(a=1:5))
+DT[,c("b","a")]=NULL
+test(332, DT, data.table(c=11:15))
+test(333, within(DT,rm(c)), data.table(NULL))
+DT = data.table(a=1:5, b=6:10, c=11:15)
+DT[,2:1]=NULL
+test(334, DT, data.table(c=11:15))
+tt = try(DT[,2:1]<-NULL,silent=TRUE)
+test(335, inherits(tt,"try-error") && length(grep("Attempt to assign to column",tt)))
+
 
 
 ## See test-* for more tests
