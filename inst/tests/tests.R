@@ -538,7 +538,7 @@ test(217, DT[J(2),v]$v, 2L)
 DT = data.table(a=c(1,2.1,3),v=1:3)
 tt = try(setkey(DT,a), silent=TRUE)
 test(218, inherits(tt,"try-error"))
-test(219, length(grep("losing information", tt)))
+test(219, length(grep("losing fractional data", tt)))
 
 # tests of quote()-ed expressions in i. Bug #1058
 DT = data.table(a=1:5,b=6:10,key="a")
@@ -790,6 +790,19 @@ f = function(x){ force(x)
 f(DT)
 test(295,DT,data.table(a=42L,b=4:6))  # := was by reference (fast) and dropped the key, too, because assigned to key column
 
+DT = data.table(a=1:3,b=4:6)
+f = function(x){ x = copy(x)
+                 setkey(x) }
+f(DT)
+test(295.1,key(DT),NULL)
+setkey(DT,a)
+f = function(x){ x = copy(x)
+                 x[,b:=10:12][J(2),b][[2]] }   # test copy retains key
+test(295.2,f(DT),11L)
+test(295.3,DT,data.table(a=1:3,b=4:6,key="a"))  # The := was on the local copy
+
+
+
 # new feature added 1.6.3, that key can be vector.
 test(296,data.table(a=1:3,b=4:6,key="a,b"),data.table(a=1:3,b=4:6,key=c("a","b")))
 
@@ -907,6 +920,50 @@ test(334, DT, data.table(c=11:15))
 tt = try(DT[,2:1]<-NULL,silent=TRUE)
 test(335, inherits(tt,"try-error") && length(grep("Attempt to assign to column",tt)))
 
+DT = data.table(a=1:2, b=1:6)
+test(336, DT[,z:=a/b], data.table(a=1:2,b=1:6,z=(1:2)/(1:6)))
+test(337, DT[3:4,z:=a*b], data.table(a=1:2,b=1:6,z=c(1,1,3,8,1/5,2/6)))
+
+
+# test LHS of := when with=FALSE
+DT = data.table(a=1:3, b=4:6)
+test(338, DT[,2:=42L,with=FALSE], data.table(a=1:3,b=42L))
+test(339, DT[,2:1:=list(10:12,3L),with=FALSE], data.table(a=3L,b=10:12))
+test(340, DT[,"a":=7:9,with=FALSE], data.table(a=7:9,b=10:12))
+test(341, DT[,c("a","b"):=1:3,with=FALSE], data.table(a=1:3,b=1:3))
+mycols = "a"
+test(342, DT[,mycols:=NULL,with=FALSE], data.table(b=1:3))
+mynewcol = "newname"
+test(343, DT[,mynewcol:=21L,with=FALSE], data.table(b=1:3,newname=21L))
+mycols = 1:2
+test(344, DT[,mycols:=NULL,with=FALSE], data.table(NULL))
+
+# Test incorrect 'can't coerce without losing precision' message
+# It seems that the .Internal rbind of two data.frame coerces IDate to numeric. Tried defining
+# "[<-.IDate" as per Tom's suggestion, and c.IDate to no avail (maybe because the .Internal code
+# in bind.c doesn't look up package methods?). Anyway the coercion from numeric
+# to integer needed fixing anyway (the all.equal would complain about attributes even though
+# there wasn't any fractional data present), and it works for this too, now.
+DF = data.frame(x=as.IDate(c("2010-01-01","2010-01-02")), y=1:6)
+DT = as.data.table(rbind(DF,DF))
+test(345, DT[,sum(y),by=x], data.table(x=as.IDate(c("2010-01-01","2010-01-02")),V1=c(18L,24L)))
+# ad hoc by coerces double to integer with a check
+test(346, setkey(DT,x)[J(as.IDate("2010-01-02"))], data.table(x=as.IDate("2010-01-02"),y=rep(c(2L,4L,6L),2),key="x"))
+# setkey also coerces double to integer with a check
+
+# Test that invalid keys are reset, without user needing to remove key using key(DT)=NULL first
+DT = data.table(a=letters[1:3],b=letters[6:4],key="a")
+attr(DT,"sorted")="b"  # user can go under the hood
+tt = try(setkey(DT,b),silent=TRUE)
+test(347, inherits(tt,"try-error") && length(grep("[(]converted from warning[)].*Already keyed by this key but had invalid row order, key rebuilt",tt)))
+DT = data.table(a=letters[1:3],b=letters[6:4],key="a")
+attr(DT,"sorted")="b"
+test(348, suppressWarnings(setkey(DT,b)), data.table(a=letters[3:1],b=letters[4:6],key="b"))
+
+# Test .N==0 for no match groups regardless of whether nomatch is 0 or NA
+DT = data.table(a=1:2,b=1:6,key="a")
+test(349, DT[J(2:3),.N,nomatch=NA]$.N, c(3L,0L))
+test(350, DT[J(2:3),.N,nomatch=0]$.N, c(3L,0L))
 
 
 ## See test-* for more tests

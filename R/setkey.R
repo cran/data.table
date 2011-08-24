@@ -22,22 +22,24 @@ setkey = function(x, ..., loc=parent.frame(), verbose=getOption("datatable.verbo
         miss = !(cols %in% colnames(x))
         if (any(miss)) stop("some columns are not in the data.table: " %+% cols[miss])
     }
-    if (identical(key(x),cols)) return(invisible()) # table is already key'd by those columns
+    alreadykeyed = identical(key(x),cols)
     copied = FALSE   # in future we hope to be able to setkeys on any type, this goes away, and saves more potential copies
     for (i in cols) {
         if (is.character(x[[i]])) {
             x[[i]] = factor(x[[i]])
+            if (verbose) cat("setkey changed the type of column '",i,"' from character to factor.\n",sep="")
             copied=TRUE
             next
         }
         if (typeof(x[[i]]) == "double") {
-            toint = as.integer(x[[i]])
-            if (identical(all.equal(x[[i]],toint),TRUE)) {
-                x[[i]] = toint
+            toint = as.integer(x[[i]])   # see [.data.table for similar logic, and comments
+            if (isTRUE(all.equal(as.vector(x[[i]]),toint))) {
+                mode(x[[i]]) = "integer"
+                if (verbose) cat("setkey changed the type of column '",i,"' from numeric to integer, no fractional data present.\n",sep="")
                 copied=TRUE
                 next
             }
-            stop("Column '",i,"' cannot be auto converted to integer without losing information.")
+            stop("Column '",i,"' cannot be coerced to integer without losing fractional data.")
         }
         if (is.factor(x[[i]])) {
             # check levels are sorted, if not sort them, test 150
@@ -46,6 +48,7 @@ setkey = function(x, ..., loc=parent.frame(), verbose=getOption("datatable.verbo
                 r = rank(l)
                 l[r] = l
                 x[[i]] = structure(r[as.integer(x[[i]])], levels=l, class="factor")
+                if (verbose) cat("setkey detected the levels of column '",i,"' were not sorted, so sorted them.\n",sep="")
                 copied=TRUE
             }
             next
@@ -54,16 +57,21 @@ setkey = function(x, ..., loc=parent.frame(), verbose=getOption("datatable.verbo
     }
     if (!is.character(cols) || length(cols)<1) stop("'cols' should be character at this point in setkey")
     o = fastorder(x, cols, verbose=verbose)
-    .Call("reorder",x,o,cols, PACKAGE="data.table")
+    if (is.unsorted(o)) {
+        if (alreadykeyed) warning("Already keyed by this key but had invalid row order, key rebuilt. If you didn't go under the hood please let maintainer('data.table') know so the root cause can be fixed.")
+        .Call("reorder",x,o, PACKAGE="data.table")
+    }
+    if (!alreadykeyed) .Call("Rf_setAttrib",x,"sorted",cols,PACKAGE="data.table")
     if (copied) {
-        if (verbose) cat("setkey changed the type of a column, incurring a copy\n")
+        if (verbose) cat("setkey incurred a copy of the whole table, due to the coercion(s) above.\n")
+        if (alreadykeyed) warning("Already keyed by this key but had invalid structure (e.g. unordered factor levels, or incorrect column types), key rebuilt. If you didn't go under the hood please let maintainer('data.table') know so the root cause can be fixed.")
         assign(name,x,envir=loc)
     }    
     # Was :
     # ans = x[o]   # copy whole table
     # attr(x,"sorted") <<- cols  # now done inside reorder by reference
     # assign(name,ans,envir=loc)
-    invisible()
+    invisible(x)
 }
 
 radixorder1 <- function(x) {

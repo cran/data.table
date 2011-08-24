@@ -212,7 +212,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         if (!is.name(isub))
             i = eval(isub, envir=x, enclos=parent.frame())
         else 
-            i =eval(isub,parent.frame())
+            i = eval(isub,parent.frame())
         if (is.logical(i)) {
             if (identical(i,NA)) i = NA_integer_  # see DT[NA] thread re recycling of NA logical
             else i[is.na(i)] = FALSE              # avoids DT[!is.na(ColA) & !is.na(ColB) & ColA==ColB], just DT[ColA==ColB]
@@ -298,8 +298,13 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         } else {
             # i is not a data.table
             if (!is.logical(i) && !is.numeric(i)) stop("i has not evaluated to logical, integer or double")
-            if (is.logical(i)) i = which(i)
-            if (which) return(i)  # e.g. DT["A",which=TRUE]
+            if (which) {
+                if (is.logical(i)) {
+                    if (length(i)==nrow(x)) return(which(i))   # e.g. DT[colA>3,which=TRUE]
+                    else return((1:nrow(x))[i])   # e.g. recycling DT[c(TRUE,FALSE),which=TRUE], for completeness
+                }
+                else return(i)  # e.g. DT["A",which=TRUE]
+            }
             irows = i
         }
         if (missing(j)) {
@@ -339,6 +344,66 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         }
     } # end of  if !missing(i)
     if (missing(j)) stop("logical error, j missing")
+    jsub = substitute(j)
+    if (is.null(jsub)) return(NULL)
+    jsubl = as.list(jsub)    
+    if (identical(jsubl[[1]],quote(eval))) {
+        jsub = eval(jsubl[[2]],parent.frame())
+        if (is.expression(jsub)) jsub = jsub[[1]]
+    }
+    av = all.vars(jsub,TRUE)
+    if (":=" %in% av) {
+        if (!missing(by)) stop("Combining := in j with by is not yet implemented. Please let maintainer('data.table') know if you are interested in this.")
+        if (bywithoutby && nrow(i)>1) stop("combining bywithoutby with := in j is not yet implemented.")
+        if (as.character(jsub[[1]]) != ":=") stop("Currently only one `:=` may be present in j. This may be expanded in future.")
+        rhsav = all.vars(jsub[[3]],TRUE)
+        if (length(rhsav) && length(rhsvars <- intersect(rhsav,colnames(x)))) {
+            tmpx = if (identical(irows,TRUE)) x[,rhsvars,with=FALSE] else x[irows,rhsvars,with=FALSE]
+            # The 'if' isn't necessary but we do that for a bit of speed.
+            rhs = eval(jsub[[3]], envir=tmpx, enclos=parent.frame())
+        } else {
+            rhs = eval(jsub[[3]], envir=parent.frame(), enclos=parent.frame())
+        }
+        if (with) {
+            if (!is.name(jsub[[2]])) stop("LHS of := must be a single column name, when with=TRUE. When with=FALSE the LHS may be a vector of column names or positions.")
+            lhs = as.character(jsub[[2]])
+        } else {
+            lhs = eval(jsub[[2]], envir=parent.frame(), enclos=parent.frame())
+            if (!is.atomic(lhs)) stop("LHS of := must evaluate to an atomic vector (column names or positions) when with=FALSE")
+            if (is.numeric(lhs)) {
+                if (!all(1<=lhs | lhs<=ncol(x))) stop("LHS of := out of bounds")
+                lhs = colnames(x)[lhs]
+            }
+            if (!is.character(lhs)) stop("Logical error. LHS of := wasn't atomic column names or positions")
+        }
+        clearkey = any(!is.na(match(lhs,key(x))))
+        m = match(lhs,names(x))
+        if (!any(is.na(m))) {
+            cols = as.integer(m)
+            newcolnames=NULL
+            symbol = rho = NULL
+        } else {
+            if (length(m)!=1) stop("Logical error. Can only add new columns one at a time currently")
+            symbol = as.name(substitute(x))
+            rho = parent.frame()
+            cols = as.integer(ncol(x)+1L)
+            newcolnames=lhs
+        }
+        ssrows = if (!is.logical(irows)) as.integer(irows)        # DT[J("a"),z:=42L]
+                 else if (identical(irows,TRUE)) as.integer(NULL) # DT[,z:=42L]
+                 else if (length(irows)==nrow(x)) which(irows)    # DT[colA>3,z:=42L]
+                 else (1:nrow(x))[irows]                          # DT[c(TRUE,FALSE),z:=42L] (recycling)            
+        if (!missing(verbose) && verbose) cat("Assigning",if (!length(ssrows)) paste("all",nrow(x)) else length(ssrows),"row(s)\n")
+        # the !missing is for speed to avoid calling getOption() which then calls options().
+        # better to do verbosity before calling C, to make tracing easier if there's a problem in assign.c
+        revcolorder = .Internal(radixsort(cols, na.last=FALSE, decreasing=TRUE))  # currently length 1 anyway here, more relevant in the other .Call to assign. Might need a wrapper around .Call(assign), then
+        return(.Call("assign",x,ssrows,cols,newcolnames,rhs,clearkey,symbol,rho,revcolorder,PACKAGE="data.table"))
+        # Allows 'update and then' queries such as DT[J(thisitem),done:=TRUE][,sum(done)]
+        # Could return number of rows updated but even when wrapped in invisible() it seems
+        # the [.class method doesn't respect invisible, which may be confusing to user. 
+        # NB: Tried assign(":=",function(lhs,rhs) {...},envir=parent.frame()) which worked for whole columns
+        # but how to pass a subset of rows that way, or more crucially an assignment within groups (TO DO)
+    }
     if (!with) {
         if (!length(j)) return(data.table(NULL))
         if (is.character(j)) j = match(j, names(x))
@@ -363,57 +428,10 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         attr(ans,"row.names") = .set_row_names(nrow(ans))
         return(ans)
     }
-    jsub = substitute(j)
-    if (is.null(jsub)) return(NULL)
-    jsubl = as.list(jsub)    
-    
     if (!missing(by) && !missing(i)) {
         x = x[irows]
         # TO DO: efficiency gain by taking only the columns of x that j and by need.
         bywithoutby=FALSE
-    }
-    if (identical(jsubl[[1]],quote(eval))) {
-        jsub = eval(jsubl[[2]],parent.frame())
-        if (is.expression(jsub)) jsub = jsub[[1]]
-    }
-    av = all.vars(jsub,TRUE)
-    if (":=" %in% av) {
-        if (!missing(by)) stop("Combining := in j with by is not yet implemented. Please let maintainer('data.table') know if you are interested in this.")
-        if (bywithoutby && nrow(i)>1) stop("combining bywithoutby with := in j is not yet implemented.")
-        if (as.character(jsub[[1]]) != ":=") stop("Currently only one `:=` may be present in j. This may be expanded in future.")
-        rhsav = all.vars(jsub[[3]],TRUE)
-        if (length(rhsav) && length(rhsvars <- intersect(rhsav,colnames(x)))) {
-            #rhsvars = intersect(rhsav,colnames(x))
-            #if (length(rhsvars)) {
-            tmpx = x[irows,rhsvars,with=FALSE]
-            rhs = eval(jsub[[3]], envir=tmpx, enclos=parent.frame())
-        } else {
-            rhs = eval(jsub[[3]], envir=parent.frame(), enclos=parent.frame())
-        }
-        lhs = as.character(jsub[[2]])
-        clearkey = any(!is.na(match(lhs,key(x))))
-        m = match(lhs,names(x))
-        if (!is.na(m)) {
-            cols = as.integer(m)
-            newcolnames=NULL
-            symbol = rho = NULL
-        } else {
-            symbol = as.name(substitute(x))
-            rho = parent.frame()
-            cols = as.integer(ncol(x)+1L)
-            newcolnames=lhs
-        }
-        ssrows = if (identical(irows,TRUE)) as.integer(NULL) else as.integer(irows)
-        if (!missing(verbose) && verbose) cat("Assigning",if (!length(ssrows)) paste("all",nrow(x)) else length(ssrows),"row(s)\n")
-        # the !missing is for speed to avoid calling getOption() which then calls options().
-        # better to do verbosity before calling C, to make tracing easier if there's a problem in assign.c
-        revcolorder = .Internal(radixsort(cols, na.last=FALSE, decreasing=TRUE))  # currently length 1 anyway here, more relevant in the other .Call to assign. Might need a wrapper around .Call(assign), then
-        return(.Call("assign",x,ssrows,cols,newcolnames,rhs,clearkey,symbol,rho,revcolorder,PACKAGE="data.table"))
-        # Allows 'update and then' queries such as DT[J(thisitem),done:=TRUE][,sum(done)]
-        # Could return number of rows updated but even when wrapped in invisible() it seems
-        # the [.class method doesn't respect invisible, which may be confusing to user. 
-        # NB: Tried assign(":=",function(lhs,rhs) {...},envir=parent.frame()) which worked for whole columns
-        # but how to pass a subset of rows that way, or more crucially an assignment within groups (TO DO)
     }
     if ((missing(by) && !bywithoutby) || nrow(x)<1) {
         jvars = intersect(av,colnames(x))
@@ -480,12 +498,12 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
                 next
             }
             if (typeof(byval[[jj]]) == "double") {
-                toint = as.integer(byval[[jj]])
-                if (isTRUE(all.equal(byval[[jj]],toint))) {
-                    byval[[jj]] = toint
+                toint = as.integer(byval[[jj]])  # drops attributes (such as class) so as.vector() needed on next line
+                if (isTRUE(all.equal(as.vector(byval[[jj]]),toint))) {
+                    mode(byval[[jj]]) = "integer"  # retains column attributes (such as IDateTime class)
                     next
                 }
-                else stop("Column ",jj," of 'by' is float and cannot be auto converted to integer without losing information.")
+                else stop("Column ",jj," of 'by' is type 'double' and contains fractional data so cannot be coerced to integer in this particular case without losing information.")
             }
             if (!typeof(byval[[jj]]) %in% c("integer","logical")) stop("column or expression ",jj," of 'by' is type ",typeof(byval[[jj]]),". Do not quote column names. Useage: DT[,sum(colC),by=list(colA,month(colB))]")
         }
@@ -857,15 +875,16 @@ cbind = function(...) {
     # wouldn't work that way. Hence masking cbind itself.
     # All so that cbind(DT,data.frame(...)) works as you would expect (test 324)
     # and also test 230.
+    # The get via match is for compatibility with IRanges (for example) which also masks rbind and cbind.
     if (is.data.table(list(...)[[1]]))
         data.table(...)
     else
-        base::cbind(...)
+        get("cbind",pos=1+match("package:data.table",search(),nomatch=1))(...)
 }
 
 rbind = function (...) {
     # see long comments in cbind, same reason here
-    if (!is.data.table(list(...)[[1]])) return(base::rbind(...))
+    if (!is.data.table(list(...)[[1]])) return(get("rbind",pos=1+match("package:data.table",search(),nomatch=1))(...))
     match.names <- function(clabs, nmi) {
         if (all(clabs == nmi))
             NULL
@@ -1109,6 +1128,11 @@ split.data.table = function(...) {
 
 # TO DO, add more warnings e.g. for by(), telling user what the data.table syntax is but letting them dispatch to data.frame if they want
 
+
+copy = function(x) .Call("Rf_duplicate",x,PACKAGE="data.table")
+# TO DO: speedup to duplicate.c using memcpy, suggested to r-devel, would benefit copy()
+# Could construct data.table and use memcpy ourselves but deep copies e.g. list() columns
+# may be tricky; more robust to rely on R's duplicate which deep copies.
 
 
 
