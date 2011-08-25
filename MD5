@@ -1,12 +1,12 @@
-0ad796e612cbd6834b9480fe7241af34 *DESCRIPTION
+8911a2e425a8678d8ce6dfdfbb0cad98 *DESCRIPTION
 16623d4c3bf14881e7f3a5b055b89e6e *NAMESPACE
-9cc3261455a45f50416767cf3f852261 *NEWS
+61a817cccb89dc3fd53f0ef3cc61b100 *NEWS
 4377e4b917c44366f66862324c8fd32a *R/AllS4.R
 ddd031a062e1dd67f6f4046ba5c81a3c *R/IDateTime.R
 fd7d3da9fb68fbfec72a1d2bd9520520 *R/between.R
 4f2c9ac1e8d20c6c9bac855b72af1518 *R/c.factor.R
 9d129ea98d1b443ee62ddebeabdb98d9 *R/cedta.R
-d6b9e927b678fdbd00ab4324a6f0e2ed *R/data.table.R
+9311ca96b27192e6be75a205e5b8b4bb *R/data.table.R
 ebdea3a58a13a82779f9555fc2731d1d *R/duplicated.R
 aaabed6c047ac62c2048e2afaec22637 *R/duplist.R
 3b9335ac96755299acdd478e94aaaf52 *R/getdots.R
@@ -16,7 +16,7 @@ f83b94fbcb77bbc1e277ac704216e87e *R/merge.R
 e2ea6a46e722023a8f7fd83c60b397f6 *R/onAttach.R
 62ffc302a112caf6e7db5e9bfd6b1049 *R/plus.R
 3a7fe377dd687e704e547870bb5ba439 *R/read.R
-3437f2f1afb1d76e1d441d398aa1b71e *R/setkey.R
+72107d2f869bbcbfdd0b7c47f8309c00 *R/setkey.R
 2366950e47afa5434e5e34206754a541 *R/sortedmatch.R
 3f9ce3a0ed94d4593ad8bc4793fd6d1e *R/tables.R
 70310953a3cc8a378a76d00530cca189 *R/take.R
@@ -27,11 +27,11 @@ e81f1f4a3fd57b9da1e9ff29fd304522 *R/trim.R
 0ce94e31d0313fee07fd06688ca6e264 *R/which.last.R
 c6c62de5cc052bec5a12ac45b60a23e1 *R/zzz.R
 fafd2a632430cbba243ed3b2dbac7ad4 *inst/doc/datatable-faq.Rnw
-e93a7da47b65c05918ed01c0624b252c *inst/doc/datatable-faq.pdf
+ffd81a0a6ad8deb6259dd948ef48e9f9 *inst/doc/datatable-faq.pdf
 a6fdae7bd9128a39bae825737b58d6cc *inst/doc/datatable-intro.Rnw
-2adbb874676621446829b23ee4eed9d7 *inst/doc/datatable-intro.pdf
+0baf877e7e24fcc187cbcd194b53d692 *inst/doc/datatable-intro.pdf
 efaef73fef017346b8b0fa5e1414eb29 *inst/doc/datatable-timings.Rnw
-eca1f82cfe46831131fe41c4133858ff *inst/doc/datatable-timings.pdf
+9559146ba06569e61705b5e18648ca13 *inst/doc/datatable-timings.pdf
 6e8ff5d0e3ffe0bff606a006dcbca24e *inst/tests/test-S4.R
 a57248f9623c47d633a16ec91a768126 *inst/tests/test-merge.R
 8d9ca53c8b934bcc2799304a5ac4aca3 *inst/tests/tests.R
@@ -58,5 +58,6 @@ d91cf3801cfcfaee7aeae3aa799f2cdd *src/duplist.c
 fec6911554acfbcc0bbfc2ffde8d0bc3 *src/readfile.c
 fdb4cba1cb56a92a3d9cf0fc460b50e7 *src/reorder.c
 bb8a838808b4aae3c47b7bb02680ce05 *src/sortedmatch.c
+b08d6d5d437ba027c28dda62016e1f80 *src/wrappers.c
 105cff3529e59e908e3e655e6ea1f6b3 *tests/test-all.R
 ace3c4ce566cb1ab76b6c283e3af8326 *tests/tests.R
