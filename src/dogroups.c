@@ -11,22 +11,33 @@ EXPORT SEXP dogroups();
 #endif
 
 int sizes[100];  // max appears to be FUNSXP = 99, see Rinternals.h
+char typename[20][100];  // The typename in main/inspect.c seems static (not available for use by packages), uses a switch, and uses the internal names.
 
-static SEXP growVector(SEXP x, R_len_t newlen, int size);
+SEXP growVector(SEXP x, R_len_t newlen);
 int sizesSet=0;
+
 void setSizes()
 {
     int i;
-    for (i=0;i++;i<100) sizes[i]=0;
+    for (i=0;i++;i<100) {
+        sizes[i]=0;
+        sprintf(typename[i],"unsupported type %d", i);
+    }
     // only these types are currently allowed as column types :
     sizes[INTSXP] = sizeof(int);     // integer and factor
+    strcpy(typename[INTSXP], "integer");
     sizes[LGLSXP] = sizeof(int);     // logical
+    strcpy(typename[LGLSXP], "logical");
     sizes[REALSXP] = sizeof(double); // numeric
+    strcpy(typename[REALSXP], "numeric");
     sizes[STRSXP] = sizeof(SEXP *);  // character
+    strcpy(typename[STRSXP], "character");
     sizes[VECSXP] = sizeof(SEXP *);  // a column itself can be a list()
+    strcpy(typename[VECSXP], "list");
     sizesSet=1;
 }
 #define SIZEOF(x) sizes[TYPEOF(x)]
+
 
 SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jexp, SEXP env, SEXP testj, SEXP byretn, SEXP byval, SEXP itable, SEXP icols, SEXP iSD, SEXP nomatchNA, SEXP verbose)
 {
@@ -215,21 +226,29 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jex
         INTEGER(N)[0] = INTEGER(starts)[i] == 0 ? 0 : INTEGER(lens)[i];  // .N is number of rows matched to, regardless of whether nomatch is 0 or NA
         for (j=0; j<length(SD); j++) SETLENGTH(VECTOR_ELT(SD,j),thislen);
         PROTECT(jval = eval(jexp, env));
-        if (length(byval)+length(jval) != length(ans)) error("j doesn't evaluate to the same number of columns for each group");  // this would be a problem even if we unlisted afterwards. This way the user finds out earlier though so he can fix and rerun sooner.
+        // length(jval) may be 0 when j is plot or other side-effect only. Otherwise, even NULL in user j
+        // will be auto wrapped to make list(NULL) (length 1)
         maxn = 0;
         any0 = 0;
-        for (j=0; j<njval; j++) {
-            thislen = LENGTH(VECTOR_ELT(jval,j));
-            maxn = thislen>maxn ? thislen : maxn;
-            if (TYPEOF(VECTOR_ELT(jval, j)) != TYPEOF(VECTOR_ELT(ans, j+nbyval))) error("columns of j don't evaluate to consistent types for each group");
-            if (thislen == 0) any0 = 1;
-        }
+        if (length(jval)>1 || length(VECTOR_ELT(jval,0))) {
+            if (length(byval)+length(jval) != length(ans)) error("j doesn't evaluate to the same number of columns for each group");  // this would be a problem even if we unlisted afterwards. This way the user finds out earlier though so he can fix and rerun sooner.
+            if (length(jval) != njval) error("Internal logical error: length(jval)!=njval"); // Line above should be equivalent
+            for (j=0; j<njval; j++) {
+                thislen = LENGTH(VECTOR_ELT(jval,j));
+                maxn = thislen>maxn ? thislen : maxn;
+                if (TYPEOF(VECTOR_ELT(jval, j)) != TYPEOF(VECTOR_ELT(ans, j+nbyval))
+                    && TYPEOF(VECTOR_ELT(jval, j)) != NILSXP) error("columns of j don't evaluate to consistent types for each group: result for group %d has column %d type '%s' but expecting type '%s'", i+1, j+1, typename[TYPEOF(VECTOR_ELT(jval, j))], typename[TYPEOF(VECTOR_ELT(ans, j+nbyval))]);
+                if (thislen == 0) any0 = 1;
+            }
+        } // else j was NULL or data.table(NULL) etc (tests 361-364)
         if (maxn>0 && any0) {
+            // There is a correct number of columns, but one or more is length 0 (e.g. NULL). Different to when
+            // user wants no rows at all for some groups (and achieves that by arranging j to return NULL).
             for (j=0; j<njval; j++) {
                 thislen = LENGTH(VECTOR_ELT(jval,j));        
                 if (thislen == 0) {
                     // replace the 0-length vector with a 1-length NA to be recycled below to fit.
-                    switch (TYPEOF(VECTOR_ELT(jval, j))) {
+                    switch (TYPEOF(VECTOR_ELT(ans, j+nbyval))) {
                     case LGLSXP :
                     case INTSXP :
                         SET_VECTOR_ELT(jval,j,naint);
@@ -249,8 +268,8 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jex
         if (ansloc + maxn > length(VECTOR_ELT(ans,0))) {
             newlen = ansloc+maxn;
             if (LOGICAL(verbose)[0]) Rprintf("dogroups: growing from %d to %d rows\n", length(VECTOR_ELT(ans,0)), newlen);
-            for (j=0; j<nbyval; j++) SET_VECTOR_ELT(ans, j, growVector(VECTOR_ELT(ans,j), newlen, SIZEOF(VECTOR_ELT(byval, j))));
-            for (j=0; j<njval; j++) SET_VECTOR_ELT(ans, j+nbyval, growVector(VECTOR_ELT(ans,j+nbyval), newlen, SIZEOF(VECTOR_ELT(testj,j))));
+            for (j=0; j<nbyval; j++) SET_VECTOR_ELT(ans, j, growVector(VECTOR_ELT(ans,j), newlen));
+            for (j=0; j<njval; j++) SET_VECTOR_ELT(ans, j+nbyval, growVector(VECTOR_ELT(ans,j+nbyval), newlen));
             // TO DO: implement R_realloc(?) here
             // TO DO: more sophisticated newlen estimate based on new group's size
             // TO DO: possibly inline it.
@@ -283,21 +302,24 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jex
     if (ansloc < length(VECTOR_ELT(ans,0))) {
         // warning("Wrote less rows than allocated. byretn=%d but wrote %d rows",INTEGER(byretn)[0],ansloc);
         for (j=0; j<length(ans); j++) SETLENGTH(VECTOR_ELT(ans,j),ansloc);
+        // TO DO: set truelength here (uninitialized by R) to save growing next time on insert() 
+        // Important not to touch truelength for CHARSXP in R's global string cache, but we won't see those here,
+        // only true vectors such as STRSXP.
     }
     UNPROTECT(3);
     return(ans);
 }
 
 
-static SEXP growVector(SEXP x, R_len_t newlen, int size)
+SEXP growVector(SEXP x, R_len_t newlen)
 {
     // similar to EnlargeVector in src/main/subassign.c.
     // * replaced switch and loops with one memcpy
     // * no need to cater for names
     // * much shorter and faster
-    R_len_t len;
     SEXP newx;
-    len = length(x);
+    R_len_t len = length(x);
+    int size = SIZEOF(x);
     PROTECT(x);
     PROTECT(newx = allocVector(TYPEOF(x), newlen));
     memcpy((char *)DATAPTR(newx), (char *)DATAPTR(x), len*size);

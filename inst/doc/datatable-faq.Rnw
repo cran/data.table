@@ -311,6 +311,7 @@ Yes :
 \begin{itemize}
 \item{\code{i}  <==>  where}
 \item{\code{j}  <==>  select}
+\item{\code{:=}  <==>  update}
 \item{\code{by}  <==>  group by}
 \item{\code{i}  <==>  order by (in compound syntax)}
 \item{\code{i}  <==>  having (in compound syntax)}
@@ -320,9 +321,9 @@ Yes :
 \item{\code{roll=TRUE}  <==>  N/A because SQL is inherently unordered}
 \end{itemize}
 The general form is : \newline
-\code{\hspace*{2cm}DT[where,select,group by][having][order by][ ]...[ ]}
+\code{\hspace*{2cm}DT[where,select|update,group by][having][order by][ ]...[ ]}
 \newline\newline
-A key advantage of column vectors in \proglang{R} is that they are \emph{ordered}, unlike SQL\footnote{It may be a surprise to learn that \code{select top 10 * from ...} does \emph{not} reliably return the same rows over time in SQL. You do need to include an \code{order by} clause, or use a clustered index to guarantee row order; i.e., SQL is inherently unordered.}. We can use ordered functions in \code{data.table} queries, such as \code{diff()}, and we can use \emph{any} \proglang{R} function from any package, not just the functions that are defined in SQL. A disadvantage is that \proglang{R} objects must fit in memory, but with several \proglang{R} packages such as ff, bigmemory and indexing, this is changing.
+A key advantage of column vectors in \proglang{R} is that they are \emph{ordered}, unlike SQL\footnote{It may be a surprise to learn that \code{select top 10 * from ...} does \emph{not} reliably return the same rows over time in SQL. You do need to include an \code{order by} clause, or use a clustered index to guarantee row order; i.e., SQL is inherently unordered.}. We can use ordered functions in \code{data.table} queries, such as \code{diff()}, and we can use \emph{any} \proglang{R} function from any package, not just the functions that are defined in SQL. A disadvantage is that \proglang{R} objects must fit in memory, but with several \proglang{R} packages such as ff, bigmemory, mmap and indexing, this is changing.
 
 
 
@@ -344,6 +345,7 @@ A key advantage of column vectors in \proglang{R} is that they are \emph{ordered
 \item{\code{DT[c(TRUE,NA,FALSE)]} treats the \code{NA} as \code{FALSE}, but \code{DF[c(TRUE,NA,FALSE)]} returns
   \code{NA} rows for each \code{NA}}
 \item{\code{DT[ColA==ColB]} is simpler than \code{DF[!is.na(ColA) \& !is.na(ColB) \& ColA==ColB,]}}
+\item{\code{data.frame(list(1:2,"k",1:4))} creates 3 columns, \code{data.table} creates one \code{list} column.}
 \end{itemize}
 In \code{[.data.frame} we very often set \code{drop=FALSE}. When we forget, bugs can arise in edge cases where single columns are selected and all of a sudden a vector is returned rather than a single column \code{data.frame}. In \code{[.data.table} we took the opportunity to make it consistent and drop \code{drop}.
 \newline\newline
@@ -359,6 +361,38 @@ The \code{drop} argument is never used by \code{[.data.table}. It is a placehold
 
 \subsection{Rolling joins are cool, and very fast! Was that hard to program?}
 The prevailing row on or before the \code{i} row is the final row the binary search tests anyway. So \code{roll=TRUE} is essentially just a switch in the binary search C code to return that row.
+
+\subsection{Why does \code{DT[i,col:=value]} return the whole of \code{DT}? I expected either no visible value (consistent with \code{<-}), or a message or return value containing how many rows were updated. It isn't obvious that the data has indeed been updated by reference.}
+So that compound syntax can work; e.g., \code{DT[i,done:=TRUE][,sum(done)]}. The number of rows updated is returned when verbosity is on, either on a per query basis or globally using \code{options(datatable.verbose=TRUE)}.
+
+\subsection{Ok, but can't the return value of \code{DT[i,col:=value]} be returned invisibily, then?}
+\begin{itemize}
+\item  We tried to but \proglang{R} internally forces visibility on for \code{[}. The value of FunTab's eval column (see src/main/names.c) for \code{[} is 0 meaning force \code{R\_Visible} on (see R-Internals section 1.6). Therefore, when we tried \code{invisible()} or setting \code{R\_Visible} to 0 directly ourselves, \code{eval} in src/main/eval.c would force it on again.
+\item  After getting used to this behaviour, you might grow to prefer it (we have). After all, how many times do we subassign using \code{<-} and then immediately look at the data to check it's ok?
+\item  We can \emph{mix} \code{:=} into a \code{j} which also returns data; a \emph{mixed} update and select in one query. To detect whether \code{j} \emph{solely} updates (and then behave differently) could be confusing.
+\end{itemize}
+
+\subsection{I've noticed that \code{base::cbind.data.frame} (and \code{base::rbind.data.frame}) appear to be changed by \code{data.table}. How is this possible? Why?}
+It is a temporary, last resort solution until we discover a better way to solve the problems listed below. These are extraordinary circumstances: \code{data.table} inherits from \code{data.frame}, \emph{and}, \code{base::cbind} and \code{base::rbind} (uniquely) do their own S3 dispatch internally as documented by \code{?cbind}. The change is adding one line to the start of each function directly in base; e.g.,
+<<>>=
+base::cbind.data.frame
+@
+That modification is achieved by calling \code{assignInNamespace} from \code{.onAttach}. It is done dynamically; i.e., the base definition of \code{cbind.data.frame} is fetched, one line added to the beginning and then assigned back to base. This solution is intended to be robust to different definitions of \code{base::cbind.data.frame} in different versions of \proglang{R}, including unknown future changes. Again, it is a last resort until a better solution is known or made available.
+
+The competing requirements are :
+\begin{itemize}
+\item \code{cbind(DT,DF)} needs to work. Defining \code{cbind.data.table} doesn't work because \code{base::cbind} does its own S3 dispatch and requires that the \emph{first} \code{cbind} method for each object it is passed is \emph{identical}. This is not true in \code{cbind(DT,DF)} because the first method for \code{DT} is \code{cbind.data.table} but the first method for \code{DF} is \code{cbind.data.frame}. \code{base::cbind} then falls through to its internal \code{bind} code which appears to treat \code{DT} as a regular list and returns very odd looking and unusable \code{matrix} output. See FAQ \ref{faq:cbinderror}. We cannot just advise users not to call \code{cbind(DT,DF)} because packages such as ggplot2 make such a call (test 168.5).
+\item This naturally leads to trying to mask \code{cbind.data.frame} instead. Since a \code{data.table} is a \code{data.frame}, \code{cbind} would find the same method for both \code{DT} and \code{DF}. However, this doesn't work either because \code{base::cbind} appears to find methods in \code{base} first; i.e., \code{base::cbind.data.frame} isn't maskable. This is reproducible as follows :
+\end{itemize}
+<<>>=
+foo = data.frame(a=1:3)
+cbind.data.frame = function(...)cat("Not printed\n")
+cbind(foo)
+@
+\begin{itemize}
+\item Finally, we tried masking \code{cbind} itself (v1.6.5 and v1.6.6). This allowed \code{cbind(DT,DF)} to work, but introduced compatibility issues with package IRanges, since IRanges also masks \code{cbind}. It worked if IRanges was lower on the search() path than \code{data.table}, but if IRanges was higher then \code{data.table}'s \code{cbind} would never be called and the strange looking matrix output occurs again (FAQ \ref{faq:cbinderror}).
+\end{itemize}
+If you know of a better solution, that still solves all the issues above, then please let us know and we'll gladly change it.
 
 \section{Questions relating to compute time}
 
@@ -392,9 +426,23 @@ This error is generated by \code{DT[,MySum=sum(v)]}. \code{DT[,list(MySum=sum(v)
 \subsection{\code{'translateCharUTF8' must be called on a CHARSXP}}
 This error (and similar; e.g., \code{'getCharCE' must be called on a CHARSXP}) may be nothing do with character data or locale. Instead, this can be a symptom of an earlier memory corruption. To date these have been reproducible and fixed (quickly). Please report it to datatable-help.
 
+\subsection{\code{cbind(DT,DF) returns a strange format e.g. 'Integer,5'}} \label{faq:cbinderror}
+This occurs prior to v1.6.5, for \code{rbind(DT,DF)} too. Please upgrade to v1.6.7 or later.
+
+\subsection{\code{cannot change value of locked binding for '.SD'}}
+\code{.SD} is locked by design. See \code{?data.table}. If you'd like to manipulate \code{.SD} before using it, or returning it, and don't wish to modify \code{DT} using \code{:=}, then take a copy first (see \code{?copy}); e.g.,
+<<>>=
+DT = data.table(a=rep(1:3,1:3),b=1:6,c=7:12)
+DT
+DT[,{ mySD = copy(.SD)
+      mySD[1,b:=99L]
+      mySD },
+    by=a]
+@
+
 \section{Warning messages}
 \subsection{\code{The following object(s) are masked from 'package:base': cbind, rbind}}
-This warning appears when loading the package. For detailed information on why they are masked, please type \code{?cbind} and click the \code{data.table} version of the help page.
+This warning was present in v1.6.5 and v.1.6.6 only, when loading the package. The motivation was to allow \code{cbind(DT,DF)} to work, but as it transpired, broke (full) compatibility with package IRanges. Please upgrade to v1.6.7 or later. 
 
 \subsection{\code{Coerced numeric RHS to integer to match the column's type}}
 Hopefully, this is self explanatory. The full message is :\newline

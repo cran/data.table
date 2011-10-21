@@ -246,7 +246,7 @@ test(97, TESTDT[c("f","i","b"),list(GroupSum=sum(v)),mult="all"], data.table(b=c
 test(98, TESTDT[SJ(c("f","i","b")),list(GroupSum=sum(v)),mult="all"], data.table(b=c("b","f","i"), GroupSum=c(7L,7L,11L), key="b"))
 # line above is the way to group, sort by group and setkey on the result by group.
 
-(dt <- data.table(A = rep(1:3, each=4), B = rep(1:4, each=3), C = rep(1:2, 6), key = "A,B"))
+dt <- data.table(A = rep(1:3, each=4), B = rep(11:14, each=3), C = rep(21:22, 6), key = "A,B")
 test(99, unique(dt), data.table(dt[c(1L, 4L, 5L, 7L, 9L, 10L)], key="A,B"))
 
 # test [<- for column assignment 
@@ -411,6 +411,8 @@ test(166, suppressWarnings(split(DT,DT$grp)[[2]]), DT[grp==2])
 if ("package:ggplot2" %in% search()) {
     test(167,print(ggplot(DT,aes(b,f))+geom_point()),NULL)  # how to programmatically test it not only doesn't error but correct output, binary diff to pre-prepared pdf ?
     test(168,DT[,print(ggplot(.SD,aes(b,f))+geom_point()),by=list(grp%%2L)],data.table(grp=integer()))  # %%2 because there are 5 groups in DT data at this stage, just need 2 to test
+    # New test reported by C Neff on 11 Oct 2011
+    test(168.5, print(ggplot(DT) + geom_hex(aes(b, f)) + facet_wrap(~grp)), NULL)
     try(graphics.off(),silent=TRUE)
     #try(graphics.off(),silent=TRUE) # R CMD check doesn't like graphics it seems, even when inside try()
 } else {
@@ -449,12 +451,12 @@ test(175, DT[,C[C-min(C)<5],by=list(A,B)][,V1], c(5,1,2,3,4,9,9,5))
 DT <- data.table(a = c("A", "Z"), b = 1:10, key = "a")
 DT[J("A"),2] <- 100L  # without L generates nice warning :-)
 DT[J("A"),"b"] <- 1:5
-DT[1:3,"b"] <- 33L   
+DT[1:3,"b"] <- 33L
 test(176, DT,  data.table(a = rep(c("A", "Z"), each = 5),
                           b = as.integer(c(rep(33, 3), 4:5, seq(2, 10, by = 2))),
                           key = "a"))
 DT[J("A"),"a"] <- "Z"
-test(177, key(DT), NULL )
+test(177, DT, data.table(a="Z", b=as.integer(c(rep(33, 3), 4:5, seq(2, 10, by = 2)))))  # i.e. key dropped and column a still factor
 
 DT <- data.table(a = c("A", "Z"), b = 1:10, key = "a")
 DT$b[1:5] <- 1:5
@@ -936,7 +938,8 @@ test(342, DT[,mycols:=NULL,with=FALSE], data.table(b=1:3))
 mynewcol = "newname"
 test(343, DT[,mynewcol:=21L,with=FALSE], data.table(b=1:3,newname=21L))
 mycols = 1:2
-test(344, DT[,mycols:=NULL,with=FALSE], data.table(NULL))
+test(344, DT[,mycols:=NULL,with=FALSE], data.table(NULL)) 
+
 
 # Test incorrect 'can't coerce without losing precision' message
 # It seems that the .Internal rbind of two data.frame coerces IDate to numeric. Tried defining
@@ -965,6 +968,106 @@ DT = data.table(a=1:2,b=1:6,key="a")
 test(349, DT[J(2:3),.N,nomatch=NA]$.N, c(3L,0L))
 test(350, DT[J(2:3),.N,nomatch=0]$.N, c(3L,0L))
 
+# Test recycling list() on RHS of :=
+DT = data.table(a=1:3,b=4:6,c=7:9,d=10:12)
+test(351, DT[,c("a","b"):=list(13:15),with=FALSE], data.table(a=13:15,b=13:15,c=7:9,d=10:12))
+test(352, DT[,letters[1:4]:=list(1L,NULL),with=FALSE], data.table(a=c(1L,1L,1L),c=c(1L,1L,1L)))
+
+# Test assigning new levels into factor columns
+DT = data.table(f=c("a","b"),x=1:4)
+test(353, DT[2,f:="c"], data.table(f=c("a","c","a","b"),x=1:4))
+test(354, DT[3,f:=factor("foo")], data.table(f=c("a","c","foo","b"),x=1:4))
+# Test growVector logic when adding levels
+newlevels = as.character(as.hexmode(1:2000))
+DT = data.table(f="000",x=1:2010)
+test(355, DT[11:2010,f:=newlevels], data.table(f=c(rep("000",10),newlevels),x=1:2010))
+
+# See datatable-help post and NEWS item for 1.6.7
+DT = data.table(X=letters[1:10], Y=1:10)
+DT$X = "Something Different"
+test(356, DT, data.table(X=factor("Something Different",levels=c(letters[1:10],"Something Different")), Y=1:10))
+
+# Bug fix 1570
+DT = data.table(x=1:5,y=1:5)
+test(357, DT[x==0, y:=5L], data.table(x=1:5,y=1:5))
+test(358, DT[FALSE, y:=5L], data.table(x=1:5,y=1:5))
+
+# Bug fix 1599
+DT = data.table(a=1:2,b=1:6)
+test(359, DT[,sum(b),by=NULL], 21L)
+test(360, DT[,sum(b),by=character(0)], 21L)
+
+# Bug fix 1576 : NULL j results in 'inconsistent types' error
+DT = data.table(a=1:3,b=1:9)
+ans = data.table(a=c(1L,3L),V1=c(12L,18L))
+test(361, DT[,if (a==2) NULL else sum(b),by=a], ans)
+test(362, DT[,if (a==2) data.table(NULL) else sum(b),by=a], ans)
+test(363, DT[,if (a==2) as.list(NULL) else sum(b),by=a], ans)
+test(364, DT[,if (a==2) integer(0) else sum(b),by=a], ans)
+
+# Test that data.table() can create list() columns directly
+# NB: test 235 above ('by' when DT contains list columns) created the list column in two steps, no longer necessary
+DT = data.table(a=1:2,b=list("h",7:8))
+test(365, DT[1,b], list("h"))   # should it be a special case for 1-item results to unlist? Don't think so: in keeping with no drop=TRUE principle
+test(366, DT[2,b], list(7:8))
+DT = data.table(a=1:4,b=list("h",7:8),c=list(matrix(1:12,3),data.table(a=letters[1:3],b=list(1:2,3.4,"k"),key="a")))
+test(367, DT[3,b], list("h"))
+test(368, DT[4,b], list(7:8))
+test(369, DT[3,c[[1]][2,3]], 8L)
+test(370, DT[4,c[[1]]["b",b]$b[[1]]], 3.4)
+
+# Test returning a list() column via grouping
+DT = data.table(x=c(1,1,2,2,2),y=1:5)
+test(371, DT[,list(list(unique(y))),by=x], data.table(x=1:2,V1=list(1:2,3:5)))
+
+# Test matrix i is an error
+tt = try(DT[matrix(1:2,ncol=2)],silent=TRUE)
+test(372, inherits(tt,"try-error") && length(grep("i is invalid type [(]matrix[)]",tt)))
+
+# Tests from bug fix #1593
+DT = data.table(x=letters[1:2], y=1:4)
+DT[x == "a", ]$y <- 0L
+test(373, DT, data.table(x=letters[1:2], y=c(0L,2L,0L,4L)))
+DT = data.table(x=letters[1:2], y=1:4, key="x")
+DT["a", ]$y <- 0L
+test(374, DT, data.table(x=letters[1:2], y=c(0L,2L,0L,4L), key="x"))
+DT = data.table(x=letters[1:2], y=1:4)
+DT[c(1,3), ]$y <- 0L
+test(375, DT, data.table(x=letters[1:2], y=c(0L,2L,0L,4L)))
+
+# Test unique on unsorted tables
+DT = data.table(a=c(2,1,2),b=c(1,2,1))
+test(376, unique(DT), data.table(a=c(2,1),b=c(1,2)))
+# From the SO thread :
+M = matrix(sample(2, 120, replace = TRUE), ncol = 3)
+DF = as.data.frame(M)
+DT = as.data.table(M)
+test(377, as.data.table(unique(DF)), unique(DT))
+
+# Test compatibility with sqldf. sqldf() does a do.call("rbind" with empty input,
+# so this tests ..1 when NULL (which was insufficiently list(...)[[1]] in 1.6.6).
+# We now test this directly rather than using sqldf, because we couldn't get 'R CMD check'
+# past (converted from warning) closing unused connection 3 (/tmp/RtmpYllyW2/file55822c52)
+test(378, cbind(), NULL)
+test(379, rbind(), NULL)
+
+DT = data.table(a=rep(1:3,1:3),b=1:6)
+tt = try(DT[,{.SD$b[1]=10L;.SD}, by=a], silent=TRUE)   # .SD locked for 1st group
+test(380, inherits(tt,"try-error") && length(grep("locked binding",tt)))
+tt = try(DT[,{if (a==2) {.SD$b[1]=10L;.SD} else .SD}, by=a], silent=TRUE)   # .SD locked in 2nd group onwards too
+test(381, inherits(tt,"try-error") && length(grep("locked binding",tt)))
+
+# test that direct := is trapped, but := within a copy of .SD is allowed (FAQ 4.5)
+tt = try(DT[,b:=10L,by=a],silent=TRUE)
+test(382, inherits(tt,"try-error") && length(grep("not yet implemented",tt)))
+tt = try(DT[,{z=10L;b:=z},by=a],silent=TRUE)
+test(383, inherits(tt,"try-error") && length(grep("not yet implemented",tt)))
+test(384, DT[,{mySD=copy(.SD);mySD[1,b:=99L];mySD},by=a], data.table(a=rep(1:3,1:3),b=c(99L,99L,3L,99L,5:6)))
+
+# somehow missed testing := on logical subset with mixed TRUE/FALSE, reported by Muhammad Waliji
+DT = data.table(x=1:2, y=1:6)
+test(385, DT[x==1, y := x], data.table(x=1:2,y=c(1L,2L,1L,4L,1L,6L)))
+test(386, DT[c(FALSE,TRUE),y:=99L], data.table(x=1:2,y=c(1L,99L,1L,99L,1L,99L)))
 
 ## See test-* for more tests
 
