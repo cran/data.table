@@ -11,7 +11,7 @@ EXPORT SEXP dogroups();
 #endif
 
 int sizes[100];  // max appears to be FUNSXP = 99, see Rinternals.h
-char typename[20][100];  // The typename in main/inspect.c seems static (not available for use by packages), uses a switch, and uses the internal names.
+char typename[100][30];  // The typename in main/inspect.c seems static (not available for use by packages), uses a switch, and uses the internal names.
 
 SEXP growVector(SEXP x, R_len_t newlen);
 int sizesSet=0;
@@ -19,7 +19,7 @@ int sizesSet=0;
 void setSizes()
 {
     int i;
-    for (i=0;i++;i<100) {
+    for (i=0;i<100;i++) {
         sizes[i]=0;
         sprintf(typename[i],"unsupported type %d", i);
     }
@@ -34,6 +34,10 @@ void setSizes()
     strcpy(typename[STRSXP], "character");
     sizes[VECSXP] = sizeof(SEXP *);  // a column itself can be a list()
     strcpy(typename[VECSXP], "list");
+    for (i=0;i<100;i++) {
+        if (sizes[i]>8) error("Type %d is sizeof() greater than 8 bytes on this machine. We haven't tested on any architecture greater than 64bit, yet.", i);
+        // One place we need the largest sizeof (assumed to be 8 bytes) is the working memory malloc in reorder.c
+    }
     sizesSet=1;
 }
 #define SIZEOF(x) sizes[TYPEOF(x)]
@@ -43,6 +47,7 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jex
 {
     R_len_t i, j, k, rownum, ngrp, njval, nbyval, ansloc, maxn, r, thisansloc, thislen, any0, newlen, icol, size;
     SEXP names, inames, bynames, ans, jval, naint, nareal, SD, BY, N;
+    SEXP *nameSyms;
     if (!sizesSet) setSizes();
     if (TYPEOF(order) != INTSXP) error("order not integer");
     if (TYPEOF(starts) != INTSXP) error("starts not integer");
@@ -57,10 +62,11 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jex
     N = findVar(install(".N"), env);
     
     names = getAttrib(SD, R_NamesSymbol);
+    nameSyms = Calloc(length(names), SEXP);
     for(i = 0; i < length(SD); i++) {
         if (SIZEOF(VECTOR_ELT(SD, i))==0)
             error("Type %d in .SD column %d", TYPEOF(VECTOR_ELT(SD, i)), i);
-        defineVar(install(CHAR(STRING_ELT(names, i))), VECTOR_ELT(SD, i), env);
+        nameSyms[i] = install(CHAR(STRING_ELT(names, i)));
     }
     // defineVar(install(".SD"), SD, env);
     // By installing .SD directly inside itself, R finds this symbol more quickly (if used).
@@ -103,9 +109,11 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jex
         }
     }
     for(i = 0; i < njval; i++) {
-        SET_VECTOR_ELT(ans, nbyval+i, allocVector(TYPEOF(VECTOR_ELT(testj, i)), INTEGER(byretn)[0]));
+        if (isNull(VECTOR_ELT(testj, i)))
+            error("Column %d of j's result for the first group is NULL. We rely on the column types of the first result to decide the type expected for the remaining groups (and require consistency). NULL columns are acceptable for later groups (and those are replaced with NA of appropriate type and recycled) but not for the first. Please use a typed empty vector instead, such as integer() or numeric().", i+1);
         if (SIZEOF(VECTOR_ELT(testj, i))==0)
-            error("Type %d in j column", TYPEOF(VECTOR_ELT(testj, i)));
+            error("Unsupported type %d in j column %d", TYPEOF(VECTOR_ELT(testj, i)), i+1);
+        SET_VECTOR_ELT(ans, nbyval+i, allocVector(TYPEOF(VECTOR_ELT(testj, i)), INTEGER(byretn)[0]));
     }
     
     // copy existing result for first group into ans
@@ -113,13 +121,13 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jex
     maxn = 0;
     any0 = 0;
     for (j=0; j<njval; j++) {
-        thislen = LENGTH(VECTOR_ELT(testj,j));
+        thislen = LENGTH(VECTOR_ELT(testj,j));  // checked not NULL above
         maxn = thislen>maxn ? thislen : maxn;
         if (thislen == 0) any0 = 1;
     }
     if (maxn>0 && any0) {
         for (j=0; j<njval; j++) {
-            thislen = LENGTH(VECTOR_ELT(testj,j));        
+            thislen = LENGTH(VECTOR_ELT(testj,j));
             if (thislen == 0) {
                 // replace the 0-length vector with a 1-length NA to be recycled below to fit.
                 switch (TYPEOF(VECTOR_ELT(testj, j))) {
@@ -224,7 +232,12 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jex
             }
         }
         INTEGER(N)[0] = INTEGER(starts)[i] == 0 ? 0 : INTEGER(lens)[i];  // .N is number of rows matched to, regardless of whether nomatch is 0 or NA
-        for (j=0; j<length(SD); j++) SETLENGTH(VECTOR_ELT(SD,j),thislen);
+        for (j=0; j<length(SD); j++) {
+            SETLENGTH(VECTOR_ELT(SD,j),thislen);
+            defineVar(nameSyms[j], VECTOR_ELT(SD, j), env);
+            // In case user's j assigns to the columns names (env is static) (tests 387 and 388)
+            // nameSyms pre-stored to save repeated install() for efficiency.
+        }
         PROTECT(jval = eval(jexp, env));
         // length(jval) may be 0 when j is plot or other side-effect only. Otherwise, even NULL in user j
         // will be auto wrapped to make list(NULL) (length 1)
@@ -234,7 +247,7 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jex
             if (length(byval)+length(jval) != length(ans)) error("j doesn't evaluate to the same number of columns for each group");  // this would be a problem even if we unlisted afterwards. This way the user finds out earlier though so he can fix and rerun sooner.
             if (length(jval) != njval) error("Internal logical error: length(jval)!=njval"); // Line above should be equivalent
             for (j=0; j<njval; j++) {
-                thislen = LENGTH(VECTOR_ELT(jval,j));
+                thislen = length(VECTOR_ELT(jval,j));  // might be NULL, so length not LENGTH
                 maxn = thislen>maxn ? thislen : maxn;
                 if (TYPEOF(VECTOR_ELT(jval, j)) != TYPEOF(VECTOR_ELT(ans, j+nbyval))
                     && TYPEOF(VECTOR_ELT(jval, j)) != NILSXP) error("columns of j don't evaluate to consistent types for each group: result for group %d has column %d type '%s' but expecting type '%s'", i+1, j+1, typename[TYPEOF(VECTOR_ELT(jval, j))], typename[TYPEOF(VECTOR_ELT(ans, j+nbyval))]);
@@ -245,7 +258,7 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jex
             // There is a correct number of columns, but one or more is length 0 (e.g. NULL). Different to when
             // user wants no rows at all for some groups (and achieves that by arranging j to return NULL).
             for (j=0; j<njval; j++) {
-                thislen = LENGTH(VECTOR_ELT(jval,j));        
+                thislen = length(VECTOR_ELT(jval,j));        
                 if (thislen == 0) {
                     // replace the 0-length vector with a 1-length NA to be recycled below to fit.
                     switch (TYPEOF(VECTOR_ELT(ans, j+nbyval))) {
@@ -285,7 +298,7 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jex
             }
             for (j=0; j<njval; j++) {
                 thisansloc = ansloc;
-                thislen = LENGTH(VECTOR_ELT(jval,j));
+                thislen = LENGTH(VECTOR_ELT(jval,j));  // Any NULL was replaced by an NA above.
                 if (maxn%thislen != 0) error("maxn (%d) is not exact multiple of this j column's length (%d)",maxn,thislen);
                 size = SIZEOF(VECTOR_ELT(testj,j));
                 for (r=0; r<(maxn/thislen); r++) {
@@ -307,6 +320,7 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP order, SEXP starts, SEXP lens, SEXP jex
         // only true vectors such as STRSXP.
     }
     UNPROTECT(3);
+    Free(nameSyms);
     return(ans);
 }
 

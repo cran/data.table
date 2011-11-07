@@ -196,7 +196,7 @@ test(69, "TESTDT" %in% tables(silent=TRUE)[,as.character(NAME)]) # an old test (
 a = "d"
 # Variable Twister.  a in this scope has same name as a inside DT scope.
 # Aug 2010 : As a result of bug 1005, and consistency with 'j' and 'by' we now allow self joins (test 183) in 'i'.
-test(70, TESTDT[eval(J(a)),v], data.table(a="d",v=3:6))   # the eval() enabled you to use the 'a' in the calling scope, not 'a' in the TESTDT
+test(70, TESTDT[eval(J(a)),v], data.table(a="d",v=3:6))   # the eval() enabled you to use the 'a' in the calling scope, not 'a' in the TESTDT.  TO DO: document this.
 test(71, TESTDT[eval(SJ(a)),v], data.table(a="d",v=3:6,key="a"))
 test(72, TESTDT[eval(CJ(a)),v], data.table(a="d",v=3:6,key="a"))
 
@@ -304,7 +304,7 @@ n=10000
 grp1=sample(1:50,n,replace=TRUE)
 grp2=sample(1:50,n,replace=TRUE)
 dt=data.table(x=rnorm(n),y=rnorm(n),grp1=grp1,grp2=grp2)
-tt = system.time({ans = dt[,list(.Internal(mean(x)),.Internal(mean(y))),by="grp1,grp2"]})
+tt = system.time(ans <- dt[,list(.Internal(mean(x)),.Internal(mean(y))),by="grp1,grp2"])
 test(120, tt[1] < 0.5)   # actually takes more like 0.068 << 0.5
 i = sample(nrow(ans),1)
 test(121, ans[i,c(V1,V2)], dt[grp1==ans[i,grp1] & grp2==ans[i,grp2], c(mean(x),mean(y))])
@@ -1035,7 +1035,7 @@ DT = data.table(x=letters[1:2], y=1:4)
 DT[c(1,3), ]$y <- 0L
 test(375, DT, data.table(x=letters[1:2], y=c(0L,2L,0L,4L)))
 
-# Test unique on unsorted tables
+# Test unique on unsorted tables (and tolerance on numeric columns, too)
 DT = data.table(a=c(2,1,2),b=c(1,2,1))
 test(376, unique(DT), data.table(a=c(2,1),b=c(1,2)))
 # From the SO thread :
@@ -1068,6 +1068,78 @@ test(384, DT[,{mySD=copy(.SD);mySD[1,b:=99L];mySD},by=a], data.table(a=rep(1:3,1
 DT = data.table(x=1:2, y=1:6)
 test(385, DT[x==1, y := x], data.table(x=1:2,y=c(1L,2L,1L,4L,1L,6L)))
 test(386, DT[c(FALSE,TRUE),y:=99L], data.table(x=1:2,y=c(1L,99L,1L,99L,1L,99L)))
+
+# test that column names have the appearance of being local in j (can assign to them ok), bug #1624
+DT = data.table(name=c(rep('a', 3), rep('b', 2), rep('c', 5)), flag=FALSE)
+test(387, DT[,{flag[1]<-TRUE;list(flag=flag)}, by=name], DT[c(1,4,6),flag:=TRUE])
+DT = data.table(score=1:10, name=c(rep('a', 4), rep('b',2), rep('c', 3), 'd'))
+test(388, DT[,{ans = score[1]
+               score[1] <- -score[1]
+               ans
+               },by=name],
+           data.table(name=letters[1:4],V1=c(1L,5L,7L,10L)))
+
+# Test counting character grouping and sorting
+# TO DO: test range of n and m and plot, on variety of machines, 32bit and 64bit with RAM and L2 variances
+n = as.integer(1e6)
+m = 10000L
+cat("x = ",format(n,big.mark=","),"sample from",format(m,big.mark=","),"strings (quick test)\n")
+x = sample(as.character(as.hexmode(1:m)),n,replace=TRUE)
+tt = system.time(f <- factor(x))                             # 7.079   (timings from MD's tiny 32bit netbook)
+cat(format(tt["elapsed"],nsmall=3),": f=factor(x) [high up front cost, plus storage and maintenance of levels]\n")
+tt = system.time(o1 <- sort.list(f,method="radix"))          # 1.025
+cat(format(tt["elapsed"],nsmall=3),": sort.list(,'radix') on f\n")      # (setkey = 7.079+1.025 = 8.104 + update to DT)
+tt = system.time(u <- unique(x))                             # 5.213
+cat(format(tt["elapsed"],nsmall=3),": u=unique(x)\n")
+tt = system.time(.Internal(order(na.last=FALSE, decreasing=FALSE, u)))   # 0.161
+cat(format(tt["elapsed"],nsmall=3),": .Internal(order(u))\n")
+fsorted = f[o1]
+xsorted = x[o1]
+tt = system.time(o2 <- sort.list(fsorted,method="radix"))    # 0.318   
+cat(format(tt["elapsed"],nsmall=3),": sort.list(,'radix') on fsorted\n")     # (page fetches on counts minimised)
+cat("-vs-\n")
+for (GE2140 in c(FALSE,TRUE)) {   # GE2140 = getRversion()>="2.14.0". Must be FALSE first, so can simulate 2.14.0
+    if (GE2140) cat(">= R 2.14.0\n") else cat("< R 2.14.0\n")
+    tt = system.time(o3 <- .Call("countingcharacter",x,FALSE,GE2140))        # 2.186
+    cat(format(tt["elapsed"],nsmall=3),": char group on x (ad hoc by)  [slower than radix on f but without up front cost]\n")    
+    tt = system.time(o4 <- .Call("countingcharacter",x,TRUE,GE2140))         # 2.400
+    cat(format(tt["elapsed"],nsmall=3),": char sort on x (setkey)  [lower up front cost than factor(x)]\n")
+    tt = system.time(o5 <- .Call("countingcharacter",xsorted,FALSE,GE2140))  # 0.222
+    cat(format(tt["elapsed"],nsmall=3),": char group on xsorted (keyed by)  [faster than sort.list(,'radix') on fsorted, same result]\n")
+    test(389+3*GE2140,identical(o1,o4))
+    test(390+3*GE2140,identical(o2,o5))
+    test(391+3*GE2140,identical(o5,1:length(x)))
+}
+
+# Test unique.data.table for numeric columns within tolerance, for consistency with
+# with unique.data.frame which does this using paste.
+DT = data.table(a=tan(pi*(1/4 + 1:10)),b=42L)
+# tan(...) from example in ?all.equal.
+test(395, all.equal(DT$a, rep(1,10)))
+test(396, length(unique(DT$a)), 10L)  # all 10 values of a are unique
+test(397, unique(DT), DT[1])  # before v1.7.2 unique would return all 10 rows. For stability within tolerance, data.table has it's own modified numeric sort.
+test(398, duplicated(DT), c(FALSE,rep(TRUE,9)))
+
+DT = data.table(a=c(3.142, 4.2, 4.2, 3.142, 1.223, 1.223), b=rep(1,6))
+test(399, unique(DT), DT[c(1,2,5)])
+test(400, duplicated(DT), c(FALSE,FALSE,TRUE,TRUE,FALSE,TRUE))
+
+DT[c(2,4,5),a:=NA]
+test(401, unique(DT), DT[c(1,2,3,6)])
+test(402, duplicated(DT), c(FALSE,FALSE,FALSE,TRUE,TRUE,FALSE))
+
+# Test NULL columns next to non-NULL, #1633
+DT = data.table(a=1:3,b=4:6)
+test(403, DT[,list(3,if(a==2)NULL else b),by=a], data.table(a=1:3,V1=3,V2=c(4L,NA_integer_,6L)))
+tt = try(DT[,list(3,if(a==1)NULL else b),by=a],silent=TRUE)
+test(404, inherits(tt,"try-error") && length(grep("Please use a typed empty vector instead.*such as integer.*or numeric",tt)))
+tt = try(DT[,list(3,if(a==1)numeric() else b),by=a],silent=TRUE)
+test(405, inherits(tt,"try-error") && length(grep("evaluate to consistent types",tt)))
+test(406, DT[,list(3,if(a==1)integer() else b),by=a], data.table(a=1:3,V1=3,V2=c(NA_integer_,5:6)))
+
+# Test that first column can be list, #1640
+test(407, data.table(list(1:2,3:5)), as.data.table(list(list(1:2,3:5))))
+
 
 ## See test-* for more tests
 

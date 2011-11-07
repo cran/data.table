@@ -96,26 +96,45 @@ fastorder <- function(lst, which=seq_along(lst), verbose=getOption("datatable.ve
 {
     # lst is a list or anything thats stored as a list and can be accessed with [[.
     # 'which' may be integers or names
-    # Its easier to pass arguments around this way, and we know for sure that [[ doesn't take a copy but l=list(...) might do.
+    # It's easier to pass arguments around this way, and we know for sure that [[ doesn't take a copy but l=list(...) might do.
     # Run through them back to front to group columns.
+    # This is a different approach to src/main/sort.c:ordervector(...,listgreater). In data.table, keys are
+    # almost always only unique including the last column. There are a great number of repeats in the n-1 columns. So
+    # listgreater would be doing a lot of type switching, skipping across columns in RAM, and getting == to previous
+    # column value a lot. Here, in fastorder we order the whole column, column by column in reverse, updating
+    # the very same 1:n vector that sort.c needs (but passing the previous columns order, not 1:n).
     w <- last(which)
-    err <- try(o <- radixorder1(lst[[w]]), silent=TRUE)
-    # Use a radix sort (fast and stable), but it will fail if there are more than 1e5 unique elements (or any negatives)
-    if (inherits(err, "try-error")) {
-        if (verbose) cat("First column",w,"failed radixorder1, reverting to regularorder1\n")
-        o <- regularorder1(lst[[w]])
+    v = lst[[w]]
+    if (is.double(v))
+        o = ordernumtol(v)
+    else {
+        err = try(o <- radixorder1(v), silent=TRUE)
+        # Use a radix sort (fast and stable), but it will fail if there are more than 1e5 unique elements (or any negatives)
+        if (inherits(err, "try-error")) {
+            if (verbose) cat("First column",w,"failed radixorder1, reverting to regularorder1\n")
+            o = regularorder1(v)
+        }
     }
     # If there is more than one column, run through them back to front to group columns.
     for (w in rev(take(which))) {
-        err <- try(o <- o[radixorder1(lst[[w]][o])], silent=TRUE)
-        if (inherits(err, "try-error")) {
-            if (verbose) cat("Non-first column",w,"failed radixorder1, reverting to regularorder1\n")
-            o <- o[regularorder1(lst[[w]][o])]
+        v = lst[[w]]
+        if (is.double(v))
+            o = ordernumtol(v,o)
+        else {
+            err = try(o <- o[radixorder1(v[o])], silent=TRUE)
+            if (inherits(err, "try-error")) {
+                if (verbose) cat("Non-first column",w,"failed radixorder1, reverting to regularorder1\n")
+                o = o[regularorder1(v[o])]    # TO DO: avoid the copy and reorder, pass in o to C like ordernumtol
+            }
         }
     }
     o
 }
 
+ordernumtol = function(x, o=1:length(x), tol=.Machine$double.eps^0.5) {
+    .Call("rorder_tol",x,o,tol)
+    o
+}
 
 J = function(...,SORTFIRST=FALSE) {
     # J because a little like the base function I(). Intended as a wrapper for subscript to DT[]
@@ -131,16 +150,25 @@ SJ = function(...) J(...,SORTFIRST=TRUE)
 # the expense of more page fetches. Very much data dependent, but the various methods are implemented so tests for the
 # fastest method in each case can be performed.
 
+
 CJ = function(...)
 {
     # Pass in a list of unique values, e.g. ids and dates
     # Cross Join will then produce a join table with the combination of all values (cross product).
     # The last vector is varied the quickest in the table, so dates should be last for roll for example
     l = list(...)
-    n = sapply(l,length)
-    x=rev(take(cumprod(rev(n))))
-    for (i in seq(along=x)) l[[i]] = rep(l[[i]],each=x[i])
-    SJ(l)    # This will then expand out the vectors to fit.
+    for (i in seq(along=l)) if (storage.mode(l[[i]])=="double") mode(l[[i]])="integer"
+    if (length(l)>1) {
+        n = sapply(l,length)
+        x=rev(take(cumprod(rev(n))))
+        m = x[1]*length(l[[1]])
+        for (i in seq(along=x)) l[[i]] = rep(l[[i]],each=x[i],length=m)
+    }
+    setattr(l,"row.names",.set_row_names(length(l[[1]])))
+    setattr(l,"class",c("data.table","data.frame"))
+    names(l) = paste("V",1:length(l),sep="")
+    setkey(l)
+    l
 }
 
 key = function(x) attr(x,"sorted")
