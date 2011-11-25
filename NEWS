@@ -6,6 +6,64 @@ This NEWS file summarises the main changes.
 
         *********************************************
         **                                         **
+        **   CHANGES IN DATA.TABLE VERSION 1.7.3   **
+        **                                         **
+        *********************************************
+        
+NEW FEATURES
+
+    o   data.table now over-allocates its vector of column pointer slots
+        (100 by default). This allows := to add columns fully by
+        reference as suggested by Muhammad Waliji, #1646. When the 100
+        slots are used up, more space is automatically allocated.
+        
+        Over allocation has negligible overhead. It's just the vector
+        of column pointers, not the columns themselves.
+        
+    o   New function alloc.col() pre-allocates column slots. Use
+        this before a loop to add many more than 100 columns, for example,
+        to avoid the warning as data.table grows its column pointer vector
+        every additional 100 columns; e.g.,
+            alloc.col(DT,10000)  # reserve 10,000 column slots
+        
+    o   New function truelength() returns the number of column pointer
+        slots allocated, always >= length().
+        
+    o   New option 'datatable.nomatch' allows the default for nomatch
+        to be changed from NA to 0, as wished for by Branson Owen.
+        
+    o   cbind(DT,...) now retains DT's key, as wished for by Chris Neff
+        and partly implementing FR#295.
+        
+BUG FIXES
+
+    o   Assignment to factor columns (using :=, [<- or $<-) could cause
+        'variable not found' errors and a seg fault in some circumstances
+        due to a new feature in v1.7.0: "Factor columns on LHS of :=, [<-
+        and $<- can now be assigned new levels", fixing #1664. Thanks to
+        Daniele Signori for reporting.
+        
+    o   DT[i,j]<-value no longer crashes when j is a factor column and value
+        is numeric, fixing #1656.
+        
+    o   An unnecessarily strict machine tolerance test failed CRAN checks
+        on Mac preventing v1.7.2 availability for Mac (only).
+
+USER VISIBLE CHANGES
+
+    o   := now has its own help page in addition to the examples in ?data.table,
+        see help(":=").
+        
+    o   The error message from X[Y] when X is unkeyed has been lengthened to
+        including advice to call setkey first and see ?setkey. Thanks to a
+        comment by ilprincipe on Stack Overflow.
+        
+    o   Deleting a missing column is now a warning rather than error. Thanks
+        to Chris Neff for reporting, #1642.
+
+
+        *********************************************
+        **                                         **
         **   CHANGES IN DATA.TABLE VERSION 1.7.2   **
         **                                         **
         *********************************************
