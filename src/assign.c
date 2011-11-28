@@ -9,6 +9,7 @@
 EXPORT SEXP assign();
 EXPORT SEXP alloccolwrapper();
 EXPORT SEXP truelength();
+EXPORT SEXP settruelength();
 #endif
 
 // See dogroups.c for these shared variables.
@@ -19,7 +20,7 @@ void setSizes();
 //
 
 SEXP growVector(SEXP x, R_len_t newlen);
-SEXP alloccol(SEXP dt, R_len_t n);
+SEXP alloccol(SEXP dt, R_len_t n, SEXP symbol, SEXP rho);
 SEXP *saveds;
 R_len_t *savedtl, nalloc, nsaved;
 void savetl_init(), savetl(SEXP s), savetl_end();
@@ -30,7 +31,7 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP c
     // newcolnames : add these columns (if any)
     // cols : column numbers corresponding to the values to set
     R_len_t i, j, size, targetlen, vlen, v, r, oldncol, oldtncol, coln, protecti=0, n;
-    SEXP targetcol, RHS, newdt, names, newnames, nullint, thisvalue, thisv, targetlevels, newcol, s;
+    SEXP targetcol, RHS, names, nullint, thisvalue, thisv, targetlevels, newcol, s;
     //Rprintf("Beginning %d %d\n", TYPEOF(dt), length(dt));
     if (!sizesSet) setSizes();   // TO DO move into _init
     if (length(rows)==0) {
@@ -70,35 +71,15 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP c
             // may be possible but not yet working. When the NAMED test works, we can drop allocwarn argument too because
             // that's just passed in as FALSE from [<- where we know `*tmp*` isn't really NAMED=2.
             // Note also that this growing will happen for missing columns assigned NULL, too. But so rare, we don't mind.
-            PROTECT(dt = alloccol(dt,n));
+            PROTECT(dt = alloccol(dt,n, R_NilValue, R_NilValue));
             protecti++;
         }
-        /*PROTECT(newdt = allocVector(VECSXP, length(dt)+length(newcolnames)));
-        protecti++;*/
         size = sizeof(SEXP *);
-        /*memcpy((char *)DATAPTR(newdt),(char *)DATAPTR(dt),length(dt)*size);*/
         names = getAttrib(dt, R_NamesSymbol);
-        //Rprintf("Step 3 %d %d\n", TYPEOF(dt), length(dt));
-        /*if (isNull(names)) error("names of data.table are null");
-	    PROTECT(newnames = allocVector(STRSXP, length(newdt)));
-	    protecti++;*/
-	    //memcpy((char *)DATAPTR(newnames), (char *)DATAPTR(names), length(names)*size);
-	    //Rprintf("Step 3.1 %d %d\n", TYPEOF(dt), length(dt));
-	    //Rprintf("Step 3.2 %d %d\n", TYPEOF(dt), length(dt));
-	    //Rprintf("%s %d %d %d\n",CHAR(STRING_ELT(names,0)), length(names), length(newcolnames), size);
-	    //Rprintf("Truelength names %d\n", TRUELENGTH(names));
-	    //PROTECT(dt);
-	    //protecti++;
-	    //Rprintf("%u %u %u %u %u %u (diff %u)\n",dt,DATAPTR(dt),names,DATAPTR(names),newcolnames,DATAPTR(newcolnames),((unsigned long)dt-(unsigned long)names));
 	    memcpy((char *)DATAPTR(names)+LENGTH(names)*size, (char *)DATAPTR(newcolnames), LENGTH(newcolnames)*size);
 	    // If object has been duplicated by main/duplicate.c and length copied, but truelength retained, then
 	    // this memcpy is where overwrites occurred when names is 40 bytes before dt, for example, and dt got set to
 	    // NULL by this memcpy. Now theres an alloccol(dt,length(dt)) in [<- and $<-.
-	    //Rprintf("%u %u %u %u %u %u (diff %u)\n",dt,DATAPTR(dt),names,DATAPTR(names),newcolnames,DATAPTR(newcolnames),((unsigned long)dt-(unsigned long)names));
-	    //Rprintf("Step 3.3 %d %d\n", TYPEOF(dt), length(dt));
-	    //setAttrib(newdt, R_NamesSymbol, newnames);
-        //copyMostAttrib(dt, newdt);
-        //dt = newdt;
         LENGTH(dt) = oldncol+LENGTH(newcolnames);
         LENGTH(names) = oldncol+LENGTH(newcolnames);
         // truelength's of both already set by alloccol
@@ -276,9 +257,9 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP c
         // Do this at C level to avoid any copies.
         setAttrib(dt, install("sorted"), R_NilValue);
     }
-    if (length(symbol)) {   // TO DO: comment out this if and body ?
-        // Called from := in j
-        if(!isEnvironment(rho)) error("Internal data.table error in assign.c. rho should be an environment");
+    if (!isNull(symbol)) {
+        // Called from := in j when adding columns, just needed when a realloc takes place 
+        if(!isEnvironment(rho)) error("Internal data.table error in assign.c (1). rho should be an environment");
         setVar(symbol,dt,rho);
     } // else called from $<- or [<- where the slower copy via `*tmp*` mechanism must be used (as of R 2.13.1)
     UNPROTECT(protecti);
@@ -312,7 +293,7 @@ void savetl_end() {
     Free(savedtl);
 }
 
-SEXP alloccol(SEXP dt, R_len_t n)
+SEXP alloccol(SEXP dt, R_len_t n, SEXP symbol, SEXP rho)
 {
     SEXP newdt, names, newnames;
     R_len_t l=length(dt), tl=0;   // this tl=0 is important for pre R 2.14.0
@@ -341,6 +322,10 @@ SEXP alloccol(SEXP dt, R_len_t n)
         TRUELENGTH(newnames) = n;
         dt=newdt;
         // SET_NAMED(dt,1);  // for some reason, R seems to set NAMED=2 via setAttrib?  Need NAMED to be 1 for passing to assign via a .C dance before .Call (which sets NAMED to 2), and we can't use .C with DUP=FALSE on lists.
+        if (!isNull(symbol)) {
+            if (!isEnvironment(rho)) error("Internal data.table error in assign.c (2). rho should be an environment");
+            setVar(symbol,dt,rho);
+        }
         UNPROTECT(2);
     } else {
         // Reduce the allocation (most likely to the same value as length).
@@ -351,8 +336,8 @@ SEXP alloccol(SEXP dt, R_len_t n)
     return(dt);
 }
 
-SEXP alloccolwrapper(SEXP dt, SEXP newncol) {
-    return(alloccol(dt, INTEGER(newncol)[0]));
+SEXP alloccolwrapper(SEXP dt, SEXP newncol, SEXP symbol, SEXP rho) {
+    return(alloccol(dt, INTEGER(newncol)[0], symbol, rho));
 }
 
 SEXP truelength(SEXP x) {
@@ -365,6 +350,13 @@ SEXP truelength(SEXP x) {
     }
     UNPROTECT(1);
     return(ans);
+}
+
+SEXP settruelength(SEXP x, SEXP n) {
+    // Only needed in pre 2.14.0. From 2.14.0+, truelength is initialized to 0 by R.
+    // For prior versions we set truelength to 0 in data.table creation, before calling alloc.col.
+    TRUELENGTH(x) = INTEGER(n)[0];
+    return(R_NilValue);
 }
 
 /*

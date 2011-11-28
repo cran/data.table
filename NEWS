@@ -6,6 +6,27 @@ This NEWS file summarises the main changes.
 
         *********************************************
         **                                         **
+        **   CHANGES IN DATA.TABLE VERSION 1.7.4   **
+        **                                         **
+        *********************************************
+
+BUG FIXES
+
+   o    v1.7.3 failed CRAN checks (and could crash) in R pre-2.14.0.
+        Over-allocation in v1.7.3 uses truelength which is initialized
+        to 0 by R 2.14.0, but not initialized pre-2.14.0. This was
+        known and coded for but only tested in 2.14.0 before release
+        to CRAN.
+
+NOTES
+
+   o    Two unused C variables removed to pass warning from one CRAN
+        check machine (r-devel-fedora). -Wno-unused removed from
+        Makevars to catch this in future before submitting to CRAN.
+
+
+        *********************************************
+        **                                         **
         **   CHANGES IN DATA.TABLE VERSION 1.7.3   **
         **                                         **
         *********************************************
@@ -59,7 +80,7 @@ USER VISIBLE CHANGES
         comment by ilprincipe on Stack Overflow.
         
     o   Deleting a missing column is now a warning rather than error. Thanks
-        to Chris Neff for reporting, #1642.
+        to Chris Neff for suggesting, #1642.
 
 
         *********************************************
