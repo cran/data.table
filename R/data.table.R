@@ -173,11 +173,11 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
           key(value) = key     # e.g. key=c("col1","col2")
     }
     settruelength(value,0L)
-    alloc.col(value)
+    alloc.col(value)   # Despite the thread on r-devel "Confused about NAMED" about data.frame(), returning it this way makes a NAM(1) data.table. Returning "value=alloc.col(value);value" is the same but returns a NAM(2) data.table. Unlike data.frame which is always NAMED==2. We ignore NAMED in data.table generally, but it would be useful to avoid the grow warning when NAMED=1. However the print method still bumps NAMED (as it does in data.frame) (TO DO - stop that bump and warn on grow via := will be even less often).
 }
 
 
-"[.data.table" = function (x, i, j, by=NULL, with=TRUE, nomatch=getOption("datatable.nomatch",NA), mult="all", roll=FALSE, rolltolast=FALSE, which=FALSE, bysameorder=FALSE, .SDcols, verbose=getOption("datatable.verbose",FALSE), drop=NULL)
+"[.data.table" = function (x, i, j, by=NULL, with=TRUE, nomatch=getOption("datatable.nomatch",NA), mult="all", roll=FALSE, rolltolast=FALSE, which=FALSE, .SDcols, verbose=getOption("datatable.verbose",FALSE), drop=NULL)
 {
     # the drop=NULL is to sink drop argument when dispatching to [.data.frame; using '...' stops test 147
     if (!cedta()) {
@@ -277,18 +277,18 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             .Call("binarysearch", i, x, as.integer(leftcols-1), as.integer(rightcols-1), haskey(i), roll, rolltolast, idx.start, idx.end, PACKAGE="data.table")
             if (mult=="all") {
                 # TO DO: move this inside binarysearch.c
-                lengths = idx.end - idx.start + 1
+                lengths = idx.end - idx.start + 1L
                 idx.diff = rep(1L, sum(lengths))
-                idx.diff[head(cumsum(lengths), -1) + 1] = tail(idx.start, -1) - head(idx.end, -1)
-                idx.diff[1] = idx.start[1]
+                idx.diff[head(cumsum(lengths), -1L) + 1L] = tail(idx.start, -1L) - head(idx.end, -1L)
+                idx.diff[1L] = idx.start[1L]
                 irows = cumsum(idx.diff)
                 if (missing(by)) bywithoutby=TRUE  # TO DO: detect if joining to unique rows
             } else {
                 irows = if (mult=="first") idx.start else idx.end
-                lengths=1L
+                lengths=rep(1L,length(irows))
             }
-            if (is.na(nomatch) || nomatch!=0) irows[irows==0] = nomatch
-            else lengths[idx.start==0] = 0
+            if (is.na(nomatch) || nomatch!=0L) irows[irows==0L] = nomatch
+            else lengths[idx.start==0L] = 0L
             if (which) return(irows)
         } else {
             # i is not a data.table
@@ -314,12 +314,11 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             } else {
                 ans = vector("list",ncol(i)+ncol(x)-length(leftcols))
                 inonjoin = seq_len(ncol(i))[-leftcols]
-                if (!all(lengths==1)) {
+                if (!all(lengths==1L)) {
                     ii = rep(1:nrow(i),lengths)
                     for (s in seq_along(leftcols)) ans[[s]] = origi[[leftcols[s]]][ii]
                     for (s in seq_along(inonjoin)) ans[[s+ncol(x)]] = origi[[inonjoin[s]]][ii]
-                }
-                else {
+                } else {
                     for (s in seq_along(leftcols)) ans[[s]] = origi[[leftcols[s]]]
                     for (s in seq_along(inonjoin)) ans[[s+ncol(x)]] = origi[[inonjoin[s]]]
                 }
@@ -399,7 +398,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         # the !missing is for speed to avoid calling getOption() which then calls options().
         # better to do verbosity before calling C, to make tracing easier if there's a problem in assign.c
         revcolorder = .Internal(radixsort(cols, na.last=FALSE, decreasing=TRUE))  # currently length 1 anyway here, more relevant in the other .Call to assign. Might need a wrapper around .Call(assign), then
-        return(.Call("assign",x,ssrows,cols,newcolnames,rhs,clearkey,symbol,rho,revcolorder,TRUE,PACKAGE="data.table"))
+        return(.Call("assign",x,ssrows,cols,newcolnames,rhs,clearkey,symbol,rho,revcolorder,getOption("datatable.allocwarn",FALSE),PACKAGE="data.table"))
         # Allows 'update and then' queries such as DT[J(thisitem),done:=TRUE][,sum(done)]
         # Could return number of rows updated but even when wrapped in invisible() it seems
         # the [.class method doesn't respect invisible, which may be confusing to user.
@@ -457,7 +456,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         f__ = idx.start
         len__ = as.integer(idx.end-idx.start+1)
         names(byval) = iby
-        bysameorder = haskey(i) #TRUE  # setting 'bysameorder' now is more of a fudge to avoid the o__[f__] later.
+        bysameorder = haskey(i)
         if (!is.data.table(i)) stop("logicial error. i is not data.table, but mult='all' and 'by' is missing")
         bynames = allbyvars = NULL
     } else {
@@ -481,6 +480,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             bysubl = as.list(bysub)
         }
         allbyvars = intersect(unlist(sapply(bysubl,all.vars,functions=TRUE)),colnames(x))
+        bysameorder = haskey(x) && all(sapply(bysubl,is.name)) && identical(allbyvars,head(key(x),length(allbyvars)))
         byval = eval(bysub, x, parent.frame())
         if (!length(byval)) {
             # see missing(by) up above for comments
@@ -530,16 +530,9 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             }
             names(byval) = bynames
         }
-        if (missing(bysameorder) && length(bynames) <= length(key(x)) && identical(bynames,head(key(x),length(bynames)))) {
-            bysameorder=TRUE
-            # table is already sorted by the group criteria, no need to sort
-            # fastorder is so fast though that maybe this is not worth worrying about, especially if fastorder is even faster if its already sorted.
-            # TO DO: turn off bysameorder, and always call fastorder ?
-            # TO DO++: hash the key so sorting never required (hence shash query to r-devel)
-        }
         if (verbose) {last.started.at=proc.time()[3];cat("Finding groups (bysameorder=",bysameorder,") ... ",sep="");flush.console()}
         if (bysameorder) {
-            f__ = duplist(byval)   # find group starts, assumes they are grouped.
+            f__ = duplist(byval)   # find group starts, given we know they are already grouped.
             for (jj in seq_along(byval)) byval[[jj]] = byval[[jj]][f__]
             len__ = as.integer(c(diff(f__), nrow(x)-last(f__)+1))
         } else {
@@ -643,7 +636,8 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         } else {
             stop("j must evaluate to an atomic vector (inc factor, Date etc), list of atomic vectors, or NULL")
         }
-    # if (!is.null(names(testj))) warning("j evaluates to a list with names. this is wasteful and likely avoidable")
+        if (verbose && !is.null(names(testj))) cat("testj evaluates to a list with names, this may slow down grouping")
+        if (is.list(testj) && any(sapply(testj,is.data.frame))) stop("All items in j=list(...) should be atomic vectors or lists, currently. Consider cbind or merge afterwards until := by group is implemented.")
         maxn = max(sapply(testj,length))   # this could be 0 here too
     } else {
         maxn = 0
@@ -947,16 +941,25 @@ tail.data.table = function(x, n=6, ...) {
     if (n == 0)
         return( null.data.table() )
     if (!all(sapply(allargs, is.list))) stop("All arguments to rbind must be lists (including data.frame and data.table)")
-    if (length(unique(sapply(allargs, ncol))) != 1) stop("All arguments to rbind must have the same number of columns")
-
+    ncols = sapply(allargs, length)
+    if (length(unique(ncols)) != 1) {
+        f=which(ncols!=ncols[1])[1]
+        stop("All arguments to rbind must have the same number of columns. Item 1 has ",ncols[1]," but item ",f," has ",ncols[f],"column(s).")
+    }
     l = list()
     nm = names(allargs[[1]])
     if (length(nm) && n>1) {
-        for (i in 2:n) if (length(names(allargs[[i]])) && !all(names(allargs[[i]]) == nm)) warning("colnames of argument ",i," don't match colnames of argument 1")
+        for (i in 2:n) if (length(names(allargs[[i]]))) {
+            if (!all(names(allargs[[i]]) %in% nm))
+                stop("Some colnames of argument ",i," (",paste(setdiff(names(allargs[[i]]),nm),collapse=","),") are not present in colnames of item 1. If an argument has colnames they can be in a different order, but they must all be present. Alternatively, you can drop names (by using an unnamed list) and the columns will then be joined by position.")
+            if (!all(names(allargs[[i]]) == nm))
+                warning("Argument ",i," has names in a different order. Columns will be bound by name for consistency with base.")
+                allargs[[i]] = as.list(allargs[[i]])[nm]
+        }
     }
-    # for (i in 1:length(allargs[[1]])) l[[i]] = unlist(lapply(allargs, "[[", i))
     for (i in 1:length(allargs[[1]])) l[[i]] = do.call("c", lapply(allargs, "[[", i))
     # This is why we currently still need c.factor.
+    # TO DO: much easier with character columns, when they are allowed.
     names(l) = nm
     setattr(l,"row.names",.set_row_names(length(l[[1]])))
     setattr(l,"class",c("data.table","data.frame"))
