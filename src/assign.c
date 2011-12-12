@@ -61,12 +61,16 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP c
         if (length(rows)!=0) error("Attempt to add new column(s) and set subset of rows at the same time. Create the new column(s) first, and then you'll be able to assign to a subset. If i is set to 1:nrow(x) then please remove that (no need, it's faster without).");
         oldtncol = TRUELENGTH(dt);
         
-        if (oldtncol<oldncol && oldtncol>oldncol+500) oldtncol=0;
-        // tl can be 0 when saved and loaded back from disk (and NAMED will be 1 then) [so alloccol needed]
-        // but, tl is random (unitialized) in R <=2.13.2 so we try and detect that with the logic above. It is
-        // possible, (in R <=2.13.2) that by chance, tl is within a small range above length(dt) that seems
-        // like a valid truelength (but isn't), but that chance seems low. Not enough to warrant making data.table
-        // dependent on 2.14.0 (some users have asked us not to do that).
+        if (oldtncol<oldncol || TRUELENGTH(getAttrib(dt, R_ClassSymbol)) != -999 ) {
+            // tl will be 0 in R 2.14.0+ when saved and loaded back from disk (and NAMED will be 1 then),
+            // but, tl is random (uninitialized) in R <=2.13.2 so we detect that with the logic above.
+            // It is possible (in R <=2.13.2) that by chance, tl is unitialized to -999 but not enough risk to warrant
+            // making data.table dependent on 2.14.0 (some users have asked us not to do that as they are bound to
+            // earlier versions).
+            // The first oldtncol<oldncol is not needed strictly, but no harm in keeping it there.
+            oldtncol=0;  // trigger alloccol below
+            TRUELENGTH(getAttrib(dt, R_ClassSymbol)) = -999;
+        }
         
         if (oldtncol < oldncol+LENGTH(newcolnames)) {
             n = imax2(oldtncol+100, oldncol+2*LENGTH(newcolnames));
@@ -103,100 +107,109 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP c
             // if column exists, 'replace' it (one way to change a column's type i.e. less easy, as it should be, for speed, correctness and to get the user thinking about their intent)        
             continue;
         }
-        if (vlen<1) error("RHS of assignment is zero length but not NULL. If you intend to delete the column use NULL. Otherwise the RHS must have length > 0");
-        if (!isVectorAtomic(thisvalue) && !(isVector(thisvalue) && length(thisvalue)==targetlen))
+        if (vlen<1 && (TYPEOF(thisvalue)!=VECSXP || (coln+1) <= oldncol))
+            error("RHS of assignment is zero length but not NULL. If you intend to delete the column use NULL. If you intend to create an empty list column use list(). Otherwise the RHS must have length > 0; e.g. NA_real_, NA_integer_");
+        if (!isVector(thisvalue) && !(isVector(thisvalue) && length(thisvalue)==targetlen))
             error("RHS of assignment is not NULL, not an an atomic vector (see ?is.atomic) and not a list() column.");
-        if (targetlen%vlen != 0) error("Tried to assign %d items to target of %d (can recycle but must be exact multiple). If users ask us to change this to a warning, we will change it; please ask maintainer('data.table').",vlen,targetlen);
+        if (vlen>0 && targetlen%vlen != 0) error("Tried to assign %d items to target of %d (can recycle but must be exact multiple). If users ask us to change this to a warning, we will change it; please ask maintainer('data.table').",vlen,targetlen);
         if (coln+1 > oldncol) {  // new column
             PROTECT(newcol = allocVector(TYPEOF(thisvalue),targetlen));
             protecti++;
-            SET_VECTOR_ELT(dt,coln,newcol);
-        }
-        targetcol = VECTOR_ELT(dt,coln);
-        if (isFactor(targetcol)) {
-            // Coerce RHS to appropriate levels of LHS, adding new levels as necessary (unlike base)
-            // If it's the same RHS being assigned to several columns, we have to recoerce for each
-            // one because the levels of each target are likely different
             if (isFactor(thisvalue)) {
-                PROTECT(thisvalue = asCharacterFactor(thisvalue));
-                protecti++;
+                 setAttrib(newcol, R_LevelsSymbol, getAttrib(thisvalue, R_LevelsSymbol));
+                 setAttrib(newcol, R_ClassSymbol, getAttrib(thisvalue, R_ClassSymbol));
             }
-            targetlevels = getAttrib(targetcol, R_LevelsSymbol);
-            if (isString(thisvalue)) {
-                savetl_init();
-                for (j=0; j<length(thisvalue); j++) {
-                    s = STRING_ELT(thisvalue,j);
-                    if (TRUELENGTH(s)!=0) {
-                        savetl(s);  // pre-2.14.0 this will save all the uninitialised truelengths
-                        TRUELENGTH(s)=0;
-                    }
-                }
-                for (j=0; j<length(targetlevels); j++) {
-                    s = STRING_ELT(targetlevels,j);
-                    if (TRUELENGTH(s)!=0) savetl(s);
-                    TRUELENGTH(s)=j+1;
-                }
-                R_len_t addi = 0;
-                SEXP addlevels=NULL;
-                PROTECT(RHS = allocVector(INTSXP, length(thisvalue)));
-                protecti++;
-                for (j=0; j<length(thisvalue); j++) {
-                    thisv = STRING_ELT(thisvalue,j);
-                    if (TRUELENGTH(thisv)==0) {
-                        if (addi==0) {
-                            PROTECT(addlevels = allocVector(STRSXP, 100));
-                            protecti++;
-                        } else if (addi >= length(addlevels)) {
-                            PROTECT(addlevels = growVector(addlevels, length(addlevels)+1000));
-                            protecti++;
-                        }
-                        SET_STRING_ELT(addlevels,addi,thisv);
-                        TRUELENGTH(thisv) = ++addi+length(targetlevels);  
-                    }
-                    INTEGER(RHS)[j] = TRUELENGTH(thisv);
-                }
-                if (addi > 0) {
-                    R_len_t oldlen = length(targetlevels);
-                    PROTECT(targetlevels = growVector(targetlevels, length(targetlevels)+addi));
+            SET_VECTOR_ELT(dt,coln,newcol);
+            if (vlen<1) continue;
+            targetcol = newcol;
+            RHS = thisvalue;
+        } else {                 // existing column
+            targetcol = VECTOR_ELT(dt,coln);
+            if (isFactor(targetcol)) {
+                // Coerce RHS to appropriate levels of LHS, adding new levels as necessary (unlike base)
+                // If it's the same RHS being assigned to several columns, we have to recoerce for each
+                // one because the levels of each target are likely different
+                if (isFactor(thisvalue)) {
+                    PROTECT(thisvalue = asCharacterFactor(thisvalue));
                     protecti++;
-                    size = sizeof(SEXP *);
-                    memcpy((char *)DATAPTR(targetlevels) + oldlen*size,
-                           (char *)DATAPTR(addlevels),
-                           addi*size);
-                    setAttrib(targetcol, R_LevelsSymbol, targetlevels);
                 }
-                for (j=0; j<length(targetlevels); j++) TRUELENGTH(STRING_ELT(targetlevels,j))=0;  // important to reinstate 0 for countingcharacterorder and HASHPRI (if any) as done by savetl_end().
-                savetl_end();
-            } else {
-                // value is either integer or numeric vector
-                if (TYPEOF(thisvalue)!=INTSXP && TYPEOF(thisvalue)!=REALSXP)
-                    error("Trying to assign factor column %d a value of type %d i.e. not character, integer or numeric",i,TYPEOF(thisvalue));
-                PROTECT(RHS = coerceVector(thisvalue,INTSXP));  // TYPEOF(targetcol) is INTSXP for factors
-                protecti++;
-                for (j=0; j<length(RHS); j++) {
-                    if (INTEGER(RHS)[j]<1 || INTEGER(RHS)[j]>LENGTH(targetlevels)) {
-                        warning("RHS contains %d which is outside the levels range ([1,%d]) of column %d, NAs generated", INTEGER(RHS)[j], LENGTH(targetlevels), i+1);
-                        INTEGER(RHS)[j] = NA_INTEGER;
+                targetlevels = getAttrib(targetcol, R_LevelsSymbol);
+                if (isString(thisvalue)) {
+                    savetl_init();
+                    for (j=0; j<length(thisvalue); j++) {
+                        s = STRING_ELT(thisvalue,j);
+                        if (TRUELENGTH(s)!=0) {
+                            savetl(s);  // pre-2.14.0 this will save all the uninitialised truelengths
+                            TRUELENGTH(s)=0;
+                        }
+                    }
+                    for (j=0; j<length(targetlevels); j++) {
+                        s = STRING_ELT(targetlevels,j);
+                        if (TRUELENGTH(s)!=0) savetl(s);
+                        TRUELENGTH(s)=j+1;
+                    }
+                    R_len_t addi = 0;
+                    SEXP addlevels=NULL;
+                    PROTECT(RHS = allocVector(INTSXP, length(thisvalue)));
+                    protecti++;
+                    for (j=0; j<length(thisvalue); j++) {
+                        thisv = STRING_ELT(thisvalue,j);
+                        if (TRUELENGTH(thisv)==0) {
+                            if (addi==0) {
+                                PROTECT(addlevels = allocVector(STRSXP, 100));
+                                protecti++;
+                            } else if (addi >= length(addlevels)) {
+                                PROTECT(addlevels = growVector(addlevels, length(addlevels)+1000));
+                                protecti++;
+                            }
+                            SET_STRING_ELT(addlevels,addi,thisv);
+                            TRUELENGTH(thisv) = ++addi+length(targetlevels);  
+                        }
+                        INTEGER(RHS)[j] = TRUELENGTH(thisv);
+                    }
+                    if (addi > 0) {
+                        R_len_t oldlen = length(targetlevels);
+                        PROTECT(targetlevels = growVector(targetlevels, length(targetlevels)+addi));
+                        protecti++;
+                        size = sizeof(SEXP *);
+                        memcpy((char *)DATAPTR(targetlevels) + oldlen*size,
+                               (char *)DATAPTR(addlevels),
+                               addi*size);
+                        setAttrib(targetcol, R_LevelsSymbol, targetlevels);
+                    }
+                    for (j=0; j<length(targetlevels); j++) TRUELENGTH(STRING_ELT(targetlevels,j))=0;  // important to reinstate 0 for countingcharacterorder and HASHPRI (if any) as done by savetl_end().
+                    savetl_end();
+                } else {
+                    // value is either integer or numeric vector
+                    if (TYPEOF(thisvalue)!=INTSXP && TYPEOF(thisvalue)!=REALSXP)
+                        error("Trying to assign factor column %d a value of type %d i.e. not character, integer or numeric",i,TYPEOF(thisvalue));
+                    PROTECT(RHS = coerceVector(thisvalue,INTSXP));  // TYPEOF(targetcol) is INTSXP for factors
+                    protecti++;
+                    for (j=0; j<length(RHS); j++) {
+                        if (INTEGER(RHS)[j]<1 || INTEGER(RHS)[j]>LENGTH(targetlevels)) {
+                            warning("RHS contains %d which is outside the levels range ([1,%d]) of column %d, NAs generated", INTEGER(RHS)[j], LENGTH(targetlevels), i+1);
+                            INTEGER(RHS)[j] = NA_INTEGER;
+                        }
                     }
                 }
+            } else {
+                PROTECT(RHS = coerceVector(thisvalue,TYPEOF(targetcol)));
+                protecti++;
             }
-        } else {
-            PROTECT(RHS = coerceVector(thisvalue,TYPEOF(targetcol)));
-            protecti++;
-        }
-        // i.e. coerce the RHS to match the type of the column (coerceVector returns early if already the same)
-        // This is different to [<-.data.frame which changes the type of the column to match the RHS. A
-        // data.table tends to be big so we don't want to do that. Also, typically the RHS is very small,
-        // often a length 1 vector such as 42, which by default in R is type numeric. If the column is integer,
-        // then intent of user was very likely to coerce 42 to integer and then assign that to the integer column,
-        // not the other way around like [.data.frame
-        // Most usual reason for coercing RHS several times (i.e. inside this loop) is when assigning NA
-        // to different typed columns on left in for example DT[i,]<-NA
-        if (TYPEOF(thisvalue)==REALSXP && (TYPEOF(targetcol)==INTSXP || TYPEOF(targetcol)==LGLSXP)) {
-            warning("Coerced numeric RHS to %s to match the column's type; may have truncated precision. Either change the column to numeric first (by creating a new numeric vector length %d (nrows of entire table) yourself and assigning that; i.e. 'replace' column), or coerce RHS to integer yourself (e.g. 1L or as.integer) to make your intent clear (and for speed). Or, set the column type correctly up front when you create the table and stick to it, please.", TYPEOF(targetcol)==INTSXP ? "integer" : "logical", length(VECTOR_ELT(dt,0)));
-        }
-        if (TYPEOF(thisvalue)==INTSXP && TYPEOF(targetcol)==LGLSXP) {
-            warning("Coerced integer RHS to logical to match the column's type. Either change the column to integer first (by creating a new integer vector length %d (nrows of entire table) yourself and assigning that; i.e. 'replace' column), or coerce RHS to logical yourself (e.g. as.logical) to make your intent clear (and for speed). Or, set the column type correctly up front when you create the table and stick to it, please.", length(VECTOR_ELT(dt,0)));
+            // i.e. coerce the RHS to match the type of the column (coerceVector returns early if already the same)
+            // This is different to [<-.data.frame which changes the type of the column to match the RHS. A
+            // data.table tends to be big so we don't want to do that. Also, typically the RHS is very small,
+            // often a length 1 vector such as 42, which by default in R is type numeric. If the column is integer,
+            // then intent of user was very likely to coerce 42 to integer and then assign that to the integer column,
+            // not the other way around like [.data.frame
+            // Most usual reason for coercing RHS several times (i.e. inside this loop) is when assigning NA
+            // to different typed columns on left in for example DT[i,]<-NA
+            if (TYPEOF(thisvalue)==REALSXP && (TYPEOF(targetcol)==INTSXP || TYPEOF(targetcol)==LGLSXP)) {
+                warning("Coerced numeric RHS to %s to match the column's type; may have truncated precision. Either change the column to numeric first (by creating a new numeric vector length %d (nrows of entire table) yourself and assigning that; i.e. 'replace' column), or coerce RHS to integer yourself (e.g. 1L or as.integer) to make your intent clear (and for speed). Or, set the column type correctly up front when you create the table and stick to it, please.", TYPEOF(targetcol)==INTSXP ? "integer" : "logical", length(VECTOR_ELT(dt,0)));
+            }
+            if (TYPEOF(thisvalue)==INTSXP && TYPEOF(targetcol)==LGLSXP) {
+                warning("Coerced integer RHS to logical to match the column's type. Either change the column to integer first (by creating a new integer vector length %d (nrows of entire table) yourself and assigning that; i.e. 'replace' column), or coerce RHS to logical yourself (e.g. as.logical) to make your intent clear (and for speed). Or, set the column type correctly up front when you create the table and stick to it, please.", length(VECTOR_ELT(dt,0)));
+            }
         }
         size = SIZEOF(targetcol);
         if (length(rows)==0) {
@@ -221,7 +234,7 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP c
         // Delete any columns assigned NULL (there was a 'continue' early in loop above)
         i = INTEGER(revcolorder)[r]-1;
         coln = INTEGER(cols)[i]-1;
-        if (TYPEOF(values)==VECSXP)
+        if (TYPEOF(values)==VECSXP && LENGTH(values)>0)
             thisvalue = VECTOR_ELT(values,i%LENGTH(values));
         else
             thisvalue = values;

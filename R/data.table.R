@@ -122,14 +122,16 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         }
     }
     nr <- max(nrows)
-    if (nr>0 && any(nrows==0)) stop("every input must have at least one value, unless all columns are empty")
-    # So we can create an empty data.table, for inserting data later.  When some but not all columns are empty, you should put NA in the empty ones, to be silently filled to a column of NAs.
-    # TO DO - see if silent vector expansion is already done in C somewhere.
     for (i in (1:n)[nrows < nr]) {
         xi <- x[[i]]
+        if (identical(xi,list())) {
+            x[[i]] = vector("list", nr)
+            next
+        }
+        if (nrows[i]==0) stop("Item ",i," has no length. Provide at least one item (such as NA, NA_integer_ etc) to be repeated to match the ",nr," rows in the longest column. Or, all columns can be 0 length, for insert()ing rows into.")
         if (nr%%nrows[i] == 0) {
             if (is.atomic(xi) || is.list(xi)) {
-                x[[i]] <- rep(xi, length.out = nr)
+                x[[i]] = rep(xi, length.out = nr)
                 next
             }
             # don't know why this is here, take it out and see what bites
@@ -895,8 +897,8 @@ tail.data.table = function(x, n=6, ...) {
         # DT["a",]$y <- 1.1  winds up creating `*tmp*` subset of rows and assigning _all_ the columns into x and
         # over-writing the key columns with the same value (not just the single 'y' column).
         # That isn't good for speed; it's an R thing. Solution is to use := instead to avoid all this, but user
-        # expects key to be retained in this case because _he_ didn't assign to a key column (the internal R code     
-        # did).
+        # expects key to be retained in this case because _he_ didn't assign to a key column (the internal base R 
+        # code did).
         keycol=FALSE
     }
     revcolorder = .Internal(radixsort(cols, na.last=FALSE, decreasing=TRUE))
@@ -1182,11 +1184,15 @@ truelength = function(x) .Call("truelength",x,PACKAGE="data.table")
 # deliberately no "truelength<-" method.  alloc.col is the mechanism for that (maybe alloc.col should be renamed "truelength<-".
 
 settruelength = function(x,n) {
-    if (n!=0) stop("settruelength should only be used to set to 0, prior to 2.14.0")
+    "Truly an internal function only. Users can call this using :::, but please don't."
+    if (n!=0) warning("settruelength should only be used to set to 0, and is for 2.13.2-")
     if (getRversion() >= "2.14.0")
         if (truelength(x) != 0) warning("This is R>=2.14.0 but truelength isn't initialized to 0")
-        # grep for suppressWarnings(settruelength) for where this is needed in 2.14.0+
+        # grep for suppressWarnings(settruelength) for where this is needed in 2.14.0+ (otherwise an option would be to make data.table depend on 2.14.0 so settruelength could be removed)
     .Call("settruelength",x,as.integer(n),PACKAGE="data.table")
+    if (is.data.table(x))
+        .Call("settruelength",attr(x,"class"),-999L,PACKAGE="data.table")
+        # So that (in R 2.13.2-) we can detect tables loaded from disk (tl is not initialized there)
 }
 
 ":=" = function(LHS,RHS) stop(':= is defined for use in j only; i.e., DT[i,col:=1L] not DT[i,col]:=1L or DT[i]$col:=1L. Please see help(":=").')
