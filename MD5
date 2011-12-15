@@ -1,6 +1,6 @@
-b3d7078948f291f72fb5945f07d06115 *DESCRIPTION
+f821f030b25ef909b47511a244234ea5 *DESCRIPTION
 fd48d92a8005145ba0962f2dd6cec48d *NAMESPACE
-a05dc8bb1404b8358f30e5bc8342e538 *NEWS
+ce582103ebe0546167f05d6958c3f70f *NEWS
 4377e4b917c44366f66862324c8fd32a *R/AllS4.R
 ddd031a062e1dd67f6f4046ba5c81a3c *R/IDateTime.R
 fd7d3da9fb68fbfec72a1d2bd9520520 *R/between.R
@@ -27,12 +27,12 @@ e81f1f4a3fd57b9da1e9ff29fd304522 *R/trim.R
 97fcd4bcd1cb5937fbe12448cf0632b5 *R/which.first.R
 0ce94e31d0313fee07fd06688ca6e264 *R/which.last.R
 c6c62de5cc052bec5a12ac45b60a23e1 *R/zzz.R
-ffee2cbdfdd4cd4971fa308d2794ec7f *inst/doc/datatable-faq.Rnw
-265b1fb15805c7d51c674bfd07f8e2c2 *inst/doc/datatable-faq.pdf
+641ce317abdb1a1d0aaf07abd973f6cd *inst/doc/datatable-faq.Rnw
+9de83bf2316816ce400c1254c1188b4f *inst/doc/datatable-faq.pdf
 d7fc14bfcd1e49a4c5bddb1c7621a2e0 *inst/doc/datatable-intro.Rnw
-05000959cbca721a05f079fc9c402553 *inst/doc/datatable-intro.pdf
+2d580bdbbae696a356dafe29ca033eeb *inst/doc/datatable-intro.pdf
 292ff47ba012d39c47fb89fe71cfa797 *inst/doc/datatable-timings.Rnw
-f919fa1fdef448239220c07e0f39ecb4 *inst/doc/datatable-timings.pdf
+60af9b9312b4def825d44c60c2111904 *inst/doc/datatable-timings.pdf
 6e8ff5d0e3ffe0bff606a006dcbca24e *inst/tests/test-S4.R
 87b3e9ad5c9943e6130919b5fbf26c81 *inst/tests/test-data.frame-like.R
 e48af8bfe4012668e500eb5afa3ae305 *inst/tests/tests.Rraw
@@ -42,7 +42,7 @@ e48af8bfe4012668e500eb5afa3ae305 *inst/tests/tests.Rraw
 5c4768c0e0836f06f93c54270b5344bd *man/assign.Rd
 bb465c168762e3d53ee44caded2ae7f9 *man/between.Rd
 d8b388049dddc60a92efc3093981d47b *man/data.table-class.Rd
-08b48128fc8f3c5fbd13e6af82f8122e *man/data.table.Rd
+9525b56eb527dfbe0a9b7af3ea241b1e *man/data.table.Rd
 2a3e55fa3c40820ce586567deb07cfa1 *man/duplicated.Rd
 b2360d3cd549e0b248a77fb246f3d8dc *man/last.Rd
 4d1e235d5b9ee907640d8ba482924860 *man/like.Rd
@@ -54,7 +54,7 @@ ae8ed45ce2c47ba1c198609b083d9430 *man/tables.Rd
 1bdb8df53d3e596955b6ed4c050aee7a *man/timetaken.Rd
 e57b125a2e2439b158418f5e8fa64cbe *man/transform.data.table.Rd
 2d020908d5ee3c37dd73805e404f03e1 *man/truelength.Rd
-cc8b3cc414aafa1ceadeaf0d3ad6fb79 *src/assign.c
+07a04baee3b477a275f97af570c54100 *src/assign.c
 c44f2a0f604bbd836501b1dee820c093 *src/countingcharacter.c
 8d8717ef27fc4a6b5cc58b82b1ff2718 *src/dogroups.c
 33f9fe9b736103175eac80e18db9fcb5 *src/duplist.c

@@ -6,6 +6,22 @@ This NEWS file summarises the main changes.
 
         *********************************************
         **                                         **
+        **   CHANGES IN DATA.TABLE VERSION 1.7.7   **
+        **                                         **
+        *********************************************
+
+BUG FIXES
+
+   o    Previous bug fix for random crash in R <= 2.13.2
+        related to truelength and over-allocation didn't
+        work, 3rd attempt. Thanks to Chris Neff for his
+        patience and testing. This has shown up consistently
+        as error status on CRAN old-rel checks (windows and
+        mac). So if they pass, this issue is fixed.
+
+
+        *********************************************
+        **                                         **
         **   CHANGES IN DATA.TABLE VERSION 1.7.6   **
         **                                         **
         *********************************************
