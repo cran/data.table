@@ -11,9 +11,11 @@
 \description{
    \code{data.table} \emph{inherits} from \code{data.frame}. It offers fast subset, fast grouping, fast update, fast ordered joins and list columns in a short and flexible syntax, for faster development. It is inspired by \code{A[B]} syntax in \R where \code{A} is a matrix and \code{B} is a 2-column matrix. Since a \code{data.table} \emph{is} a \code{data.frame}, it is compatible with \R functions and packages that \emph{only} accept \code{data.frame}.
    
-   The 10 minute quick start guide to \code{data.table} may be a good place to start: \href{../doc/datatable-intro.pdf}{\code{vignette("datatable-intro")}}. Or, the first section of FAQs is intended to be read from start to finish and is considered core documentation: \href{../doc/datatable-faq.pdf}{\code{vignette("datatable-faq")}}. If you have read and searched these documents and the help page below, please feel free to ask questions on \href{http://r.789695.n4.nabble.com/datatable-help-f2315188.html}{datatable-help} or the Stack Overflow \href{http://stackoverflow.com/questions/tagged/data.table}{data.table tag}.
+   The 10 minute quick start guide to \code{data.table} may be a good place to start: \href{../doc/datatable-intro.pdf}{\code{vignette("datatable-intro")}}. Or, the first section of FAQs is intended to be read from start to finish and is considered core documentation: \href{../doc/datatable-faq.pdf}{\code{vignette("datatable-faq")}}. If you have read and searched these documents and the help page below, please feel free to ask questions on \href{http://r.789695.n4.nabble.com/datatable-help-f2315188.html}{datatable-help} or the Stack Overflow \href{http://stackoverflow.com/questions/tagged/data.table}{data.table tag}. To report a bug please type: \code{bug.report(package="data.table")}.
    
    Please check the \href{http://datatable.r-forge.r-project.org/}{homepage} for up to the minute \href{http://r-forge.r-project.org/scm/viewvc.php/pkg/NEWS?view=markup&root=datatable}{news}.
+   
+   Tip: one of the quickest ways to learn the features is to type \code{example(data.table)} and study the output at the prompt.
    
    *NEW* : help page for \code{\link{:=}}
 }
@@ -58,14 +60,14 @@ data.table(..., keep.rownames=FALSE, check.names=TRUE, key=NULL)
   Advanced: When \code{i} is a regular \code{list} (such as \code{.BY}), it is automatically converted to \code{data.table}.
 
 }
-  \item{j}{ \code{list()} of expressions of column names, an expression or function call that evaluates to \code{list} (including \code{data.frame} and \code{data.table} which are \code{list}s, too), or (when \code{with=FALSE}) same as \code{j} in \code{[.data.frame}.
+  \item{j}{ A single column name, single expresson of column names, \code{list()} of expressions of column names, an expression or function call that evaluates to \code{list} (including \code{data.frame} and \code{data.table} which are \code{list}s, too), or (when \code{with=FALSE}) same as \code{j} in \code{[.data.frame}.
 
-  \code{j} is evaluated within the frame of the \code{data.table} (i.e. it sees column names as if they are variables). The result is returned. \code{list()} may be omitted when there is just one expression, for convenience.
+  \code{j} is evaluated within the frame of the \code{data.table}; i.e., it sees column names as if they are variables. Use \code{j=list(...)} to return multiple columns and/or expressions of columns. A single column or single expression returns that type, usually a vector. See the examples.
 
 }
-  \item{by}{ \code{list()} of expressions of column names, or a single character string containing comma separated column names, or a character vector of column names.
+  \item{by}{ A single unquoted column name, \code{list()} of expressions of column names, or a single character string containing comma separated column names, or a character vector of column names.
 
-  The \code{list()} of expressions is evaluated within the frame of the data.table (i.e. it sees column names as if they are variables). The data.table is then grouped by the \code{by} and \code{j} is evaluated within the frame. The order of the rows within each group is preserved as is the order of the groups. \code{list()} may be omitted when there is just one expression, typically a single unquoted column name.
+  The \code{list()} of expressions is evaluated within the frame of the \code{data.table} (i.e. it sees column names as if they are variables). The \code{data.table} is then grouped by the \code{by} and \code{j} is evaluated within each group. The order of the rows within each group is preserved, as is the order of the groups. \code{j=list(...)} may be omitted when there is just one expression, for convenience, typically a single expression such as \code{sum(colB)}; e.g., \code{DT[,sum(colB),by=colA]}.
 
   When \code{by} contains the first \code{n} columns of \code{x}'s key, we call this a \emph{keyed by}. In a keyed by the groups appear contiguously in RAM and memory is copied in bulk internally, for extra speed. Otherwise, we call it an \emph{ad hoc by}. Ad hoc by is still many times faster than \code{tapply}, for example, but just not as fast as keyed by when datasets are very large, in particular when the size of \emph{each group} is large.
 
@@ -189,8 +191,11 @@ DT[,2,with=FALSE]          # 2nd column
 colNum = 2
 DT[,colNum,with=FALSE]     # same
 
-setkey(DT,x)               # set a 1-column key
-key(DT) = "x"              # same
+setkey(DT,x)               # set a 1-column key. No quotes, for convenience.
+setkeyv(DT,"x")            # same (v in setkeyv stands for vector)
+v="x"
+setkeyv(DT,v)              # same
+# key(DT)<-"x"             # copies whole table, please use set* functions instead
 
 DT["a"]                    # binary search (fast)
 DT[x=="a"]                 # vector scan (slow)
@@ -215,7 +220,7 @@ J("a",2)                   # J() is alias for data.table()
 data.table("a",2)          # same
 
 setkey(DT,x,y)             # 2-column key
-key(DT) = c("x","y")       # same
+setkeyv(DT,c("x","y"))     # same
 
 DT["a"]                    # join to 1st column of key
 DT[J("a")]                 # same

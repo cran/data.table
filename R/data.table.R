@@ -167,15 +167,18 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
     names(value) <- vnames
     setattr(value,"row.names",.set_row_names(nr))
     setattr(value,"class",c("data.table","data.frame"))
+    alloc.col(value)
     if (!is.null(key)) {
-      if (!is.character(key)) stop("key must be character")
-      if (length(key)==1)
-          eval(parse(text=paste("setkey(value,",key,")",sep="")))    # e.g. key = "x,y"
-      else
-          key(value) = key     # e.g. key=c("col1","col2")
+      if (!is.character(key)) stop("key argument of data.table() must be character")
+      if (length(key)==1) {
+          key = strsplit(key,split=",")[[1]]
+          # eg key="A,B"; a syntax only useful in key argument to data.table(), really.
+      }
+      setkeyv(value,key)
     }
-    settruelength(value,0L)
-    alloc.col(value)   # Despite the thread on r-devel "Confused about NAMED" about data.frame(), returning it this way makes a NAM(1) data.table. Returning "value=alloc.col(value);value" is the same but returns a NAM(2) data.table. Unlike data.frame which is always NAMED==2. We ignore NAMED in data.table generally, but it would be useful to avoid the grow warning when NAMED=1. However the print method still bumps NAMED (as it does in data.frame) (TO DO - stop that bump and warn on grow via := will be even less often).
+    value
+    #alloc.col(value)
+    # TO DO. Revisit this comment. Applied when 'alloc.col(value)' was the last line....Despite the thread on r-devel "Confused about NAMED" about data.frame(), returning it this way makes a NAM(1) data.table. Returning "value=alloc.col(value);value" is the same but returns a NAM(2) data.table. Unlike data.frame which is always NAMED==2. We ignore NAMED in data.table generally, but it would be useful to avoid the grow warning when NAMED=1. However the print method still bumps NAMED (as it does in data.frame) (TO DO - stop that bump and warn on grow via := will be even less often).
 }
 
 
@@ -184,7 +187,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
     # the drop=NULL is to sink drop argument when dispatching to [.data.frame; using '...' stops test 147
     if (!cedta()) {
         ans = if (missing(drop)) `[.data.frame`(x,i,j) else `[.data.frame`(x,i,j,drop)
-        if (!missing(i)) key(ans)=NULL  # See test 304
+        if (!missing(i)) setkey(ans,NULL)  # See test 304
         return(ans)
     }
     if (!missing(by) && missing(j)) stop("'by' is supplied but not j")
@@ -233,7 +236,10 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
             if (haskey(i)) {
                 leftcols = match(key(i),colnames(i))
                 if (any(is.na(leftcols))) stop("sorted columns of i don't exist in the colnames of i. data.table is not a valid data.table")
-                if (length(rightcols) < length(leftcols)) stop("i has more sorted columns than x has sorted columns, invalid sorted match")
+                if (length(rightcols) < length(leftcols)) {
+                    if (verbose) cat("i's key is longer (",length(leftcols),") than x's key (",length(rightcols),"). Using the first ",length(rightcols)," columns of i's key in the join.\n", sep="")
+                    leftcols = head(leftcols,length(rightcols))
+                }
                 byval = i[,leftcols,with=FALSE]  # TO DO: remove this subset; just needs pointer
                 for (a in seq(along=leftcols)) {
                     # When/if we move to character, this entire for() will not be required.
@@ -254,7 +260,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
                         if (is.factor(x[[rc]])) stop("x.",colnames(x)[rc]," is a factor but joining to i.",colnames(i)[lc]," which is not a factor. Factors must join to factors.")
                     }
                 }
-                iby = key(x)[seq(1,length(key(i)))]
+                iby = key(x)[seq(along=leftcols)]
             } else {
                 leftcols = 1:min(ncol(i),length(rightcols))     # The order of the columns in i must match to the order of the sorted columns in x
                 byval = i[,leftcols,with=FALSE]  # TO DO: remove this subset; just needs pointer
@@ -376,16 +382,36 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         }
         clearkey = any(!is.na(match(lhs,key(x))))
         m = match(lhs,names(x))
-        if (!any(is.na(m))) {
+        if (all(!is.na(m))) {
+            # updates by reference to existing columns
             cols = as.integer(m)
             newcolnames=NULL
-            symbol = rho = NULL
         } else {
-            if (length(m)!=1) stop("Logical error. Can only add new columns one at a time currently")
-            symbol = as.name(substitute(x))
-            rho = parent.frame()
-            cols = as.integer(ncol(x)+1L)
-            newcolnames=lhs
+            # Adding new column(s)
+            newcolnames=setdiff(lhs,names(x))
+            cols = as.integer(c(m[!is.na(m)],ncol(x)+1:length(newcolnames)))
+            if (notok<-!selfrefok(x,verbose))
+                warning("Invalid .internal.selfref detected and fixed by taking a copy of the whole table. Please report to datatable-help so the root cause can be fixed.")
+            if (notok || (truelength(x) < ncol(x)+length(newcolnames))) {
+                n = max(ncol(x)+100, ncol(x)+2*length(newcolnames))
+                name = substitute(x)
+                if (is.name(name) && !notok && verbose) { # && NAMED(x)>0 (TO DO)
+                    # Do the warning before allocating and assigning, so we can track where we are when verbose=TRUE
+                    # in case an error occurs in alloc.col or assign
+                    warning("growing vector of column pointers from truelength ",truelength(x)," to ",n,". A shallow copy has been taken, see ?alloc.col. Only a potential issue if two variables point to the same data (we can't yet detect that well) and if not you can safely ignore this warning. To avoid this warning you could alloc.col() first, deep copy first using copy(), wrap with suppressWarnings() or increase the 'datatable.alloccol' option.")
+                # TO DO test   DT[....][,foo:=42L],  i.e. where the foo does the realloc. Would it see DT name or the call.
+                # inherits=TRUE is correct and mimicks what the setVar in C was doing before being moved up to R level.
+                # Commnent moved up from C ... to revisit ... Note that the NAMED(dt)>1 doesn't work because .Call
+                # always sets to 2 (see R-ints), it seems. Work around
+                # may be possible but not yet working. When the NAMED test works, we can drop allocwarn argument too
+                # because that's just passed in as FALSE from [<- where we know `*tmp*` isn't really NAMED=2.
+                # Note also that this growing will happen for missing columns assigned NULL, too. But so rare, we
+                # don't mind.
+                }
+                alloc.col(x, n, verbose=verbose)   # always assigns to calling scope; i.e. this scope
+                if (is.name(name))
+                    assign(as.character(name),x,pos=parent.frame(),inherits=TRUE)
+            }
         }
         ssrows =
             if (!is.logical(irows)) as.integer(irows)          # DT[J("a"),z:=42L]
@@ -400,7 +426,7 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
         # the !missing is for speed to avoid calling getOption() which then calls options().
         # better to do verbosity before calling C, to make tracing easier if there's a problem in assign.c
         revcolorder = .Internal(radixsort(cols, na.last=FALSE, decreasing=TRUE))  # currently length 1 anyway here, more relevant in the other .Call to assign. Might need a wrapper around .Call(assign), then
-        return(.Call("assign",x,ssrows,cols,newcolnames,rhs,clearkey,symbol,rho,revcolorder,getOption("datatable.allocwarn",FALSE),PACKAGE="data.table"))
+        return(.Call("assign",x,ssrows,cols,newcolnames,rhs,clearkey,revcolorder,verbose,PACKAGE="data.table"))
         # Allows 'update and then' queries such as DT[J(thisitem),done:=TRUE][,sum(done)]
         # Could return number of rows updated but even when wrapped in invisible() it seems
         # the [.class method doesn't respect invisible, which may be confusing to user.
@@ -610,13 +636,23 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
 
     if (verbose) {last.started.at=proc.time()[3];cat("Starting dogroups ...\n");flush.console()}
     if (f__[1]==0 && is.na(nomatch)) {
-        itestj = NA
+        itestj = NA_integer_
     } else {
-        itestj = seq(f__[1],length=len__[1])
+        itestj = as.integer(seq.int(f__[1],length=len__[1]))
         if (length(o__)) itestj = o__[itestj]
     }
     SDenv = new.env(parent=parent.frame()) # use an environment to get the variable scoping right
+    oldlen = length(itestj)
+    length(itestj) = max(len__)  # pad with NA to allocate enough for largest group, will re-use it in dogroups.c
+    if (identical(itestj[1],0L)) {
+        itestj[1] = NA_integer_
+        oldlen = 0L
+    }
+    if (!is.integer(itestj)) stop("Logical error: itestj is not type integer")
     SDenv$.SD = x[itestj, xvars, with=FALSE]
+    # the subset above keeps factor levels in full
+    # TO DO: drop factor levels altogether (as option later) ... for (col in 1:ncol(.SD)) if(is.factor(.SD[[col]])) .SD[[col]] = as.integer(.SD[[col]])
+    for (ii in seq(along=xvars)) setlength(SDenv$.SD[[ii]], oldlen)
     SDenv$.BY = lapply(byval,"[",1)  # byval is list() not data.table
     SDenv$.N = as.integer(len__[1])
     for (ii in ivars) assign(ii, i[[ii]][1], envir=SDenv)
@@ -652,19 +688,15 @@ data.table = function(..., keep.rownames=FALSE, check.names = TRUE, key=NULL)
     # TO DO: we might over allocate above e.g. if first group has 1 row and j is actually a single row aggregate
     # TO DO: user warning when it detects over-allocation is currently off in dogroups.c
     byretn = max(byretn,maxn) # if the result for the first group is larger than the table itself(!) Unusual case where the optimisations for common query patterns. Probably a join is being done in the j via .SD and the 1-row table is an edge condition of bigger picture.
-
     byretn = as.integer(byretn)
-    unlockBinding(".SD",SDenv)
-    SDenv$.SD = x[seq(length=max(len__)), xvars, with=FALSE]  # allocate enough for largest group, will re-use it, the data contents doesn't matter at this point
-    lockBinding(".SD",SDenv)
-    # the subset above keeps factor levels in full
-    # TO DO: drop factor levels altogether (as option later) ... for (col in 1:ncol(.SD)) if(is.factor(.SD[[col]])) .SD[[col]] = as.integer(.SD[[col]])
+    
     xcols = as.integer(match(xvars,colnames(x)))
     icols = NULL
     if (!missing(i) && is.data.table(i)) icols = as.integer(match(ivars,colnames(i)))
     else i=NULL
     ans = .Call("dogroups",x,xcols,o__,f__,len__,jsub,SDenv,testj,byretn,byval,i,as.integer(icols),i[1,ivars,with=FALSE],is.na(nomatch),verbose,PACKAGE="data.table")
-
+    #print(ans)
+    #stop("stopping early")
     # why is byval copying data out of i? If there aren't any
     # expressions of columns then it could just be i directly.
     # This will reduce the 'many groups' timing vs sqldf even more.
@@ -825,9 +857,9 @@ as.data.table.data.frame = function(x, keep.rownames=FALSE)
 }
 
 as.data.table.list = function(x, keep.rownames=FALSE) {
-    x = copy(x)
     if (!length(x)) return( null.data.table() )
     n = sapply(x,length)
+    x = copy(x)
     if (any(n<max(n)))
         for (i in which(n<max(n))) x[[i]] = rep(x[[i]],length=max(n))
     if (is.null(names(x))) names(x) = paste("V",1:length(x),sep="")
@@ -853,12 +885,11 @@ tail.data.table = function(x, n=6, ...) {
 "[<-.data.table" = function (x, i, j, value) {
     # It is not recommended to use <-. Instead, use := for efficiency.
     # [<- is still provided for consistency and backwards compatibility, but we hope users don't use it.
-    alloc.col(x,length(x))  # it was copied to `*tmp*`, so truelength is length, now
+    #settruelength(x,0L)  # it was copied to `*tmp*`, so truelength is length, now. But set to 0L to reset it and be safe.
     if (!cedta()) {
         x = `[<-.data.frame`(x, i, j, value)
-        alloc.col(x,length(x))   # make it what it is
-        alloc.col(x)             # over-allocate (again).   Avoid all this by using :=.
-        return(x)
+        settruelength(x,0L)     # TO DO: remove comment : make it what it is
+        return(alloc.col(x))            # over-allocate (again).   Avoid all this by using :=.
     }
     if (!missing(i)) {
         isub=substitute(i)
@@ -866,9 +897,8 @@ tail.data.table = function(x, n=6, ...) {
         if (is.matrix(i)) {
             if (!missing(j)) stop("When i is matrix in DT[i]<-value syntax, it doesn't make sense to provide j")
             x = `[<-.data.frame`(x, i, value=value)
-            alloc.col(x,length(x))
-            alloc.col(x)
-            return(x)
+            settruelength(x,0L)
+            return(alloc.col(x))
         }
         i = x[i, which=TRUE]
         # Tried adding ... after value above, and passing ... in here (e.g. for mult="first") but R CMD check
@@ -902,9 +932,13 @@ tail.data.table = function(x, n=6, ...) {
         keycol=FALSE
     }
     revcolorder = .Internal(radixsort(cols, na.last=FALSE, decreasing=TRUE))
-    #x = alloc.col(x,length(x)+length(newcolnames)) # because [<- copies via *tmp* and main/duplicate.c copies at length but copies truelength over
-    x = .Call("assign",x,i,cols,newcolnames,value,keycol,NULL,NULL,revcolorder,FALSE,PACKAGE="data.table")
-    alloc.col(x,length(x))
+    if (!selfrefok(x) || truelength(x) < ncol(x)+length(newcolnames)) {
+        x = alloc.col(x,length(x)+length(newcolnames)) # because [<- copies via *tmp* and main/duplicate.c copies at length but copies truelength over too
+        # search for one other .Call to assign in [.data.table to see how it differs
+    }
+    verbose=getOption("datatable.verbose",FALSE)
+    .Call("assign",x,i,cols,newcolnames,value,keycol,revcolorder,verbose,PACKAGE="data.table")
+    settruelength(x,0L) #  can maybe avoid this realloc, but this is (slow) [<- anyway, so just be safe.
     alloc.col(x)
     # no copy at all if user calls directly; i.e. `[<-.data.table`(x,i,j,value)
     # or uses data.table := syntax; i.e. DT[i,j:=value]
@@ -916,13 +950,14 @@ tail.data.table = function(x, n=6, ...) {
 }
 
 "$<-.data.table" = function(x, name, value) {
-    alloc.col(x,length(x))
+    # TO DO: remove these 2 lines.  ... settruelength(x,0L)
+    # x = alloc.col(x)  #,length(x))
     if (!cedta()) {
         ans = `$<-.data.frame`(x, name, value)
-        alloc.col(ans,length(ans))  # set to what is allocated, see above
-        alloc.col(ans)              # over-allocate (again)
-        return(ans)
+        settruelength(ans,0L)    # alloc.col(ans,0L)  # length(ans))  # set to what is allocated, see above
+        return(alloc.col(ans))           # over-allocate (again)
     }
+    x = copy(x)
     `[<-.data.table`(x,j=name,value=value)  # important i is missing here
 }
 
@@ -984,9 +1019,20 @@ as.data.frame.data.table = function(x, ...)
     setattr(ans,"row.names",.set_row_names(nrow(x)))   # since R 2.4.0, data.frames can have non-character row names
     setattr(ans,"class","data.frame")
     setattr(ans,"sorted",NULL)  # remove so if you convert to df, do something, and convert back, it is not sorted
+    setattr(ans,".internal.selfref",NULL)
     suppressWarnings(settruelength(ans,0L))
     ans
 }
+
+as.list.data.table = function(x, ...) {
+    # Similar to as.list.data.frame in base.
+    ans <- unclass(x)
+    setattr(ans, "row.names", NULL)
+    setattr(ans, "sorted", NULL)
+    setattr(ans,".internal.selfref", NULL)   # needed to pass S4 tests for example
+    ans
+}
+
 
 dimnames.data.table = function(x) {
     if (!cedta()) {
@@ -1042,7 +1088,7 @@ within.data.table <- function (data, expr, ...)
     l <- as.list(e)
     l <- l[!sapply(l, is.null)]
     nD <- length(del <- setdiff(names(data), (nl <- names(l))))
-    ans <- data
+    ans = copy(data)
     if (length(nl)) ans[,nl] <- l
     if (nD) ans[,del] <- NULL
     if (haskey(data) && all(key(data) %in% names(ans))) {
@@ -1124,9 +1170,8 @@ subset.data.table <- function (x, subset, select, ...)
             }
         }
     } else {
-        key(ans) <- NULL
+        setkey(ans,NULL)
     }
-
     ans
 }
 
@@ -1167,17 +1212,30 @@ split.data.table = function(...) {
 # TO DO, add more warnings e.g. for by.data.table(), telling user what the data.table syntax is but letting them dispatch to data.frame if they want
 
 
-copy = function(x) .Call("copy",x,PACKAGE="data.table")
-# TO DO: speedup to duplicate.c using memcpy, suggested to r-devel, would benefit copy()
-# Could construct data.table and use memcpy ourselves but deep copies e.g. list() columns
-# may be tricky; more robust to rely on R's duplicate which deep copies.
+copy = function(x) {
+    newx = .Call("copy",x,PACKAGE="data.table")  # copies at length but R's duplicate() also copies truelength over.
+    if (!is.data.table(x)) return(newx)   # e.g. in as.data.table.list() the list is copied before changing to data.table
+    settruelength(newx,0L)
+    alloc.col(newx)
+    # TO DO: speedup duplicate.c using memcpy, suggested to r-devel, would benefit copy()
+    # Could construct data.table and use memcpy ourselves but deep copies e.g. list() columns
+    # may be tricky; more robust to rely on R's duplicate which deep copies.
+}
 
-alloc.col = function(DT,n=getOption("datatable.alloccol",quote(max(100,2*ncol(DT))))) 
-{   
-    if (identical(substitute(DT),quote(`*tmp*`))) stop("alloc.col attempting to modify `*tmp*`")
-    symbol = as.name(substitute(DT))
-    rho = parent.frame()  # setVar in C finds it where it is (i.e. like <<- and inherits=TRUE)
-    .Call("alloccolwrapper",DT,as.integer(eval(n)),symbol,rho,PACKAGE="data.table")
+alloc.col = function(DT, n=getOption("datatable.alloccol",quote(max(100,2*ncol(DT)))), verbose=getOption("datatable.verbose",FALSE)) 
+{
+    name = substitute(DT)
+    if (identical(name,quote(`*tmp*`))) stop("alloc.col attempting to modify `*tmp*`")
+    ans = .Call("alloccolwrapper",DT,as.integer(eval(n)),verbose,PACKAGE="data.table")
+    if (is.name(name)) {
+        name = as.character(name)
+        assign(name,ans,parent.frame(),inherits=TRUE)
+    }
+    ans
+}
+
+selfrefok = function(DT,verbose=getOption("datatable.verbose",FALSE)) {
+    .Call("selfrefokwrapper",DT,verbose,PACKAGE="data.table")
 }
 
 truelength = function(x) .Call("truelength",x,PACKAGE="data.table")
@@ -1185,14 +1243,23 @@ truelength = function(x) .Call("truelength",x,PACKAGE="data.table")
 
 settruelength = function(x,n) {
     "Truly an internal function only. Users can call this using :::, but please don't."
-    if (n!=0) warning("settruelength should only be used to set to 0, and is for 2.13.2-")
-    if (getRversion() >= "2.14.0")
-        if (truelength(x) != 0) warning("This is R>=2.14.0 but truelength isn't initialized to 0")
+    # if (n!=0) warning("settruelength should only be used to set to 0, and is for 2.13.2-")
+    #if (getRversion() >= "2.14.0")
+    #    if (truelength(x) != 0) warning("This is R>=2.14.0 but truelength isn't initialized to 0")
         # grep for suppressWarnings(settruelength) for where this is needed in 2.14.0+ (otherwise an option would be to make data.table depend on 2.14.0 so settruelength could be removed)
+    
+    
     .Call("settruelength",x,as.integer(n),PACKAGE="data.table")
-    if (is.data.table(x))
-        .Call("settruelength",attr(x,"class"),-999L,PACKAGE="data.table")
-        # So that (in R 2.13.2-) we can detect tables loaded from disk (tl is not initialized there)
+    
+    
+    
+    #if (is.data.table(x))
+    #    .Call("settruelength",attr(x,"class"),-999L,PACKAGE="data.table")
+    #    # So that (in R 2.13.2-) we can detect tables loaded from disk (tl is not initialized there)
+}
+
+setlength = function(x,n) {
+    .Call("setlength",x,as.integer(n),PACKAGE="data.table")
 }
 
 ":=" = function(LHS,RHS) stop(':= is defined for use in j only; i.e., DT[i,col:=1L] not DT[i,col]:=1L or DT[i]$col:=1L. Please see help(":=").')

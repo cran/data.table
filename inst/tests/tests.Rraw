@@ -5,10 +5,11 @@ if (!exists(".devtesting")) {
     require(plyr)
 }
 options(warn=2)
-nfail = ntest = 0
+nfail = ntest = lastnum = 0
 whichfail = NULL
 test = function(num,x,y=NULL) {
     ntest <<- ntest + 1
+    lastnum <<- num
     if (inherits(err<-try(x,TRUE),"try-error") || inherits(err<-try(y,TRUE),"try-error")) {
         cat("Test",num,err)
         nfail <<- nfail + 1
@@ -20,11 +21,16 @@ test = function(num,x,y=NULL) {
     } else {
         if (identical(x,y)) return()
         if (is.data.table(x) && is.data.table(y)) {
+            # TO DO:  test 166 doesn't pass with these :
+            # if (!selfrefok(x)) stop("x selfref not ok")
+            # if (!selfrefok(y)) stop("y selfref not ok")
+            x=copy(x)
+            y=copy(y)  # so we don't affect the original data which may be used in the next test
             # drop unused levels in factors
-            if (length(x)) for (i in which(sapply(x,is.factor))) x[[i]] = factor(x[[i]])
-            if (length(y)) for (i in which(sapply(y,is.factor))) y[[i]] = factor(y[[i]])
-            if (length(attr(x,"row.names"))) attr(x,"row.names") = NULL  # for test 165+, i.e. x may have row names set from inheritance but y won't, consider these equal
-            if (length(attr(y,"row.names"))) attr(y,"row.names") = NULL
+            if (length(x)) for (i in which(sapply(x,is.factor))) {.xi=x[[i]];x[,i:=factor(.xi),with=FALSE]}
+            if (length(y)) for (i in which(sapply(y,is.factor))) {.yi=y[[i]];y[,i:=factor(.yi),with=FALSE]}
+            if (length(attr(x,"row.names"))) setattr(x,"row.names",NULL)  # for test 165+, i.e. x may have row names set from inheritance but y won't, consider these equal
+            if (length(attr(y,"row.names"))) setattr(y,"row.names",NULL)
             if (identical(x,y)) return()
         }
         if (is.factor(x) && is.factor(y)) {
@@ -61,7 +67,7 @@ setkey(TESTDT,a,b)
 #       [7,] 7 2 7
 INT = function(...) { as.integer(c(...)) }
 ##########################
-    
+
 test(1, TESTDT[SJ(4,6),v,mult="first"], 3L)
 test(2, TESTDT[SJ(4,6),v,mult="last"], 4L)
 test(3, TESTDT[SJ(c(4,4,4),c(6,6,7)),v,mult="last",roll=TRUE], INT(4,4,4))
@@ -275,12 +281,12 @@ test(109, all(!is.na(dt)))
 dt2 <- dt
 dt2$A[1] <- NA   # removes key
 test(110, sum(is.na(dt2)), 1L)
-test(111, {key(dt)=NULL;dt}, na.omit(dt))
+test(111, {setkey(dt,NULL);dt}, na.omit(dt))
 test(112, dt2[2:nrow(dt2),A], na.omit(dt2)$A)
 
 # test [<- assignment:
 dt2[is.na(dt2)] <- 1L
-test(113, {key(dt)=NULL;dt}, dt2)   # key should be dropped because we assigned to a key column
+test(113, {setkey(dt,NULL);dt}, dt2)   # key should be dropped because we assigned to a key column
 # want to discourage this going forward (inefficient to create RHS like this)
 # dt2[, c("A", "B")] <- dt1[, c("A", "B"), with = FALSE]
 # test(114, dt1, dt2)
@@ -290,9 +296,10 @@ test(113, {key(dt)=NULL;dt}, dt2)   # key should be dropped because we assigned 
 ##     test(dt, dt2))  stop("Test 112 failed")
 
 # test the alternate form of setkey:
-dt1 <- dt2 <- dt
-setkey(dt1, "A")
-setkey("dt2", "A")
+dt1 = copy(dt)
+dt2 = copy(dt)
+setkeyv(dt1, "A")
+setkey(dt2, A)
 test(115, dt1, dt2)
 
 # Test dogroups works correctly for character/factor columns
@@ -376,7 +383,7 @@ test(149, dt[J(2:3),roll=TRUE], data.table(a=c(2L,3L),b=c(1L,1L)))  # in future 
 
 # 150:158 test out of order factor levels in key columns
 dt = data.table(x=factor(c("c","b","a"),levels=c("b","a","c")),y=1:3)
-key(dt) = "x"
+setkey(dt,x)
 test(150, dt["b",y]$y, 2L)
 # from Tom's post :
 a = data.table(a=rep(1:5, 2), b=factor(letters[rep(1:5, each =2)], levels=letters[5:1]), key="b")  
@@ -512,7 +519,7 @@ test(205, x[y,list(d),mult="all"][,d], c(1,2,NA,NA))
 # with data.frame).
 TESTDT = data.table(a=1:3,v=1:3,key="a")
 test(206, TESTDT[NA], data.table(a=NA_integer_,v=NA_integer_,key="a"))
-key(TESTDT) = NULL
+setkey(TESTDT,NULL)
 test(207, TESTDT[NA], data.table(a=NA_integer_,v=NA_integer_))
 
 # With inheritance, NROW and NCOL in base work nicely. No need for them in data.table.
@@ -534,7 +541,7 @@ test(214, length(grep("data.table inherits from data.frame", tt)))
 # to solve bug #953
 DF = data.frame(a=LETTERS[1:10], b=1:10, stringsAsFactors=FALSE)
 DT = data.table(DF)
-key(DT) = 'a'   # used to complain about character
+setkey(DT,a)    # used to complain about character
 test(215, DT["C",b]$b, 3L)
 DT = data.table(DF,key="a")
 test(216, DT["C",b]$b, 3L)
@@ -626,7 +633,7 @@ test(243, X[Y][,sum(foo*bar)], 195L)
 
 # joining to less than all X's key colums (in examples but can't see formal test)
 X=data.table(a=rep(LETTERS[1:2],2:3),b=1:5,v=10:14,key="a,b")
-test(246, X["A"], {tt=X[1:2];key(tt)=key(X);tt})  # key will be retained in future
+test(246, X["A"], {tt=X[1:2];setkeyv(tt,key(X));tt})  # key will be retained in future
 test(247, X["C"]$v, NA_integer_)
 test(248, nrow(X["C",nomatch=0]), 0L)
 
@@ -699,11 +706,11 @@ setkey(DT,y)
 test(270,DT[,sum(x),by=key(DT)]$V1,1)
 
 DT = data.table(x=1,y=2)
-key(DT) = names(DT)
+setkeyv(DT,names(DT))
 test(271, DT[,length(x),by=key(DT)]$V1, 1L)
 
 DT = data.table(x=c(1,2,1), y=c(2,3,2), z=1:3)
-key(DT) = names(DT)
+setkeyv(DT,names(DT))
 test(272, DT[,sum(z),by=key(DT)]$V1, c(1L,3L,2L))
 
 
@@ -754,7 +761,7 @@ test(286, DT[,list(sum(unlist(.BY)),sum(z)),by=groupExpr], ans)
 
 # Bug fix from Damian B on 25 June 2011 :
 DT = data.table(X=c(NA,1,2,3), Y=c(NA,2,1,3))
-key(DT)=c("X","Y")
+setkeyv(DT,c("X","Y"))
 test(287, unique(DT), DT)
 
 # Bug fix #1421: using vars in calling scope in j when i is logical or integer.
@@ -765,15 +772,15 @@ test(288, DT[A=="b",B*myvar], c(30,NA))
 # Test new feature in 1.6.1 that i can be plain list (such as .BY)
 DT = data.table(grp=c("a","a","a","a","b","b","b"),v=1:7)
 mysinglelookup = data.table(grp=c("a","b"),s=c(42,84),grpname=c("California","New York"),key="grp")
-key(mysinglelookup) = "grp"
+setkey(mysinglelookup,grp)
 test(289, DT[,sum(v*mysinglelookup[.BY]$s),by=grp], data.table(grp=c("a","b"),V1=c(420,1512)))
 # In v1.6.2 we will change so that single name j returns a vector, regardless of grouping
 test(290, DT[,list(mysinglelookup[.BY]$grpname,sum(v)),by=grp], data.table(grp=c("a","b"),V1=c("California","New York"),V2=c(10L,18L)))
 
 # Test user defined attributes are retained, see comment in FR#1006
 DT = data.table(a=as.numeric(1:2),b=3:4)
-attr(DT,"myuserattr") = 42
-setkey(DT,a)  # a is numeric so a change of type to integer occurs too
+setattr(DT,"myuserattr",42)
+setkey(DT,a)   # a is numeric so a change of type to integer occurs, too, via := which checks selfref is ok
 test(291, attr(DT,"myuserattr"), 42)
 
 # Test new .N symbol
@@ -883,7 +890,7 @@ DT = data.table(a=20:22)
 test(314, {DT[,b:=23:25];DT[,c:=26:28]}, data.table(a=20:22,b=23:25,c=26:28))   # add in series
 test(315, DT[,c:=NULL], data.table(a=20:22,b=23:25))   # delete last
 tt = try(DT[,c:=NULL],silent=TRUE)
-test(316, inherits(tt,"try-error") && length(grep("[(]converted from warning[)].*column.*c.*is not present to delete", tt)))
+test(316, inherits(tt,"try-error") && length(grep("[(]converted from warning[)] Adding new column.*c.*then assigning NULL", tt)))
 
 
 # Test adding, removing and updating columns via [<- in one step
@@ -1186,7 +1193,7 @@ test(417, length(DT)==2 && truelength(DT)==3)
 DT[,c:=7L]   # uses final slot
 test(418, length(DT)==3 && truelength(DT)==3)
 options(datatable.allocwarn=TRUE)
-tt = try(DT[,d:=8L],silent=TRUE)
+tt = try(DT[,d:=8L,verbose=TRUE],silent=TRUE)
     # automatic realloc and shallow copy, no risk when not named.
     # would like to be silent using NAMED>0 but .Call sets NAMED=2 for all, it seems. TO DO.
 test(418.5, inherits(tt,"try-error") && length(grep("[(]converted from warning[)].*growing",tt)))
@@ -1241,14 +1248,14 @@ if (is.null(getOption("datatable.alloccol"))) {
     test(436, truelength(DT2), 400L)
 }
 
-# test that alloc.col assigns to wherever object is (via setVar in C i.e. like <<- and inherits=TRUE)
+# test that alloc.col assigns to wherever object is
 DT = data.table(a=1:3,b=4:6)
 f = function() {
-    alloc.col(DT,50)
+    alloc.col(DT,200)  # DT isn't local so (via inherits=TRUE) it finds in frame above
     invisible()
 }
 f()
-test(437, truelength(DT), 50L)
+test(437, truelength(DT), 200L)
 
 # quick test that [<- over allocates (again) after the copy of length via *tmp*
 DT = data.table(a=1:3,b=4:6)
@@ -1346,6 +1353,54 @@ test(473, DT, data.table(a=1:4,b=5:8,c=factor(c("a","a","a","a"))))
 DT[,d:=factor(c("a","b"))]
 test(474, DT, data.table(a=1:4,b=5:8,c=factor(c("a","a","a","a")),d=factor(c("a","b","a","b"))))
 
+# Test scoping error introduced at 1.6.1, unique(DT) when key column is 'x'
+DT=data.table(x=c("a", "a", "b", "b"), y=c("a", "a", "b", "b"), key="x")
+test(475, unique(DT), data.table(x=c("a","b"),y=c("a","b"),key="x"))
+
+# Test character and list columns in tables with many small groups
+DT = data.table(grp=1:20000,char=sample(as.hexmode(1:10000),40000,replace=TRUE),int=sample(1:10000,40000,replace=TRUE))
+ans = DT[,list(p=paste(unique(char),collapse=","),
+               i=list(unique(int))), by=grp]
+test(476, nrow(as.matrix(ans)), 20000L)   # The as.matrix triggers the "'getCharCE' must be called on a CHARSXP", or similar symptom of earlier corruption, before fix in dogroups.c.
+
+# Test that plonking from calling scope works, even after removing, and column copy via := is ok too.
+DT = data.table(a=1:3)
+foo = 4:6
+DT[,foo:=foo]
+rm(foo)
+gc()
+DT[,foo2:=foo]
+DT[2,foo:=10L]
+DT[3,foo2:=11L]
+gc()
+test(477, DT, data.table(a=1:3,foo=c(4L,10L,6L),foo2=c(4L,5L,11L)))
+test(478, DT[,foo:=foo], DT)  # does nothing, with no warning, consistent with base R `a<-a`.
+
+# Test that recycling now works with oversized inputs and % != 0 length, both with warnings.
+DT = data.table(x=1:4)
+tt = try(DT[, a := 5:7], silent=TRUE)
+test(479, inherits(tt,"try-error") && length(grep("converted.*warning.*Supplied 3 items to be assigned to 4 items of column 'a' [(]recycled leaving remainder of 1 items[)]",tt)))
+suppressWarnings(DT[, a := 5:7])
+test(480, DT, data.table(x=1:4,a=c(5:7,5L)))  # no longer error, now recycles with remainder and warning
+
+# Test that multiple columns can be added 
+DT = data.table(x=1:4)
+test(481, DT[, c("foo","bar"):=list(10L,11:14), with=FALSE], data.table(x=1:4,foo=10L,bar=11:14))
+
+# and combined with update and add in one step
+test(482, DT[, c("foo","baz"):=list(12L,15:18), with=FALSE], data.table(x=1:4,foo=12L,bar=11:14,baz=15:18))
+
+# Test that errors in := do not leave DT in bad state, #1711
+DT = data.table(x=1:4)
+tt = try(DT[,c("foo","bar"):=list(20L,numeric()),with=FALSE], silent=TRUE)
+test(483, inherits(tt,"try-error") && length(grep("RHS of assignment to new column.*bar.*is zero length but not empty list",tt)))
+test(484, DT, data.table(x=1:4))  # i.e. DT as it was before, without foo being added as it did in v1.7.7-
+
+# Test i's key longer than x's
+d1 <- data.table(a=1:2, b=11:14, key="a,b")
+d2 <- data.table(A=0:1, B=1:4, key="A")
+test(485, d2[d1], data.table(A=INT(1,1,1,1,2,2),B=INT(2,4,2,4,NA,NA),b=INT(11,11,13,13,12,14),key="A"))
+test(486, d2[d1,sum(B)], data.table(A=INT(1,1,2,2),V1=INT(6,6,NA,NA),key="A"))
 
 
 ## See test-* for more tests
@@ -1353,9 +1408,12 @@ test(474, DT, data.table(a=1:4,b=5:8,c=factor(c("a","a","a","a")),d=factor(c("a"
 ##########################
 options(warn=0)
 if (nfail > 0) {
-    stop(nfail," errors in test.data.table(): ",paste(whichfail,collapse=","))
+    stop(nfail," error",ifelse(nfail>1,"s","")," out of ",lastnum, " in test.data.table() : ",paste(whichfail,collapse=","))
     # important to stop here, so than 'R CMD check' fails
 }
-cat("All",ntest,"tests in test.data.table() completed ok in",timetaken(started.at),"\n")
+cat("All",lastnum,"tests in test.data.table() completed ok in",timetaken(started.at),"\n")
+# Reporting lastnum rather than ntest makes it easier to check user has the latest version, assuming
+# each release or patch has extra tests.
+
 
 
