@@ -13,22 +13,19 @@ setkey = function(x, ..., verbose=getOption("datatable.verbose",FALSE))  #loc=pa
     #    cols=c(...)
     #}  else {
     if (is.character(x)) stop("x may no longer be the character name of the data.table. The possibility was undocumented, and has been removed.")
-    if (!is.data.table(x)) stop("x is not a data.table.")
-        # name = deparse(substitute(x))   # TO DO, won't need this either !! :-)
     cols = getdots()
     if (!length(cols)) cols=colnames(x)
     else if (identical(cols,"NULL")) cols=NULL
-    #}
     setkeyv(x,cols,verbose=verbose)
 }
 
 setkeyv = function(x, cols, verbose=getOption("datatable.verbose",FALSE))
 {
-    if (!is.data.table(x)) stop("x is not a data.table")
-    if (is.null(cols)) {
+    if (is.null(cols)) {   # this is done on a data.frame when !cedta at top of [.data.table
         setattr(x,"sorted",NULL)
         return(x)
     }
+    if (!is.data.table(x)) stop("x is not a data.table")
     if (!is.character(cols)) stop("cols is not a character vector. Please see further information in ?setkey.")
     if (!length(cols)) {
         warning("cols is a character vector of zero length. Removed the key, but use NULL instead, or wrap with suppressWarnings() to avoid this warning.")
@@ -208,7 +205,7 @@ CJ = function(...)
     }
     setattr(l,"row.names",.set_row_names(length(l[[1]])))
     setattr(l,"class",c("data.table","data.frame"))
-    names(l) = paste("V",1:length(l),sep="")
+    setattr(l,"names",paste("V",1:length(l),sep=""))
     settruelength(l,0L)
     l=alloc.col(l)  # a tiny bit wasteful to over-allocate a fixed join table (column slots only), doing it anyway for consistency, and it's possible a user may wish to use SJ directly outside a join and would expect consistent over-allocation.
     setkey(l)
