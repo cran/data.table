@@ -1,5 +1,5 @@
 Package: data.table
-Version: 1.7.9
+Version: 1.7.10
 Title: Extension of data.frame for fast indexing, fast ordered joins,
         fast assignment, fast grouping and list columns.
 Author: M Dowle, T Short, S Lianoglou
@@ -17,6 +17,6 @@ URL: http://datatable.r-forge.r-project.org/,
         http://rwiki.sciviews.org/doku.php?id=packages:cran:data.table,
         http://crantastic.org/packages/data.table
 BugReports: https://r-forge.r-project.org/tracker/?group_id=240
-Packaged: 2012-01-31 01:30:48 UTC; mdowle
+Packaged: 2012-02-06 23:21:58 UTC; mdowle
 Repository: CRAN
-Date/Publication: 2012-01-31 07:30:11
+Date/Publication: 2012-02-07 08:43:57
