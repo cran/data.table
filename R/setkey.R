@@ -1,25 +1,13 @@
-setkey = function(x, ..., verbose=getOption("datatable.verbose",FALSE))  #loc=parent.frame()
+setkey = function(x, ..., verbose=getOption("datatable.verbose"))
 {
-    # sorts table by the columns, and sets the key to be those columns
-    # example of use:   setkey(tbl,colA,colC,colB)
-    #             or:   setkey("tbl",c("colA","colC","colB"))
-    # changes the table passed in by reference
-    # TO DO: allow secondary index, which stores the sorted key + a column of integer rows in the primary sorted table. Will need to either drop or maintain keys with updates or inserts.
-    #if (is.character(x)) {
-    #    if (length(x)>1) stop("x is character vector length > 1")
-    #    name = x
-    #    if (!exists(name, envir=loc)) loc=.GlobalEnv
-    #    x = get(x,envir=loc,inherits=FALSE)
-    #    cols=c(...)
-    #}  else {
-    if (is.character(x)) stop("x may no longer be the character name of the data.table. The possibility was undocumented, and has been removed.")
+    if (is.character(x)) stop("x may no longer be the character name of the data.table. The possibility was undocumented and has been removed.")
     cols = getdots()
     if (!length(cols)) cols=colnames(x)
     else if (identical(cols,"NULL")) cols=NULL
     setkeyv(x,cols,verbose=verbose)
 }
 
-setkeyv = function(x, cols, verbose=getOption("datatable.verbose",FALSE))
+setkeyv = function(x, cols, verbose=getOption("datatable.verbose"))
 {
     if (is.null(cols)) {   # this is done on a data.frame when !cedta at top of [.data.table
         setattr(x,"sorted",NULL)
@@ -46,13 +34,14 @@ setkeyv = function(x, cols, verbose=getOption("datatable.verbose",FALSE))
     for (i in cols) {
         if (".xi" %in% colnames(x)) stop("x contains a column called '.xi'. Conflicts with internal use by data.table.")
         .xi = x[[i]]  # TO DO: check that [[ is copy on write, otherwise checking types itself will be copying each column.
-        if (is.character(.xi)) {
-            if (verbose) cat("setkey changing the type of column '",i,"' from character to factor by reference.\n",sep="")
-            x[,i:=factor(.xi),with=FALSE]
-            coerced=TRUE
-            next
-        }
+        #if (is.character(.xi)) {
+        #    if (verbose) cat("setkey changing the type of column '",i,"' from character to factor by reference.\n",sep="")
+        #    x[,i:=factor(.xi),with=FALSE]
+        #    coerced=TRUE
+        #    next
+        #}
         if (typeof(.xi) == "double") {
+            # avoid new vector here, use reallyreal to issue warning that int might be more appropriate
             toint = as.integer(.xi)   # see [.data.table for similar logic, and comments
             if (isTRUE(all.equal(as.vector(.xi),toint))) {
                 if (verbose) cat("setkey changing the type of column '",i,"' from numeric to integer by reference, no fractional data present.\n",sep="")
@@ -63,20 +52,22 @@ setkeyv = function(x, cols, verbose=getOption("datatable.verbose",FALSE))
             }
             stop("Column '",i,"' cannot be coerced to integer without losing fractional data.")
         }
-        if (is.factor(.xi)) {
-            # check levels are sorted, if not sort them, test 150
-            l = levels(.xi)
-            if (is.unsorted(l)) {
-                if (verbose) cat("setkey detected the levels of column '",i,"' were not sorted, so sorting them, by reference.\n",sep="")
-                r = rank(l)
-                l[r] = l
-                .xi = structure(r[as.integer(.xi)], levels=l, class="factor")
-                x[,i:=.xi,with=FALSE]
-                coerced=TRUE
-            }
-            next
-        }
-        if (!typeof(.xi) %in% c("integer","logical")) stop("Column '",i,"' is type '",typeof(.xi),"' which is not (currently) allowed as a key column type.")
+        #if (is.factor(.xi)) {
+        #    # check levels are sorted, if not sort them, test 150
+        #    # TO DO ... do we need sorted levels now that we use chmatch rather than sortedmatch?
+        #    #           good to allow unsorted levels for convenience to avoid "1. orange", "2. apple" workaround
+        #    l = levels(.xi)
+        #    if (is.unsorted(l)) {
+        #        if (verbose) cat("setkey detected the levels of column '",i,"' were not sorted, so sorting them, by reference.\n",sep="")
+        #        r = rank(l)
+        #        l[r] = l
+        #        .xi = structure(r[as.integer(.xi)], levels=l, class="factor")
+        #        x[,i:=.xi,with=FALSE]
+        #        coerced=TRUE
+        #    }
+        #    next
+        #}
+        if (!typeof(.xi) %chin% c("integer","logical","character")) stop("Column '",i,"' is type '",typeof(.xi),"' which is not (currently) allowed as a key column type.")
     }
     if (!is.character(cols) || length(cols)<1) stop("'cols' should be character at this point in setkey")
     o = fastorder(x, cols, verbose=verbose)
@@ -88,7 +79,6 @@ setkeyv = function(x, cols, verbose=getOption("datatable.verbose",FALSE))
     if (coerced && alreadykeyedbythiskey) {
         # if (verbose) cat("setkey incurred a copy of the whole table, due to the coercion(s) above.\n")
         warning("Already keyed by this key but had invalid structure (e.g. unordered factor levels, or incorrect column types), key rebuilt. If you didn't go under the hood please let maintainer('data.table') know so the root cause can be fixed.")
-        #assign(name,x,envir=loc)
     }
     invisible(x)
 }
@@ -113,24 +103,17 @@ radixorder1 <- function(x) {
     if(typeof(x) == "logical") return(c(which(is.na(x)),which(!x),which(x))) # logical is a special case of radix sort; just 3 buckets known up front. TO DO - could be faster in C but low priority
     if(typeof(x) != "integer") # this allows factors; we assume the levels are sorted as we always do in data.table
         stop("radixorder1 is only for integer 'x'")
-    # Actually, we never set na.last=NA. We rely that NA's are first in the C binary search, lets be safe ...
-    # if(is.na(na.last))
-    #    return(.Internal(radixsort(x, TRUE, decreasing))[seq_len(sum(!is.na(x)))])
-    #    # this is a work around for what we consider a bug in sort.list on vectors with NA (inconsistent with order) reported to r-devel
-    #else
-    return(.Internal(radixsort(x, na.last=FALSE, decreasing=FALSE)))
+    sort.list(x, na.last=FALSE, decreasing=FALSE,method="radix")
+    # Always put NAs first, relied on in C binary search by relying on NA_integer_ being -maxint (checked in C).
 }
 
 regularorder1 <- function(x) {
     if(is.object(x)) x = xtfrm(x) # should take care of handling factors, Date's and others, so we don't need unlist
-    #if(is.na(na.last))
-    #    return(.Internal(order(TRUE, decreasing, x))[seq_len(sum(!is.na(x)))])
-    #else
-    return(.Internal(order(na.last=FALSE, decreasing=FALSE, x)))
+    sort.list(x, na.last=FALSE, decreasing=FALSE)
 }
 
 
-fastorder <- function(lst, which=seq_along(lst), verbose=getOption("datatable.verbose",FALSE))
+fastorder <- function(lst, which=seq_along(lst), verbose=getOption("datatable.verbose"))
 {
     # lst is a list or anything thats stored as a list and can be accessed with [[.
     # 'which' may be integers or names
@@ -143,34 +126,32 @@ fastorder <- function(lst, which=seq_along(lst), verbose=getOption("datatable.ve
     # the very same 1:n vector that sort.c needs (but passing the previous columns order, not 1:n).
     w <- last(which)
     v = lst[[w]]
-    if (is.double(v))
-        o = ordernumtol(v)
-    else {
-        err = try(o <- radixorder1(v), silent=TRUE)
-        # Use a radix sort (fast and stable), but it will fail if there are more than 1e5 unique elements (or any negatives)
-        if (inherits(err, "try-error")) {
+    o = switch(typeof(v),
+        "double" = ordernumtol(v),   # TO DO: just allow double in keys now, already done.
+        "character" = chorder(v),
+        # Use a radix sort (fast and stable for ties), but will fail for range > 1e5 elements (and any negatives)
+        tryCatch(radixorder1(v),error=function(e) {
             if (verbose) cat("First column",w,"failed radixorder1, reverting to regularorder1\n")
-            o = regularorder1(v)
-        }
-    }
+            regularorder1(v)
+        })
+    )
     # If there is more than one column, run through them back to front to group columns.
     for (w in rev(take(which))) {
         v = lst[[w]]
-        if (is.double(v))
-            o = ordernumtol(v,o)
-        else {
-            err = try(o <- o[radixorder1(v[o])], silent=TRUE)
-            if (inherits(err, "try-error")) {
+        o = switch(typeof(v),
+            "double" = ordernumtol(v, o),
+            "character" = o[chorder(v[o])],   # TO DO: avoid the copy and reorder, pass in o to C like ordernumtol
+            tryCatch(o[radixorder1(v[o])], error=function(e) {
                 if (verbose) cat("Non-first column",w,"failed radixorder1, reverting to regularorder1\n")
-                o = o[regularorder1(v[o])]    # TO DO: avoid the copy and reorder, pass in o to C like ordernumtol
-            }
-        }
+                o[regularorder1(v[o])]    # TO DO: avoid the copy and reorder, pass in o to C like ordernumtol
+            })
+        )
     }
     o
 }
 
 ordernumtol = function(x, o=1:length(x), tol=.Machine$double.eps^0.5) {
-    .Call("rorder_tol",x,o,tol)
+    .Call("rorder_tol",x,o,tol,PACKAGE="data.table")
     o
 }
 
@@ -208,7 +189,7 @@ CJ = function(...)
     setattr(l,"names",paste("V",1:length(l),sep=""))
     settruelength(l,0L)
     l=alloc.col(l)  # a tiny bit wasteful to over-allocate a fixed join table (column slots only), doing it anyway for consistency, and it's possible a user may wish to use SJ directly outside a join and would expect consistent over-allocation.
-    setkey(l)
+    setkey(l)    # TO DO: if inputs are each !is.unsorted, then no need to setkey here, just setattr("sorted") to save sort
     l
 }
 

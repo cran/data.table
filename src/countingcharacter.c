@@ -27,6 +27,7 @@
 #ifdef BUILD_DLL
 #define EXPORT __declspec(dllexport)
 EXPORT SEXP countingcharacter();
+EXPORT SEXP chmatchwrapper();
 #endif
 
 extern int Rf_Scollate();
@@ -37,13 +38,12 @@ extern SEXP *saveds;
 extern R_len_t *savedtl, nalloc, nsaved;
 extern void savetl_init(), savetl(SEXP s), savetl_end();
 
-SEXP countingcharacter(SEXP x, SEXP sort, SEXP GER2140)
+SEXP countingcharacter(SEXP x, SEXP sort)
 {
     SEXP ans, tmp, *u, s;
     R_len_t i, n, k, cumsum, un=0, ualloc;
     if (!isString(x)) error("x is not character");
     if (!isLogical(sort)) error("sort is not logical");
-    if (!isLogical(GER2140)) error("GER2140 is not logical");
     n = LENGTH(x);
     savetl_init();
     for(i=0; i<n; i++) {
@@ -51,6 +51,8 @@ SEXP countingcharacter(SEXP x, SEXP sort, SEXP GER2140)
         if (TRUELENGTH(s)!=0) {
             savetl(s);    // pre-2.14.0 this will save all the uninitialised truelength (i.e. random data)
                           // TO DO: post 2.14.0 can we assume hash>0 and use sign bit to avoid this pass?
+                          // pre-v1.8.0 GER2140 was passed in here, but now removed. Make this optimisation if/when
+                          // when make data.table depend on R 2.14.0.
             TRUELENGTH(s)=0;
         }
     }
@@ -133,7 +135,7 @@ void ssort2(SEXP *x, R_len_t n)
 	for (i = h; i < n; i++) {
 	    v = x[i];
 	    j = i;
-		while (j>=h && x[j-h]!=v && Rf_Scollate(x[j-h],v) > 0)   // data.table
+		while (j>=h && x[j-h]!=v && Rf_Scollate(x[j-h],v) > 0)   // data.table. TO DO: test all ascii and then use strcmp.
 		// while (j >= h && scmp(x[j - h], v, TRUE) > 0)         // base
 		{ x[j] = x[j-h]; j-=h; }
 	    x[j] = v;
@@ -171,4 +173,49 @@ static int scmp(SEXP x, SEXP y, Rboolean nalast)
     return Scollate(x, y);
 }
 */
+
+
+SEXP chmatch(SEXP x, SEXP table, R_len_t nomatch, Rboolean in) {
+    R_len_t i, m;
+    SEXP ans, s;
+    savetl_init();
+    for (i=0; i<length(x); i++) {
+        s = STRING_ELT(x,i);
+        if (TRUELENGTH(s)>0) savetl(s); // pre-2.14.0 this will save all the uninitialised truelengths
+                                        // so 2.14.0+ may be faster, but isn't required.
+                                        // as from v1.8.0 we assume R's internal hash is positive, so don't
+                                        // save the uninitialised truelengths that by chance are negative
+        TRUELENGTH(s) = 0;
+    }
+    for (i=length(table)-1; i>=0; i--) {
+        s = STRING_ELT(table,i);
+        if (TRUELENGTH(s)>0) savetl(s);
+        TRUELENGTH(s) = -i-1;
+    }
+    if (in) {
+        PROTECT(ans = allocVector(LGLSXP,length(x)));
+        for (i=0; i<length(x); i++) {
+            LOGICAL(ans)[i] = TRUELENGTH(STRING_ELT(x,i))<0;
+            // nomatch ignored for logical as base does I think
+        }
+    } else {
+        PROTECT(ans = allocVector(INTSXP,length(x)));
+        for (i=0; i<length(x); i++) {
+            m = TRUELENGTH(STRING_ELT(x,i));
+            INTEGER(ans)[i] = (m<0) ? -m : nomatch;
+        }
+    }
+    for (i=0; i<length(table); i++)
+        TRUELENGTH(STRING_ELT(table,i)) = 0;  // good practice to reinstate 0 but might not be needed.
+    savetl_end();   // reinstate HASHPRI (if any)
+    UNPROTECT(1);
+    return(ans);
+}
+
+SEXP chmatchwrapper(SEXP x, SEXP table, SEXP nomatch, SEXP in) {
+    return(chmatch(x,table,INTEGER(nomatch)[0],LOGICAL(in)[0]));
+}
+
+
+
 

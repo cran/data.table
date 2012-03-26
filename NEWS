@@ -6,6 +6,160 @@ This NEWS file summarises the main changes.
 
         **********************************************
         **                                          **
+        **   CHANGES IN DATA.TABLE VERSION 1.8.0    **
+        **                                          **
+        **********************************************
+
+NEW FEATURES
+
+    o   character columns are now allowed in keys and are preferred to
+        factor. data.table() and setkey() no longer coerce character to
+        factor. Factors are still supported. Implements FR#1493, FR#1224
+        and (partially) FR#951.
+        
+    o   setkey() no longer sorts factor levels. This should be more convenient
+        and compatible with ordered factors where the levels are 'labels', in
+        some order other than alphabetical. The established advice to paste each
+        level with an ordinal prefix, or use another table to hold the factor
+        labels instead of a factor column, is no longer needed. Solves FR#1420.
+        Thanks to Damian Betebenner and Allan Engelhardt raising on datatable-help
+        and their tests have been added verbatim to the test suite.
+        
+    o   unique(DT) and duplicated(DT) are now faster with character columns,
+        on unkeyed tables as well as keyed tables, FR#1724.
+
+    o   New function set(DT,i,j,value) allows fast assignment to elements
+        of DT. Similar to := but avoids the overhead of [.data.table, so is
+        much faster inside a loop. Less flexible than :=, but as flexible
+        as matrix subassignment. Similar in spirit to setnames(), setcolorder(),
+        setkey() and setattr(); i.e., assigns by reference with no copy at all.
+        
+            M = matrix(1,nrow=100000,ncol=100)
+            DF = as.data.frame(M)
+            DT = as.data.table(M)
+            system.time(for (i in 1:1000) DF[i,1L] <- i)   # 591.000s
+            system.time(for (i in 1:1000) DT[i,V1:=i])     #   1.158s
+            system.time(for (i in 1:1000) M[i,1L] <- i)    #   0.016s
+            system.time(for (i in 1:1000) set(DT,i,1L,i))  #   0.027s
+
+    o   New functions chmatch() and %chin%, faster versions of match()
+        and %in% for character vectors. R's internal string cache is
+        utilised (no hash table is built). They are about 4 times faster
+        than match() on the example in ?chmatch.
+        
+    o   Internal function sortedmatch() removed and replaced with chmatch()
+        when matching i levels to x levels for columns of type 'factor'. This
+        preliminary step was causing a (known) significant slowdown when the number
+        of levels of a factor column was large (e.g. >10,000). Exacerbated in
+        tests of joining four such columns, as demonstrated by Wes McKinney
+        (author of Python package Pandas). Matching 1 million strings of which
+        of which 600,000 are unique is now reduced from 16s to 0.5s, for example.
+        Background here :
+        http://stackoverflow.com/questions/8991709/why-are-pandas-merges-in-python-faster-than-data-table-merges-in-r
+        
+    o   rbind.data.table() gains a use.names argument, by default TRUE.
+        Set to FALSE to combine columns in order rather than by name. Thanks to
+        a question by Zach on Stack Overflow :
+        http://stackoverflow.com/questions/9315258/aggregating-sub-totals-and-grand-totals-with-data-table
+        
+    o   New argument 'keyby'. An ad hoc by just as 'by' but with an additional setkey()
+        on the by columns of the result, for convenience. Not to be confused with a
+        'keyed by' such as DT[...,by=key(DT)] which can be more efficient as explained
+        by FAQ 3.3.  Thanks to Yike Lu for the suggestion and discussion (FR#1780).
+        
+    o   Single by (or keyby) expressions no longer need to be wrapped in list(),
+        for convenience, implementing FR#1743; e.g., these now works :
+            DT[,sum(v),by=a%%2L]
+            DT[,sum(v),by=month(date)]
+        instead of needing :
+            DT[,sum(v),by=list(a%%2L)]
+            DT[,sum(v),by=list(month(date))]
+
+    o   Unnamed 'by' expressions have always been inspected using all.vars() to make
+        a guess at a sensible column name for the result. This guess now includes
+        function names via all.vars(functions=TRUE), for convenience; e.g.,
+            DT[,sum(v),by=month(date)]
+        now returns a column called 'month' rather than 'date'. It is more robust to
+        explicitly name columns, though; e.g.,
+            DT[,sum(v),by=list("Guaranteed name"=month(date))]
+
+    o   For a surprising speed boost in some circumstances, default options such as
+        'datatable.verbose' are now set when the package loads (unless they are already
+        set, by user's profile for example). The 'default' argument of base::getOption()
+        was the culprit and has been removed internally from all 11 calls.
+
+
+BUG FIXES
+
+    o   Fixed a `suffixes` handling bug in merge.data.table that was
+        only recently introduced during the recent "fast-merge"-ing reboot.
+        Briefly, the bug was only triggered in scenarios where both
+        tables had identical column names that were not part of `by` and
+        ended with *.1. cf. "merge and auto-increment columns in y[x]"
+        test in tests/test-data.frame-like.R for more information.
+        
+    o   Adding a column using := on a data.table just loaded from disk was
+        correctly detected and over allocated, but incorrectly warning about
+        a previous copy. Test 462 tested loading from disk, but suppressed
+        warnings (sadly). Fixed.
+        
+    o   data.table unaware packages that use DF[i] and DF[i]<-value syntax
+        were not compatible with data.table, fixed. Many thanks to Prasad Chalasani
+        for providing a reproducible example with base::droplevels(), and
+        Helge Liebert for providing a reproducible example (#1794) with stats::reshape().
+        Tests added.
+        
+    o   as.data.table(DF) already preserved DF's attributes but not any inherited
+        classes such as nlme's groupedData, so nlme was incompatible with
+        data.table. Fixed. Thanks to Dieter Menne for providing a reproducible
+        example. Test added.
+        
+    o   The internal row.names attribute of .SD (which exists for compatibility with
+        data.frame only) was not being updated for each group. This caused length errors 
+        when calling any non-data.table-aware package from j, by group, when that package
+        used length of row.names. Such as the recent update to ggplot2. Fixed.
+        
+    o   When grouped j consists of a print of an object (such as ggplot2), the print is now
+        masked to return NULL rather than the object that ggplot2 returns since the
+        recent update v0.9.0. Otherwise data.table tries to accumulate the (albeit
+        invisible) print object. The print mask is local to grouping, not generally.
+        
+    o   'by' was failing (bug #1880) when passed character column names where one or more
+        included a space. So, this now works :
+            DT[,sum(v),by="column 1"]
+        and j retains spaces in column names rather than replacing spaces with "."; e.g.,
+            DT[,list("a b"=1)]
+        Thanks to Yang Zhang for reporting. Tests added. As before, column names may be
+        back ticked in the usual R way (in i, j and by); e.g.,
+            DT[,sum(`nicely named var`+1),by=month(`long name for date column`)]
+            
+    o   unique() on an unkeyed table including character columns now works correctly, fixing
+        #1725. Thanks to Steven Bagley for reporting. Test added.
+        
+    o   %like% now returns logical (rather than integer locations) so that it can be
+        combined with other i clauses, fixing #1726. Thanks to Ivan Zhang for reporting. Test
+        added.
+
+
+THANKS TO
+
+    o   Joshua Ulrich for spotting a missing PACKAGE="data.table"
+        in .Call in setkey.R, and suggesting as.list.default() and
+        unique.default() to avoid dispatch for speed, all implemented.
+
+
+USER-VISIBLE CHANGES
+
+    o   Providing .SDcols when j doesn't use .SD is downgraded from error to warning,
+        and verbosity now reports which columns have been detected as used by j.
+        
+    o   check.names is now FALSE by default, for convenience when working with column
+        names with spaces and other special characters, which are now fully supported.
+        This difference to data.frame has been added to FAQ 2.17.
+
+
+        **********************************************
+        **                                          **
         **   CHANGES IN DATA.TABLE VERSION 1.7.10   **
         **                                          **
         **********************************************
@@ -45,7 +199,7 @@ USER-VISIBLE CHANGES
         providing a convincing use case. Adding a new column uing := after key<-
         issues a warning, shallow copies and proceeds, as before.
     
-    O   The 'datatable.pre.suffixes' option has been removed. It was available to
+    o   The 'datatable.pre.suffixes' option has been removed. It was available to
         obtain deprecated merge() suffixes pre v1.5.4.
 
 

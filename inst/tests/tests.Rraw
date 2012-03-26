@@ -1,9 +1,16 @@
 
 if (!exists(".devtesting")) {
     require(data.table)   # in dev the package should not be loaded
-    require(ggplot2)      # the 2 ggplot tests take so long they get in the way
-    require(plyr)
-    require(reshape)
+    suppressWarnings({
+        require(reshape)
+        require(plyr)
+        require(ggplot2)      # the 2 ggplot tests take so long they get in the way in dev
+        require(hexbin)
+        require(nlme)
+    })
+    # The suppression is for users running test.data.table(). If they don't have ggplot2 installed we don't
+    # want to warn about it not being installed. 'R CMD check' is a stricter test that will warn if the
+    # packages above are not installed, via DESCRIPTION:Suggests.
 }
 options(warn=2)
 nfail = ntest = lastnum = 0
@@ -13,10 +20,12 @@ test = function(num,x,y=NULL,error,warning) {
     lastnum <<- num
     err<-try(x,TRUE)
     if (!missing(error) || !missing(warning)) {
-        pattern = ifelse(!missing(error),"^Error","converted from warning")
         type = ifelse(!missing(error),"error","warning")
         txt = ifelse(!missing(error),error,warning)
-        if (inherits(err,"try-error") && length(grep(paste(pattern,".*",txt,sep=""),err)))
+        if (inherits(err,"try-error") && 
+           length(grep(txt,err)) &&
+           ((type=="error" && !length(grep("converted from warning",err))) ||
+            (type=="warning" && length(grep("converted from warning",err)))))
             return()
         cat("Test",num,"didn't produce correct",type,":\n")
         cat(err,"\n")
@@ -38,14 +47,14 @@ test = function(num,x,y=NULL,error,warning) {
             # TO DO:  test 166 doesn't pass with these :
             # if (!selfrefok(x)) stop("x selfref not ok")
             # if (!selfrefok(y)) stop("y selfref not ok")
-            x=copy(x)
-            y=copy(y)  # so we don't affect the original data which may be used in the next test
+            xc=copy(x)
+            yc=copy(y)  # so we don't affect the original data which may be used in the next test
             # drop unused levels in factors
-            if (length(x)) for (i in which(sapply(x,is.factor))) {.xi=x[[i]];x[,i:=factor(.xi),with=FALSE]}
-            if (length(y)) for (i in which(sapply(y,is.factor))) {.yi=y[[i]];y[,i:=factor(.yi),with=FALSE]}
-            if (length(attr(x,"row.names"))) setattr(x,"row.names",NULL)  # for test 165+, i.e. x may have row names set from inheritance but y won't, consider these equal
-            if (length(attr(y,"row.names"))) setattr(y,"row.names",NULL)
-            if (identical(x,y)) return()
+            if (length(x)) for (i in which(sapply(x,is.factor))) {.xi=x[[i]];xc[,i:=factor(.xi),with=FALSE]}
+            if (length(y)) for (i in which(sapply(y,is.factor))) {.yi=y[[i]];yc[,i:=factor(.yi),with=FALSE]}
+            if (length(attr(x,"row.names"))) setattr(xc,"row.names",NULL)  # for test 165+, i.e. x may have row names set from inheritance but y won't, consider these equal
+            if (length(attr(y,"row.names"))) setattr(yc,"row.names",NULL)
+            if (identical(xc,yc) && identical(key(x),key(y))) return()  # check key too because := might have cleared it
         }
         if (is.factor(x) && is.factor(y)) {
             x = factor(x)
@@ -90,19 +99,19 @@ fsorted = f[o1]
 xsorted = x[o1]
 tt = system.time(o2 <- sort.list(fsorted,method="radix"))    # 0.318   
 cat(format(tt["elapsed"],nsmall=3),": sort.list(,'radix') on fsorted\n")     # (page fetches on counts minimised)
+
 cat("-vs-\n")
-for (GE2140 in c(FALSE,TRUE)) {   # GE2140 = getRversion()>="2.14.0". Must be FALSE first, so can simulate 2.14.0
-    if (GE2140) cat(">= R 2.14.0\n") else cat("< R 2.14.0\n")
-    tt = system.time(o3 <- .Call("countingcharacter",x,FALSE,GE2140))        # 2.186
-    cat(format(tt["elapsed"],nsmall=3),": char group on x (ad hoc by)  [slower than radix on f but without up front cost]\n")    
-    tt = system.time(o4 <- .Call("countingcharacter",x,TRUE,GE2140))         # 2.400
-    cat(format(tt["elapsed"],nsmall=3),": char sort on x (setkey)  [lower up front cost than factor(x)]\n")
-    tt = system.time(o5 <- .Call("countingcharacter",xsorted,FALSE,GE2140))  # 0.222
-    cat(format(tt["elapsed"],nsmall=3),": char group on xsorted (keyed by)  [faster than sort.list(,'radix') on fsorted, same result]\n")
-    test(389+3*GE2140,identical(o1,o4))
-    test(390+3*GE2140,identical(o2,o5))
-    test(391+3*GE2140,identical(o5,1:length(x)))
-}
+
+tt = system.time(o3 <- chgroup(x))        # 2.186
+cat(format(tt["elapsed"],nsmall=3),": char group on x (ad hoc by)  [slower than radix on f but without up front cost]\n")    
+tt = system.time(o4 <- chorder(x))        # 2.400
+cat(format(tt["elapsed"],nsmall=3),": char sort on x (setkey)  [lower up front cost than factor(x)]\n")
+tt = system.time(o5 <- chgroup(xsorted))  # 0.222
+cat(format(tt["elapsed"],nsmall=3),": char group on xsorted (keyed by)  [faster than sort.list(,'radix') on fsorted, same result]\n")
+test(389,identical(o1,o4))
+test(390,identical(o2,o5))
+test(391,identical(o5,1:length(x)))
+# tests 392-394 removed. They were to test a switch depending on pre and post 2.14.0, which was removed. The same code runs in pre 2.14.0 and we still support from 2.12.0+. Of course we test the package in pre-2.14.0 (as does CRAN), both 32bit and 64bit.
 
 TESTDT = data.table(a=as.integer(c(1,3,4,4,4,4,7)), b=as.integer(c(5,5,6,6,9,9,2)), v=1:7)
 setkey(TESTDT,a,b)
@@ -193,7 +202,7 @@ test(198, TESTDT[J(c(4,1,0,5,3,7,NA,4,1),c(6,5,1,10,5,2,1,6,NA)),v,nomatch=NA]$v
 test(50, TESTDT[J(c(4,1,0,5,3,7,NA,4,1),c(6,5,1,10,5,2,1,6,NA)),v,mult="last",nomatch=0], INT(4,1,2,7,4))
 test(199, TESTDT[J(c(4,1,0,5,3,7,NA,4,1),c(6,5,1,10,5,2,1,6,NA)),v,mult="last",nomatch=NA], INT(4,1,NA,NA,2,7,NA,4,NA))
 
-TESTDT$a = factor(letters[TESTDT$a])
+TESTDT[, a:=letters[a]]
 setkey(TESTDT,a,b)
 # i.e.       a b v
 #       [1,] a 5 1
@@ -203,12 +212,12 @@ setkey(TESTDT,a,b)
 #       [5,] d 9 5
 #       [6,] d 9 6
 #       [7,] g 2 7
-test(51, TESTDT[SJ(c("d","d","e","g"),c(6,7,1,2)),v,mult="all",roll=TRUE,nomatch=0][[3]], INT(3:4,4,7))  # will test sortedmatch for strings in the level match
+test(51, TESTDT[SJ(c("d","d","e","g"),c(6,7,1,2)),v,mult="all",roll=TRUE,nomatch=0][[3]], INT(3:4,4,7))
 test(200, TESTDT[SJ(c("d","d","e","g"),c(6,7,1,2)),v,mult="all",roll=TRUE,nomatch=NA][[3]], INT(3:4,4,NA,7))
-test(52, TESTDT[J(c("g","d","e","d"),c(6,6,1,2)),v,mult="all",roll=TRUE,nomatch=0][[3]], INT(7,3:4))  # also will test sortedmatch for strings in the level match
+test(52, TESTDT[J(c("g","d","e","d"),c(6,6,1,2)),v,mult="all",roll=TRUE,nomatch=0][[3]], INT(7,3:4))
 test(201, TESTDT[J(c("g","d","e","d"),c(6,6,1,2)),v,mult="all",roll=TRUE,nomatch=NA][[3]], INT(7,3:4,NA,NA))
 
-TESTDT$b = factor(letters[TESTDT$b])
+TESTDT[, b:=letters[b]]
 setkey(TESTDT,a,b)
 # i.e.
 #         a b v
@@ -223,25 +232,13 @@ test(53, TESTDT[SJ(c("d","d","e","g"),c("f","g","a","b")),v,mult="last"], INT(4,
 test(54, TESTDT[J(c("g","d","e","d"),c("b","g","a","f")),v,mult="last"], INT(7,NA,NA,4))  # this tests (d,g) ok even though there is an NA in last match in the roll.
 test(55, TESTDT[SJ(c("d","d","e","g"),c("f","g","a","b")),v,mult="first"], INT(3,NA,NA,7))
 test(56, TESTDT[J(c("g","d","e","d"),c("b","g","a","f")),v,mult="first"], INT(7,NA,NA,3))
-t = try(TESTDT[J(c("g","d","d","d","e","d"),c("b","g","k","b","a","f")),v,roll=TRUE],silent=TRUE)
-test(57, inherits(t,"try-error"))  # When character, this works and evaluated to INT(7,4,6,NA,NA,3)
-test(58, length(grep("Attempting roll join on factor column", t)))
-t = try(TESTDT[J(c("g","d","d","d","e","d"),c("b","g","k","b","a","f")),v,rolltolast=TRUE],silent=TRUE)
-test(59, inherits(t,"try-error"))  # When character evaluates to INT(7,4,NA,NA,NA,3)
-test(60, length(grep("Attempting roll join on factor column", t)))
+test(57, TESTDT[J(c("g","d","d","d","e","d"),c("b","g","k","b","a","f")),v,roll=TRUE][[3]], INT(7,4,6,NA,NA,3,4))
+# test 58 removed. Tested this failed (rolling join on factors) pre character columns, now works.
+test(59, TESTDT[J(c("g","d","d","d","e","d"),c("b","g","k","b","a","f")),v,rolltolast=TRUE][[3]], INT(7,4,NA,NA,NA,3,4))
+# test 60 removed. Tested this failed (rolling join on factors) pre character columns, now works.
 
-##  Add tests on sortedmatch as well to nail it down even further,  even though its called above.
-if (!exists("sortedmatch")) sortedmatch = data.table:::sortedmatch        # for eval(body(test.data.table)) when data.table is in namespace only and isn't in development in .GlobalEnv
-test(61, sortedmatch(c("a","h","f","h","j"), letters[1:8]), INT(1,8,6,8,NA))
-test(62, sortedmatch(INT(5,2,4,3,NA,7), INT(2,4,5,7)), INT(3,1,2,NA,NA,4))
-test(63, sortedmatch(1:3,INT(NULL)), INT(NA,NA,NA))
-
-t = try(sortedmatch(c("a","h","f","j"), letters[8:1], check=TRUE), silent=TRUE)
-test(64, inherits(t,"try-error"))   # v2 is not sorted
-t = try(sortedmatch(letters[1:3], 1:3), silent=TRUE)
-test(65, inherits(t,"try-error"))   # v1 and v2 must be the same storage.mode
-t = try(sortedmatch(as.double(1:3), as.double(1:3)), silent=TRUE)
-test(66, inherits(t,"try-error"))   # only character or integer accepted
+# Tests 61-66 were testing sortedmatch which is now replaced by chmatch for characters, and removed
+# for integers until needed.
 
 # Test 67 removed. No longer use factors so debate/problem avoided.
 # [.factor and c.factor are no longer present in data.table, not even hidden away
@@ -375,9 +372,8 @@ TESTDT = data.table(NULL)
 test(122, TESTDT[1], TESTDT)
 test(123, TESTDT[0], TESTDT)
 test(124, TESTDT[1:10], TESTDT)
-t = try(TESTDT["k"], silent=TRUE)
-test(125, inherits(t,"try-error"))
-test(126, length(grep("The data.table has no key", t)))
+test(125, TESTDT["k"], error="x must be keyed")
+# test 126 no longer needed now that test() has 'error' argument
 
 TESTDT = data.table(a=3L,v=2L,key="a")  # testing 1-row table
 test(127, TESTDT[J(3)], TESTDT)
@@ -389,10 +385,12 @@ test(131, TESTDT[J(-4),roll=TRUE], data.table(a=-4L,v=NA_integer_,key="a"))
 test(132, ncol(TESTDT[0]), 2L)
 test(133, TESTDT[0][J(3)], data.table(a=3L,v=NA_integer_,key="a"))
 
-# tests on data table names
+# tests on data table names, make.names is now FALSE by default from v1.8.0
 x = 2L; `1x` = 4L
-dt = data.table(a.1 = 1L, b_1 = 2L, "1b" = 3L, `a 1` = 4L, x, `1x`, 2*x) 
-test(134, names(dt), c("a.1", "b_1", "X1b", "a.1.1", "x", "V6", "V7"))
+dt = data.table(a.1 = 1L, b_1 = 2L, "1b" = 3L, `a 1` = 4L, x, `1x`, 2*x)
+test(134, names(dt), c("a.1", "b_1", "1b", "a 1", "x", "V6", "V7"))
+dt = data.table(a.1 = 1L, b_1 = 2L, "1b" = 3L, `a 1` = 4L, x, `1x`, 2*x, check.names=TRUE)
+test(134.5, names(dt), c("a.1", "b_1", "X1b", "a.1.1", "x", "V6", "V7"))
 
 dt = data.table(a.1 = 1L, b_1 = 2L, "1b" = 3L, `a 1` = 4L, x, `1x`, 2*x, check.names = FALSE)    
 test(135, names(dt), c("a.1", "b_1", "1b", "a 1", "x", "V6", "V7")) # the last two terms differ from data.frame()
@@ -421,17 +419,16 @@ test(144, dt[, .SD[3,], by=b], data.table(b=LETTERS[1:4],a=3L,b2=LETTERS[1:4]))
 
 DT = data.table(x=rep(c("a","b"),c(2,3)),y=1:5)
 xx = capture.output(ans <- DT[,{print(x);sum(y)},by=x])
-test(145, xx, c("[1] a","Levels: a b","[1] b","Levels: a b"))
+test(145, xx, c("[1] \"a\"","[1] \"b\""))
 test(146, ans, data.table(x=c("a","b"),V1=c(3L,12L)))
 
-tt = try(DT[,MySum=sum(v)], silent=TRUE)    # feature request #204 done.
-test(147, inherits(t,"try-error") && length(grep("unused argument", tt)))   # user meant DT[,list(MySum=sum(v))]
+test(147, DT[,MySum=sum(v)], error="unused argument")  # user meant DT[,list(MySum=sum(v))]. FR#204 done.
 
 dt = data.table(a=c(1L,4L,5L), b=1:3, key="a")
 test(148, dt[CJ(2:3),roll=TRUE], data.table(a=c(2L,3L),b=c(1L,1L),key="a"))
 test(149, dt[J(2:3),roll=TRUE], data.table(a=c(2L,3L),b=c(1L,1L)))  # in future this will detect the subset is ordered and retain the key
 
-# 150:158 test out of order factor levels in key columns
+# 150:158 test out of order factor levels in key columns (now allowed from v1.8.0)
 dt = data.table(x=factor(c("c","b","a"),levels=c("b","a","c")),y=1:3)
 setkey(dt,x)
 test(150, dt["b",y]$y, 2L)
@@ -444,13 +441,14 @@ a = data.table(x=factor(letters[rep(1:5, each =2)], levels=letters[5:1]),
                z=1:10)
 test(152, is.unsorted(levels(a$x)), TRUE)
 test(153, is.unsorted(levels(a$y)), TRUE)
-test(154, a[,sum(z),by=x][1,paste(x,V1)], "a 3")  # this result seems more correct now that ad hoc by doesn't sort the groups
-before = a[,sum(z),by=y]
-setkey(a,x)
-test(155, is.unsorted(levels(a$x)), FALSE)
-test(156, is.unsorted(levels(a$y)), TRUE)   # non-key columns are ok to have unsorted levels
-test(157, a[,sum(z),by=x][1,paste(x,V1)], "a 3")
-test(158, a[,sum(z),by=y], before)
+test(154, a[,sum(z),by=x][1,paste(x,V1)], "a 3")  # ad hoc by doesn't sort the groups so 'a' (5th level) should be first
+setkey(a,x)    # 'e' (level 1) should come first now.
+test(155, is.unsorted(levels(a$x)), TRUE)
+test(156, is.unsorted(levels(a$y)), TRUE)
+test(157, a[,sum(z),by=x][1,paste(x,V1)], "e 19")  # 1st level is now first
+test(158, a[,sum(z),by=y][1,paste(y,V1)], "h 19")  # not 'f'
+test(158.5, a[,sum(z),keyby=y][1,paste(y,V1)], "j 15")  # not 'f' either
+
 
 # tests of by expression variables
 DT = data.table( a=1:5, b=11:50, d=c("A","B","C","D"), f=1:5, grp=1:5 )
@@ -469,14 +467,18 @@ test(164, foo(f), DT[,mean(b),by=d])
 test(165, subset(DT,a>2), DT[a>2])
 test(166, suppressWarnings(split(DT,DT$grp)[[2]]), DT[grp==2])
 if ("package:ggplot2" %in% search()) {
-    test(167,print(ggplot(DT,aes(b,f))+geom_point()),NULL)  # how to programmatically test it not only doesn't error but correct output, binary diff to pre-prepared pdf ?
+    test(167,names(print(ggplot(DT,aes(b,f))+geom_point())),c("data","panel","plot"))
+    # The names() is a stronger test that it has actually plotted, but also because test() sees the invisible result
     test(168,DT[,print(ggplot(.SD,aes(b,f))+geom_point()),by=list(grp%%2L)],data.table(grp=integer()))  # %%2 because there are 5 groups in DT data at this stage, just need 2 to test
     # New test reported by C Neff on 11 Oct 2011
-    test(168.5, print(ggplot(DT) + geom_hex(aes(b, f)) + facet_wrap(~grp)), NULL)
+    if ("package:hexbin" %in% search())
+       test(168.5, names(print(ggplot(DT) + geom_hex(aes(b, f)) + facet_wrap(~grp))), c("data","panel","plot"))
+    else
+       cat("Test 168.5 not run. If required call library(hexbin) first.\n")
     try(graphics.off(),silent=TRUE)
     #try(graphics.off(),silent=TRUE) # R CMD check doesn't like graphics it seems, even when inside try()
 } else {
-    cat("Tests 167 and 168 not run. If required call library(ggplot2) first.\n")
+    cat("Tests 167, 168 and 168.5 not run. If required call library(ggplot2) first.\n")
     # ggplot takes a long time e.g. increases runtime of test.data.table from under 1 second to over 10 seconds. So we don't include these by default.
     # From examples, the library(ggplot2) is done first, so that 'R CMD check' does include tests 167 and 168 
 }
@@ -700,9 +702,8 @@ test(251, x[y], data.table(a=c("b","b","d","b","b"),b=c(2:3,NA,2:3),d=c(8,8,9,10
 DT = data.table(a=c(1,1,1,2,2),v=1:5)
 test(252, DT[,sum(v),by=a], data.table(a=1:2,V1=c(6L,9L)))
 
-# auto coerce character to factor in ad hoc by (just like setkey).
-DT = data.table(a=c("A","A","A","B","B"),v=1:5)
-DT$a = as.character(DT$a)  # because data.table() coerces to factor currently.
+# check that by retains factor columns, since character is now default
+DT = data.table(a=factor(c("A","A","A","B","B")),v=1:5)
 test(253, DT[,sum(v),by=a], data.table(a=factor(c("A","B")),V1=c(6L,9L)))
 
 # fix for bug #1298 with by=key(DT) and divisibility error.
@@ -881,14 +882,11 @@ test(299, inherits(tt,"try-error") && length(grep("zero length", tt)))  # to sim
 test(299.02, suppressWarnings(DT[,c:=42L]), data.table(a=1:3,c=42L))  # add column (efficiently), and check result is new table
 test(299.03, truelength(DT)>length(DT))   # the := over-allocated, by 100 by default, but user may have changed default so just check '>'
 
-tt = try(DT[2,c:=42],silent=TRUE)
-test(299.2, inherits(tt,"try-error") && length(grep("[(]converted from warning[)].*Coerced numeric RHS to integer to match the column's type.*length 3 [(]nrows of entire table[)]", tt)))  
+test(299.2, DT[2,c:=42], warning="Coerced 'double' RHS to 'integer' to match the column's type.*length 3 [(]nrows of entire table[)]")
 # also see tests 302 and 303.  (Ok, new test file for fast assign would be tidier).
 test(299.3, DT[,c:=rep(FALSE,nrow(DT))], data.table(a=1:3,c=FALSE))  # replace c column with logical
-tt = try(DT[2,c:=42],silent=TRUE)
-test(299.4, inherits(tt,"try-error") && length(grep("[(]converted from warning[)].*Coerced numeric RHS to logical to match the column's type.*length 3 [(]nrows of entire table[)]", tt)))
-tt = try(DT[2,c:=42L],silent=TRUE)
-test(299.5, inherits(tt,"try-error") && length(grep("[(]converted from warning[)].*Coerced integer RHS to logical to match the column's type.*length 3 [(]nrows of entire table[)]", tt)))
+test(299.4, DT[2,c:=42], warning="Coerced 'double' RHS to 'logical' to match the column's type.*length 3 [(]nrows of entire table[)]")
+test(299.5, DT[2,c:=42L], warning="Coerced 'integer' RHS to 'logical' to match the column's type.*length 3 [(]nrows of entire table[)]")
 
 
 # Test bug fix #1468, combining i and by.
@@ -962,7 +960,7 @@ DT = data.table(a=1:5, b=1:5)
 test(322, within(DT, rm(b)), data.table(a=1:5))
 
 # check that cbind dispatches on first argument as expected
-test(323, cbind(DT,DT), data.table(a=1:5,b=1:5,`a.1`=1:5,`b.1`=1:5))
+test(323, cbind(DT,DT), data.table(a=1:5,b=1:5,a=1:5,b=1:5))   # no check.names as from v1.8.0 (now we have :=, cbind is used far less anyway)
 test(324, cbind(DT,data.frame(c=1:5)), data.table(a=1:5,b=1:5,c=1:5))
 test(325, rbind(DT,DT), data.table(a=c(1:5,1:5),b=1:5))
 test(326, rbind(DT,data.frame(a=6:10,b=6:10)), data.table(a=1:10,b=1:10))
@@ -1036,18 +1034,27 @@ test(351, DT[,c("a","b"):=list(13:15),with=FALSE], data.table(a=13:15,b=13:15,c=
 test(352, DT[,letters[1:4]:=list(1L,NULL),with=FALSE], data.table(a=c(1L,1L,1L),c=c(1L,1L,1L)))
 
 # Test assigning new levels into factor columns
-DT = data.table(f=c("a","b"),x=1:4)
-test(353, DT[2,f:="c"], data.table(f=c("a","c","a","b"),x=1:4))
-test(354, DT[3,f:=factor("foo")], data.table(f=c("a","c","foo","b"),x=1:4))
-# Test growVector logic when adding levels
+DT = data.table(f=factor(c("a","b")),x=1:4)
+test(353, DT[2,f:="c"], data.table(f=factor(c("a","c","a","b")),x=1:4))
+test(354, DT[3,f:=factor("foo")], data.table(f=factor(c("a","c","foo","b")),x=1:4))
+
+# Test growVector logic when adding levels  (don't need to grow levels for character cols)
 newlevels = as.character(as.hexmode(1:2000))
-DT = data.table(f="000",x=1:2010)
-test(355, DT[11:2010,f:=newlevels], data.table(f=c(rep("000",10),newlevels),x=1:2010))
+DT = data.table(f=factor("000"),x=1:2010)
+test(355, DT[11:2010,f:=newlevels], data.table(f=factor(c(rep("000",10),newlevels)),x=1:2010))
+
+DT = data.table(f=c("a","b"),x=1:4)
+# Test coercing factor to character column
+test(355.5, DT[3,f:=factor("foo")], data.table(f=c("a","b","foo","b"),x=1:4))
 
 # See datatable-help post and NEWS item for 1.6.7
-DT = data.table(X=letters[1:10], Y=1:10)
+DT = data.table(X=factor(letters[1:10]), Y=1:10)
 DT$X = "Something Different"
 test(356, DT, data.table(X=factor("Something Different",levels=c(letters[1:10],"Something Different")), Y=1:10))
+
+DT = data.table(X=letters[1:10], Y=1:10)
+DT$X = "Something Different"
+test(356.5, DT, data.table(X="Something Different", Y=1:10))
 
 # Bug fix 1570
 DT = data.table(x=1:5,y=1:5)
@@ -1213,12 +1220,10 @@ alloc.col(DT,3)
 test(417, length(DT)==2 && truelength(DT)==3)
 DT[,c:=7L]   # uses final slot
 test(418, length(DT)==3 && truelength(DT)==3)
-options(datatable.allocwarn=TRUE)
 tt = try(DT[,d:=8L,verbose=TRUE],silent=TRUE)
     # automatic realloc and shallow copy, no risk when not named.
     # would like to be silent using NAMED>0 but .Call sets NAMED=2 for all, it seems. TO DO.
 test(418.5, inherits(tt,"try-error") && length(grep("[(]converted from warning[)].*growing",tt)))
-options(datatable.allocwarn=NULL)
 DT[,d:=8L]
 if (is.null(getOption("datatable.alloccol"))) {
     test(419, length(DT)==4 && truelength(DT)==103)
@@ -1230,7 +1235,7 @@ DT2 = DT
 DT[,e:=9L]   # uses final slot
 test(420, length(DT)==5 && truelength(DT)==5)
 test(421, DT, DT2)
-DT[,f:=10L]  # no warning here because datatable.allocwarn is off
+DT[,f:=10L]
 if (is.null(getOption("datatable.alloccol"))) {
     test(423, length(DT)==6 && truelength(DT)==105)
 } else {
@@ -1238,23 +1243,20 @@ if (is.null(getOption("datatable.alloccol"))) {
 }
 
 # Test crash bug fixed, #1656, introduced with the 1.7.0 feature
-DT <- data.table(a = c("A", "Z"), b = 1:4)
+DT <- data.table(a = factor(c("A", "Z")), b = 1:4)
 DT[1,1] <- "Z"
-test(424, DT, data.table(a=c("Z","Z","A","Z"),b=1:4))
-tt = try(DT[1,1] <- 1, silent=TRUE)
-test(425, inherits(tt,"try-error") && length(grep("[(]converted from warning[)].*Coerced numeric RHS to integer",tt)))
+test(424, DT, data.table(a=factor(c("Z","Z","A","Z")),b=1:4))
+test(425, DT[1,1] <- 1, warning="Coerced 'double' RHS to 'integer'")
 suppressWarnings(DT[1,1] <- 1)
-test(426, DT, data.table(a=c("A","Z"),b=1:4))
+test(426, DT, data.table(a=factor(c("A","Z")),b=1:4))
 DT[1,1] <- 2L
-test(427, DT, data.table(a=c("Z","Z","A","Z"),b=1:4))
+test(427, DT, data.table(a=factor(c("Z","Z","A","Z")),b=1:4))
 DT[1,a:="A"]
-test(428, DT, data.table(a=c("A","Z","A","Z"),b=1:4))
+test(428, DT, data.table(a=factor(c("A","Z","A","Z")),b=1:4))
 DT[1,a:=2L]
-test(429, DT, data.table(a=c("Z","Z","A","Z"),b=1:4))
-tt = try(DT[1,1] <- 3L, silent=TRUE)
-test(430, inherits(tt,"try-error") && length(grep("[(]converted from warning[)].*RHS contains 3 which is outside the levels range.*1,2.*of column 1, NAs generated",tt)))
-tt = try(DT[1,1:=4,with=FALSE], silent=TRUE)
-test(431, inherits(tt,"try-error") && length(grep("[(]converted from warning[)].*RHS contains 4 which is outside the levels range.*1,2.*of column 1, NAs generated",tt)))
+test(429, DT, data.table(a=factor(c("Z","Z","A","Z")),b=1:4))
+test(430, DT[1,1]<- 3L, warning="RHS contains 3 which is outside the levels range.*1,2.*of column 1, NAs generated")
+test(431, DT[1,1:=4L,with=FALSE], warning="RHS contains 4 which is outside the levels range.*1,2.*of column 1, NAs generated")
 
 # simple realloc test
 if (is.null(getOption("datatable.alloccol"))) {
@@ -1301,13 +1303,14 @@ test(446, inherits(tt,"try-error") && length(grep("converted from warning.*Argum
 test(447, suppressWarnings(rbind(DT,list(b=7L,a=4L))), data.table(a=1:4,b=4:7))
 test(448, suppressWarnings(rbind(DT,data.frame(b=7L,a=4L))), data.table(a=1:4,b=4:7))
 test(449, suppressWarnings(rbind(DT,data.table(b=7L,a=4L))), data.table(a=1:4,b=4:7))
-tt=try(rbind(DT,list(c=4L,a=7L)),silent=TRUE)
-test(450, inherits(tt,"try-error") && length(grep("Error.*Some colnames of argument 2 [(]c[)] are not present in colnames of item 1",tt)))
-tt=try(rbind(DT,data.frame(c=4L,a=7L)),silent=TRUE)
-test(451, inherits(tt,"try-error") && length(grep("Error.*Some colnames of argument 2 [(]c[)] are not present in colnames of item 1",tt)))
-tt=try(rbind(DT,data.table(c=4L,a=7L)),silent=TRUE)
-test(452, inherits(tt,"try-error") && length(grep("Error.*Some colnames of argument 2 [(]c[)] are not present in colnames of item 1",tt)))
+test(450, rbind(DT,list(c=4L,a=7L)), error="Some colnames of argument 2 [(]c[)] are not present in colnames of item 1")
+test(451, rbind(DT,data.frame(c=4L,a=7L)), error="Some colnames of argument 2 [(]c[)] are not present in colnames of item 1")
+test(452, rbind(DT,data.table(c=4L,a=7L)), error="Some colnames of argument 2 [(]c[)] are not present in colnames of item 1")
 test(453, rbind(DT,list(4L,7L)), data.table(a=1:4,b=4:7))
+
+# Test new use.names argument in 1.8.0
+test(453.1, rbind(DT,list(FOO=4L,BAR=7L),use.names=FALSE), data.table(a=1:4,b=4:7))
+test(453.2, rbind(DT,data.table(b=4:5,a=7:8), use.names=FALSE), data.table(a=1:5,b=4:8))
 
 # Test the linked reported bug, #1645
 A1 = data.table(b='hello', a='foo', key='a')
@@ -1327,15 +1330,15 @@ test(457, DT[DT2, list(val, val2), nomatch=0], data.table(id=c(1L,2L,2L),val=1:3
 # Test bysameorder edge cases, #1631
 DT = data.table(a=1:3,v=4:9,key="a")
 test(458, DT[,sum(v),by=list(a%%2L)], data.table(a=c(1L,0L),V1=c(26L,13L)))
-test(459, DT[, list(sum(v)), list(ifelse(a == 2, NA, 1))], data.table(a=c(1L,NA_integer_),V1=c(26L,13L)))
-test(460, DT[, list(sum(v)), list(ifelse(a == 2, 1, NA))], data.table(a=c(NA_integer_,1L),V1=c(26L,13L)))
+test(459, DT[, list(sum(v)), list(ifelse(a == 2, NA, 1))], data.table(ifelse=c(1L,NA_integer_),V1=c(26L,13L)))
+test(460, DT[, list(sum(v)), list(ifelse(a == 2, 1, NA))], data.table(ifelse=c(NA_integer_,1L),V1=c(26L,13L)))
 test(461, DT[,sum(v),by=a], data.table(a=1:3,V1=c(11L,13L,15L),key="a"))
 
 # Test loading from file (which resets tl to 0 in R 2.14.0+, and unitialized random number in 2.13.2-)
 f = tempfile()
 save(list="DT",file=f)
 load(f)
-test(462, suppressWarnings(DT[,foo:=10L]), data.table(a=1:3,v=4:9,foo=10L,key="a"))
+test(462, DT[,foo:=10L], data.table(a=1:3,v=4:9,foo=10L,key="a"))
 unlink(f)
 
 # Test CJ problems with v1.7.4, #1689
@@ -1467,9 +1470,13 @@ test(499, y[x,x1,nomatch=0], data.table(x=c(3,8),x1=11:12, key="x"))
 test(500, y[x,x1,nomatch=NA], data.table(x=c(1,3,8),x1=10:12, key="x"))
 
 # Test merge bug of unkeyed tables introduced in 1.6.8 and 1.6.9 reported by Eric, and ...
+dt1 <- data.table(l = factor(c("a","b","a","b")))
+dt2 <- data.table(l = factor(c("a","b")), L = factor(c("A","B")))
+test(501, setkey(merge(dt1,dt2,by="l"),NULL), as.data.table(merge(as.data.frame(dt1), as.data.frame(dt2), by="l")))
+
 dt1 <- data.table(l = c("a","b","a","b"))
 dt2 <- data.table(l = c("a","b"), L = c("A","B"))
-test(501, merge(dt1,dt2,by="l"), as.data.table(merge(as.data.frame(dt1), as.data.frame(dt2), by="l")))
+test(501.5, setkey(merge(dt1,dt2,by="l"),NULL), as.data.table(merge(as.data.frame(dt1), as.data.frame(dt2), by="l")))
 
 # ... similar example from DM
 dtA = data.table(i = 1:8, j = rep(1:2, 4), k = rep(1:4, 2), A = 10:17)
@@ -1492,6 +1499,121 @@ test(508, DT, data.table(a=1:3,b=6:4,key="a"))
 test(509, DT[,b:=10L], data.table(a=1:3,b=10L,key="a"))
 test(510, DT[,c:=11L], warning="Invalid .internal.selfref detected and fixed by taking a copy of the whole table")
 test(511, suppressWarnings(DT[,c:=11L]), data.table(a=1:3,b=10L,c=11L,key="a"))
+
+# Test new functons chmatch and %chin%
+y=letters
+x=c(sample(letters,12),"foo","bar")
+test(512, chmatch(x,y), match(x,y))
+test(513, chmatch(x,y,nomatch=0), match(x,y,nomatch=0))
+test(514, x %chin% y, x %in% y)
+
+# Test new function set() in v1.8.0
+DT = data.table(a=1:3,b=4:6)
+test(515, set(DT,2,1,3), warning="Coerced i")
+test(516, set(DT,"2",1,3), error="i is type 'character'")
+test(517, set(DT,2L,1,3), warning="Coerced j")
+test(518, set(DT,2L,1L,3), warning="Coerced 'double' RHS to 'integer'")
+test(519, set(DT,2L,1L,3L), data.table(a=INT(1,3,3),b=4:6))
+test(520, set(DT,2L,"a",2L), data.table(a=1:3,b=4:6))
+test(521, set(DT,2:3,"b",7:8), data.table(a=1:3,b=INT(4,7,8)))
+test(522, set(DT,2L,"foo",7L), error="foo.*is not a column name[.] Cannot add columns with set.*use := instead")
+test(523, set(DT,2L,c("a","a"),list(9L,10L)), data.table(a=INT(1,10,3),b=INT(4,7,8)))
+setkey(DT,b)
+test(524, set(DT,2L,"a",2L), data.table(a=1:3, b=INT(4,7,8), key="b")) 
+test(525, set(DT,1L,"b",6L), data.table(a=1:3, b=6:8))
+
+# Test that data.frame incompability is fixed, came to light in Feb 2012
+DT = data.table(name=c('a','b','c'), value=1:3)
+test(526, base::droplevels(DT[ name != 'a' ]), data.table(name=c('b','c'),value=2:3))   # base:: because we'll implement a fast droplevels, too.
+
+if ("package:nlme" %in% search()) {
+    test(527, {x=Orthodont;tt=lme(distance ~ age, data=x); tt[["data"]]=NULL; tt},
+              {x=as.data.table(Orthodont);tt=lme(distance ~ age, data=x);tt[["data"]]=NULL;tt})
+    test(528, {x=iris;tt=groupedData( Sepal.Length ~ Sepal.Width | Species, data=x);attr(tt,"class")=NULL;attr(tt,"FUN")=NULL;tt},
+              {x=as.data.table(iris);tt=groupedData( Sepal.Length ~ Sepal.Width | Species, data=x);attr(tt,"class")=NULL;attr(tt,"FUN")=NULL;attr(tt,".internal.selfref")=NULL;tt})
+}
+
+# Speed test of chmatch vs match.
+# sortedmatch was 40 times slower and the wrong approach, removed in v1.8.0.
+# Example from Tom in Jan 2011 who first found and raised the issue with sortedmatch.
+cat("Running 30sec (max) test ...");flush.console()
+n = 1e6
+a = as.character(as.hexmode(sample(n,replace=T)))
+b = as.character(as.hexmode(sample(n,replace=T)))
+test(529, system.time(ans1<-match(a,b))["user.self"] > system.time(ans2<-chmatch(a,b))["user.self"])
+test(530, ans1, ans2)
+# sorting a and b no longer makes a difference since both match and chmatch work via hash in some way or another
+cat("done\n")
+
+# Test that .set_row_names() is maintained on .SD for each group
+DT = data.table(a=c(1,1,2,2,2,3,3,3,3),b=1:9)
+test(531, DT[,length(rownames(.SD)),by=a], data.table(a=1:3,V1=2:4))
+
+# Test column names with spaces, bug#1880, and check.names default is now FALSE, too
+# Thanks to Yang Zhang for the tests.
+DT = data.table("a b"=c(1,1,2,2,2),c=1:5)
+test(532, DT[,sum(c),by="a b"], data.table("a b"=1:2,V1=c(3L,12L)))
+test(533, names(data.table('a b'=1)[, list('c d'=`a b`)]), "c d")
+test(534, names(transform(data.table('a b'=1), `c d`=`a b`)), c("a b","c d"))
+
+# Test keyby, new in v1.8.0
+DT = data.table(a=c(1,3,1,2,3,2),b=1:2,c=1:3,v=1:6)
+test(535, DT[,sum(v),by=a, keyby=a], error="not both")
+test(536, DT[,sum(v),by=a], data.table(a=c(1L,3L,2L),V1=c(4L,7L,10L)))  # retains appearance order
+ans = data.table(a=1:3,V1=c(4L,10L,7L),key="a")
+test(537, DT[,sum(v),keyby=a], ans)
+test(538, DT[,sum(v),keyby="a"], ans)
+var="a"
+test(539, DT[,sum(v),keyby=eval(var)], ans)
+a=quote(a%%2L)
+test(540, DT[,sum(v),by=eval(a)], data.table(a=1:0,V1=c(11L,10L)))
+test(541, DT[,sum(v),keyby=eval(a)], data.table(a=0:1,V1=c(10L,11L),key="a"))
+
+test(542, DT[,sum(v),keyby=c("a","b","c")]$V1, INT(1,3,4,6,5,2))
+test(543, DT[,sum(v),keyby="a,b,c"]$V1, INT(1,3,4,6,5,2))
+test(544, DT[,sum(v),keyby=c("a","b,c")], error="these elements are not column names")
+
+# Test single expressions passed to by, FR#1743 in v1.8.0
+DT = data.table(a=1:4,date=as.IDate("2012-02-28")+0:3,v=5:8)
+test(545, DT[,sum(v),by=a%%2L], data.table(a=1:0,V1=c(12L,14L)))
+test(546, DT[,sum(v),by=month(date)], data.table(month=2:3,V1=c(11L,15L)))
+
+# Test that factor levels no longer need to be sorted, and that 'ordered' class is retained.
+# Posted by Allan Engelhardt ...
+x = factor(LETTERS[1:3], levels=rev(LETTERS), ordered=TRUE)
+DT = data.table(A=x,B=x,v=1:3, key="A")
+test(547,is.ordered(DT$A) && is.ordered(DT$B))
+test(548,DT["A",v]$v,1L)
+# Posted by Damian Betebenner ...
+set.seed(123)
+my.course.sample = sample(1:5, 10, replace=TRUE)
+Y = factor(my.course.sample, levels=1:5, labels=c("Basic Math", "Calculus", "Geometry", "Algebra I", "Algebra II"))
+DT = data.table(ID=1:10, COURSE=Y)
+test(549, DT[,sum(ID),by=COURSE]$V1, INT(1,2,29,17,6))
+setkey(DT, COURSE)
+test(550, DT[,sum(ID),by=key(DT)]$V1, INT(6,1,29,2,17))
+
+# Another test of DT[i] syntax from datatable-unaware packages, #1794 from ilprincipe.
+DF = structure(list(sample = structure(c(1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 2L, 2L, 2L, 2L, 2L, 2L, 2L, 2L), .Label = c("panel.1yr", "panel.2yr", "panel.3yr", "panel.inc", "pre.inc", "pre.prev", "post.inc", "post.prev"), class = "factor"), base = c(2003, 2003, 2003, 2003, 2003, 2003, 2003, 2003, 2002, 2002, 2002, 2002, 2002, 2002, 2002, 2002), ref = structure(c(1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L), .Label = c("2004", "2002-2004", "2001", "2000", "2009", "2008"), class = "factor"), var = structure(c(1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L), .Label = c("distance", "time"), class = "factor"), treated = c(0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1), distance = c(10000, 30000, 50000, 1e+05, 10000, 30000, 50000, 1e+05, 10000, 30000, 50000, 1e+05, 10000, 30000, 50000, 1e+05), all = c(602L, 6357L, 8528L, 9272L, 435L, 2438L, 3456L, 6360L, 245L, 2693L, 3699L, 4084L, 187L, 983L, 1400L, 2660L), di.recip = c(5L, 39L, 57L, 62L, 4L, 16L, 22L, 45L, 2L, 25L, 36L, 37L, 1L, 11L, 16L, 35L), irr = c(0.00830564784053156, 0.00613496932515337, 0.00668386491557223, 0.00668679896462468, 0.00919540229885057, 0.00656275635767022, 0.00636574074074074, 0.00707547169811321, 0.00816326530612245, 0.00928332714444857, 0.0097323600973236, 0.00905974534769833, 0.0053475935828877, 0.0111902339776195, 0.0114285714285714, 0.0131578947368421)), .Names = c("sample", "base", "ref", "var", "treated", "distance", "all", "di.recip", "irr"), row.names = c(NA, 16L), class = "data.frame")
+DT = as.data.table(DF)
+test(551, nrow(reshape(DT, v.names = c("all", "di.recip", "irr"),
+              timevar = "treated", idvar = c("sample", "var", "distance"), 
+              direction = "wide" )), 8L)
+              
+# Test bug report #1275 from S Bagley :
+DT = data.table(a=c("1","1"), b=c(2,2))
+test(552, is.character(DT$a))
+test(553, unique(DT), data.table(a="1",b=2))
+
+# Test bug #1726 from Ivan Zhang.
+DT = data.table(V1=c('a', 'b', 'a'), V2 = c('hello', 'ello', 'llo'))
+test(554, nrow(DT[V1=='a' & V2 %like% 'll']), 2L)
+test(555, nrow(DT[V1=='a' & V2 %like% 'ello']), 1L)
+
+
+# TO DO: add FAQ that  eval() is evaled in calling frame so don't need a, then update SO question of 14 March. See the test using variable name same as column name. Actually, is that true?  Need "..J".
+# TO DO: move timings into --timing
+
 
 ## See test-* for more tests
 

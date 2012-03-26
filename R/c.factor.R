@@ -7,10 +7,10 @@ c.factor = function(...)
     args <- list(...)
     for (i in seq(along=args)) if (!is.factor(args[[i]])) args[[i]] = as.factor(args[[i]])
     # The first must be factor otherwise we wouldn't be inside c.factor, its checked anyway in the line above.
-    newlevels = unique(.Internal(unlist(lapply(args,levels),recursive=TRUE,use.names=TRUE)))
+    newlevels = unique(unlist(lapply(args,levels),recursive=TRUE,use.names=TRUE))
     ind <- fastorder(list(newlevels))
     newlevels <- newlevels[ind]
-    nm <- names(.Internal(unlist(args,recursive=TRUE,use.names=TRUE)))
+    nm <- names(unlist(args,recursive=TRUE,use.names=TRUE))
     ans = unlist(lapply(args, function(x) {   # Its faster this way when there are many references to the same level, which is normally the case
         m = match(levels(x), newlevels)
         m[as.integer(x)]
@@ -30,7 +30,7 @@ c.factor = function(...)
 #    u = unique(y)
 #    su = u[fastorder(list(u), na.last = NA)]
 #    attr(y, "levels") = attr(x, "levels")[su]  # relying on the original factor levels being sorted
-#    y[] = sortedmatch(y, su)
+#    y[] = chmatch(y, su)
 #    class(y) = oldClass(x)
 #    y
 #}

@@ -1,12 +1,13 @@
 Package: data.table
-Version: 1.7.10
+Version: 1.8.0
 Title: Extension of data.frame for fast indexing, fast ordered joins,
         fast assignment, fast grouping and list columns.
 Author: M Dowle, T Short, S Lianoglou
 Maintainer: M Dowle <datatable-help@lists.r-forge.r-project.org>
 Depends: R (>= 2.12.0)
 Imports: methods
-Suggests: chron, ggplot2, plyr, reshape, testthat (>= 0.4), hexbin
+Suggests: chron, ggplot2 (>= 0.9.0), plyr, reshape, testthat (>= 0.4),
+        hexbin, fastmatch, nlme
 Description: Enhanced data.frame. Fast indexing, fast ordered joins,
         fast assignment, fast grouping and list columns in a short and
         flexible syntax. i and j may be expressions of column names
@@ -17,6 +18,6 @@ URL: http://datatable.r-forge.r-project.org/,
         http://rwiki.sciviews.org/doku.php?id=packages:cran:data.table,
         http://crantastic.org/packages/data.table
 BugReports: https://r-forge.r-project.org/tracker/?group_id=240
-Packaged: 2012-02-06 23:21:58 UTC; mdowle
+Packaged: 2012-03-26 00:34:30 UTC; mdowle
 Repository: CRAN
-Date/Publication: 2012-02-07 08:43:57
+Date/Publication: 2012-07-16 08:21:33
