@@ -6,13 +6,6 @@
 #include <fcntl.h>
 extern int Rf_Scollate();   // #include <Defn.h> failed to find Defn.h in development, so this extern stops the warning
 
-#ifdef BUILD_DLL
-// For Windows only
-#define EXPORT __declspec(dllexport)
-EXPORT SEXP binarysearch();
-//EXPORT SEXP sortedintegermatch ();
-#endif
-
 /*
 Implements binary search (a.k.a. divide and conquer).
 http://en.wikipedia.org/wiki/Binary_search
@@ -25,16 +18,18 @@ Differences over standard binary search (e.g. bsearch in stdlib.h) :
   o options to join to prevailing value (roll join a.k.a locf)
 */
 
-SEXP binarysearch(SEXP left, SEXP right, SEXP leftcols, SEXP rightcols, SEXP isorted, SEXP roll, SEXP rolltolast, SEXP retFirst, SEXP retLast)
+SEXP binarysearch(SEXP left, SEXP right, SEXP leftcols, SEXP rightcols, SEXP isorted, SEXP roll, SEXP rolltolast, SEXP nomatch, SEXP tolerance, SEXP retFirst, SEXP retLength, SEXP allLen1 )
 {
     // If the left table is large and the right table is large, then sorting the left table first may be
     // quicker depending on how long to sort the left table. This is up to user via use of J() or SJ()
     
-    R_len_t lr,nr,low,mid,upp,coln,col,lci,rci;
+    R_len_t lr,nr,low,mid,upp,coln,col,lci,rci,len;
     R_len_t prevlow, prevupp, type, newlow, newupp, /*size,*/ lt, rt;
+    double tol = REAL(tolerance)[0];
     SEXP lc, rc;
     union {
         int i;
+        double d;
         SEXP s;
     } lval, rval;
     if (NA_INTEGER > 0) error("expected internal value of NA_INTEGER %d to be negative",NA_INTEGER);
@@ -54,7 +49,9 @@ SEXP binarysearch(SEXP left, SEXP right, SEXP leftcols, SEXP rightcols, SEXP iso
     for (lr=0; lr < LENGTH(VECTOR_ELT(left,0)); lr++) {  // left row (i.e. from i). TO DO: change left/right to i/x
         upp = prevupp = nr;
         low = prevlow = (LOGICAL(isorted)[0]) ? low : -1;
-        INTEGER(retFirst)[lr] = INTEGER(retLast)[lr] = 0;   // default to no match for NA goto below
+        INTEGER(retFirst)[lr] = INTEGER(nomatch)[0];   // default to no match for NA goto below
+        // INTEGER(retLength)[lr] = 0;   // could do this to save the branch and later branches in R to set .N to 0
+        INTEGER(retLength)[lr] = INTEGER(nomatch)[0]==0 ? 0 : 1;
         for(col=0; col<coln && low<upp-1; col++) {
             lc = VECTOR_ELT(left,INTEGER(leftcols)[col]);
             rc = VECTOR_ELT(right,INTEGER(rightcols)[col]);
@@ -130,19 +127,47 @@ SEXP binarysearch(SEXP left, SEXP right, SEXP leftcols, SEXP rightcols, SEXP iso
                 }
                 break;
             case REALSXP :
-                // ************* TO DO *******************
-                // Have discussed a decimal() class - fixed decimal points stored as integer
+                // same comments for INTSXP apply here
+                lval.d = REAL(lc)[lr];
+                if (lval.d==NA_REAL) goto nextlr;
+                while(low < upp-1) {
+                    mid = low+((upp-low)/2);
+                    rval.d = REAL(rc)[mid];
+                    if (rval.d<lval.d-tol) {
+                        low=mid;
+                    } else if (rval.d>lval.d+tol) {
+                        upp=mid;
+                    } else { // rval.d == lval.d) 
+                        newlow = mid;
+                        newupp = mid;
+                        while(newlow<upp-1) {
+                            mid = newlow+((upp-newlow)/2);
+                            rval.d = REAL(rc)[mid];
+                            if (fabs(rval.d-lval.d)<tol) newlow=mid; else upp=mid;
+                        }
+                        while(low<newupp-1) {
+                            mid = low+((newupp-low)/2);
+                            rval.d = REAL(rc)[mid];
+                            if (fabs(rval.d-lval.d)<tol) newupp=mid; else low=mid;
+                        }
+                        break;
+                    }
+                }
+                break;
             default:
                 error("Type '%s' not supported as key column", type2char(type));
             }
-        }    
+        }
         if (low<upp-1) {
-            INTEGER(retFirst)[lr] = (low+1)+1;
-            INTEGER(retLast)[lr] = (upp-1)+1;
+            INTEGER(retFirst)[lr] = low+2;   // extra +1 for 1-based indexing at R level
+            len = upp-low-1;
+            INTEGER(retLength)[lr] = len;
+            if (len > 1) LOGICAL(allLen1)[0] = FALSE;
         } else {
             if (low>prevlow && col==coln && (LOGICAL(roll)[0] ||
                                             (LOGICAL(rolltolast)[0] && upp<prevupp))) {
-                INTEGER(retFirst)[lr] = INTEGER(retLast)[lr] = low+1;
+                INTEGER(retFirst)[lr] = low+1;
+                INTEGER(retLength)[lr] = 1;
                 low -= 1; // for test 148
             }
         }

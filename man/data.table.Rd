@@ -17,8 +17,12 @@
    
    Tip: one of the quickest ways to learn the features is to type \code{example(data.table)} and study the output at the prompt.
    
-   *NEW* : help page for \code{\link{:=}}
-           \code{keyby} argument
+   *NEW* : \itemize{
+\item help page for \code{\link{:=}}
+\item \code{keyby} argument
+\item \code{character} and \code{numeric} now allowed as key column types
+\item \code{\link{:=}} by group
+}
 }
 \usage{
 data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
@@ -54,7 +58,7 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
 
   expression is evaluated within the frame of the \code{data.table} (i.e. it sees column names as if they are variables) and can evaluate to any of the other types.
 
-  When \code{i} is a \code{data.table}, \code{x} must have a key. \code{i} is \emph{joined} to \code{x} using the key and the rows in \code{x} that match are returned. An equi-join is performed between each column in \code{i} to each column in \code{x}'s key. The match is a binary search in compiled C in O(log n) time. If \code{i} has less columns than \code{x}'s key then many rows of \code{x} may match to each row of \code{i}. If \code{i} has more columns than \code{x}'s key, the columns of \code{i} not involved in the join are included in the result. If \code{i} also has a key, it is \code{i}'s key columns that are used to match to \code{x}'s key columns and a binary merge of the two tables is carried out.
+  When \code{i} is a \code{data.table}, \code{x} must have a key. \code{i} is \emph{joined} to \code{x} using \code{x}'s key and the rows in \code{x} that match are returned. An equi-join is performed between each column in \code{i} to each column in \code{x}'s key; i.e., column 1 of \code{i} is matched to the 1st column of \code{x}'s key, column 2 to the second, etc. The match is a binary search in compiled C in O(log n) time. If \code{i} has fewer columns than \code{x}'s key then many rows of \code{x} will ordinarily match to each row of \code{i} since not all of {x}'s key columns will be joined to (a common use case). If \code{i} has more columns than \code{x}'s key, the columns of \code{i} not involved in the join are included in the result. If \code{i} also has a key, it is \code{i}'s key columns that are used to match to \code{x}'s key columns (column 1 of \code{i}'s key is joined to column 1 of \code{x}'s key, column 2 to column 2, and so on) and a binary merge of the two tables is carried out. In all joins the names of the columns are irrelevant. The columns of \code{x}'s key are joined to in order, either from column 1 onwards of \code{i} when \code{i} is unkeyed, or from column 1 onwards of \code{i}'s key.
 
   Advanced: When \code{i} is an expression of column names that evaluates to \code{data.table} or \code{list}, a join is performed. We call this a \emph{self join}.
 
@@ -68,7 +72,7 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
   \code{j} is evaluated within the frame of the \code{data.table}; i.e., it sees column names as if they are variables. Use \code{j=list(...)} to return multiple columns and/or expressions of columns. A single column or single expression returns that type, usually a vector. See the examples.
 
 }
-  \item{by}{ A single unquoted column name, \code{list()} of expressions of column names, or a single character string containing comma separated column names, or a character vector of column names.
+  \item{by}{ A single unquoted column name, a \code{list()} of expressions of column names, a single character string containing comma separated column names, or a character vector of column names.
 
   The \code{list()} of expressions is evaluated within the frame of the \code{data.table} (i.e. it sees column names as if they are variables). The \code{data.table} is then grouped by the \code{by} and \code{j} is evaluated within each group. The order of the rows within each group is preserved, as is the order of the groups. \code{j=list(...)} may be omitted when there is just one expression, for convenience, typically a single expression such as \code{sum(colB)}; e.g., \code{DT[,sum(colB),by=colA]}.
 
@@ -76,11 +80,15 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
 
   Advanced: Aggregation for a subset of known groups is particularly efficient when passing those groups in \code{i}. When \code{i} is a \code{data.table}, \code{DT[i,j]} evaluates \code{j} for each row of \code{i}. We call this \emph{by without by} or \emph{grouping by i}. Hence, the self join \code{DT[data.table(unique(colA)),j]} is identical to \code{DT[,j,by=colA]}.
 
-  Advanced: Objects \code{.SD}, \code{.BY} and \code{.N} may be used in the \code{j} expression.
-  \code{.SD} is a \code{data.table} containing the \bold{S}ubset of \code{x}'s \bold{D}ata for each group, excluding the group column(s). It can be used when grouping by \code{i}, when grouping by \code{by}, keyed by, and ad hoc by.
+  Advanced: When grouping by \code{by} or by \code{i}, symbols \code{.SD}, \code{.BY} and \code{.N} may be used in the \code{j} expression, defined as follows.
+  
+  \code{.SD} is a \code{data.table} containing the \bold{S}ubset of \code{x}'s \bold{D}ata for each group, excluding the group column(s).
+  
   \code{.BY} is a \code{list} containing a length 1 vector for each item in \code{by}. This can be useful when \code{by} is not known in advance. The \code{by} variables are also available to \code{j} directly by name; useful for example for titles of graphs if \code{j} is a plot command, or to branch with \code{if()} depending on the value of a group variable.
-  \code{.N} is an integer, length 1, containing the number of rows in the group. This may be useful when the column names are not known in advance and for convenience generally. When grouping by \code{i}, \code{.N} is the number of rows in \code{x} matched to, for each row of \code{i}, regardless of whether \code{nomatch} is \code{NA} or \code{0}.
-  \code{.SD}, \code{.BY} and \code{.N} are \emph{read only}. Their bindings are locked and attempting to assign to them will generate an error. If you wish to manipulate \code{.SD} before returning it, take a \code{copy(.SD)} first (see FAQ 4.5). Using \code{:=} in the \code{j} of \code{.SD} may appear to change a copy of .SD, currently, but in future is intended to be a (tortuously flexible) way to update \code{DT} by reference by group (even when groups are not contiguous in an ad hoc by).
+  
+  \code{.N} is an integer, length 1, containing the number of rows in the group. This may be useful when the column names are not known in advance and for convenience generally. When grouping by \code{i}, \code{.N} is the number of rows in \code{x} matched to, for each row of \code{i}, regardless of whether \code{nomatch} is \code{NA} or \code{0}. It is renamed to \code{N} (no dot) in the result (otherwise a column called \code{".N"} could conflict with the \code{.N} variable, see FAQ 4.6 for more details and example), unless it is explicity named; e.g., \code{DT[,list(total=.N),by=a]}.
+  
+  \code{.SD}, \code{.BY} and \code{.N} are \emph{read only}. Their bindings are locked and attempting to assign to them will generate an error. If you wish to manipulate \code{.SD} before returning it, take a \code{copy(.SD)} first (see FAQ 4.5). Using \code{:=} in the \code{j} of \code{.SD} is reserved for future use as a (tortuously) flexible way to update \code{DT} by reference by group (even when groups are not contiguous in an ad hoc by).
 
   Advanced: In the \code{X[Y,j]} form of grouping, the \code{j} expression sees variables in \code{X} first, then \code{Y}. We call this \emph{join inherited scope}. If the variable is not in \code{X} or \code{Y} then the calling frame is searched, its calling frame, and so on in the usual way up to and including the global environment.
 
@@ -100,7 +108,7 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
   \item{roll}{ Applies to the last join column, generally a date but can be any ordered variable, irregular and including gaps. If \code{roll=TRUE} and \code{i}'s row matches to all but the last \code{x} join column, and its value in the last \code{i} join column falls in a gap (including after the last observation in \code{x} for that group), then the \emph{prevailing} value in \code{x} is \emph{rolled} forward. This operation is particularly fast using a modified binary search. The operation is also known as last observation carried forward (LOCF). Usually, there should be no duplicates in \code{x}'s key, the last key column is a date (or time, or datetime) and all the columns of \code{x}'s key are joined to. A common idiom is to select a contemporaneous regular time series (\code{dts}) across a set of identifiers (\code{ids}):  \code{DT[CJ(ids,dts),roll=TRUE]} where \code{DT} has a 2-column key (id,date) and \code{\link{CJ}} stands for \emph{cross join}.
 
 }
-  \item{rolltolast}{ Like \code{roll} but the data is not rolled forward past the \emph{last} observation. The value of \code{i} must fall in a gap in \code{x} but not after the end of the data for that group defined by all but the last join column. \code{roll} and \code{rolltolast} may not both be \code{TRUE}.
+  \item{rolltolast}{ Like \code{roll} but the data is not rolled forward past the \emph{last} observation within each group defined by the join columns. The value of \code{i} must fall in a gap in \code{x} but not after the end of the data, for that group defined by all but the last join column. \code{roll} and \code{rolltolast} may not both be \code{TRUE}.
 
 }
   \item{which}{ \code{TRUE} returns the integer row numbers of \code{x} that \code{i} matches to.
@@ -147,7 +155,7 @@ Multiple \code{data.table}s (e.g. \code{X}, \code{Y} and \code{Z}) can be joined
 A \code{data.table} is a \code{list} of vectors, just like a \code{data.frame}. However :
 \enumerate{
 \item it never has rownames. Instead it may have one \emph{key} of one or more columns. This key can be used for row indexing instead of rownames.
-\item it has enhanced functionality in \code{[.data.table} for fast joins of keyed tables, fast aggregation, and fast last observation carried forward (LOCF).
+\item it has enhanced functionality in \code{[.data.table} for fast joins of keyed tables, fast aggregation, fast last observation carried forward (LOCF) and fast add/modify/delete of columns by reference with no copy at all.
 }
 
 Since a \code{list} \emph{is} a \code{vector}, \code{data.table} columns may be type \code{list}. Columns of type \code{list} can contain mixed types. Each item in a column of type \code{list} may be different lengths. This is true of \code{data.frame}, too.
@@ -166,7 +174,7 @@ column called \code{"keep"} containing \code{TRUE} and this is correct behaviour
 
 POSIXlt is not supported as a column type because it uses 40 bytes to store a single datetime. Unexpected errors may occur if you manage to create a column of type POSIXlt. Please see \href{http://r-forge.r-project.org/scm/viewvc.php/pkg/NEWS?view=markup&root=datatable}{NEWS} for 1.6.3, and \code{\link{IDateTime}} instead. IDateTime has methods to convert to and from POSIXlt.
 }
-\seealso{ \code{\link{data.frame}}, \code{\link{[.data.frame}}, \code{\link{as.data.table}}, \code{\link{setkey}}, \code{\link{J}}, \code{\link{SJ}}, \code{\link{CJ}}, \code{\link{merge.data.table}}, \code{\link{tables}}, \code{\link{test.data.table}}, \code{\link{IDateTime}}, \code{\link{unique.data.table}}, \code{\link{copy}}, \code{\link{:=}}, \code{\link{alloc.col}}, \code{\link{truelength}}
+\seealso{ \code{\link{data.frame}}, \code{\link{[.data.frame}}, \code{\link{as.data.table}}, \code{\link{setkey}}, \code{\link{J}}, \code{\link{SJ}}, \code{\link{CJ}}, \code{\link{merge.data.table}}, \code{\link{tables}}, \code{\link{test.data.table}}, \code{\link{IDateTime}}, \code{\link{unique.data.table}}, \code{\link{copy}}, \code{\link{:=}}, \code{\link{alloc.col}}, \code{\link{truelength}}, \code{\link{rbindlist}}
 \if{html}{\out{<script type="text/javascript">var sc_project=6237851;var sc_invisible=1;var sc_security="518c93ca";</script><script type="text/javascript" src="http://www.statcounter.com/counter/counter.js"></script><noscript><div class="statcounter"><a title="web statistics" href="http://statcounter.com/free-web-stats/" target="_blank"><img class="statcounter" src="http://c.statcounter.com/6237851/0/518c93ca/1/" alt="web statistics"></a></div></noscript>}}
 }
 \examples{
@@ -222,15 +230,15 @@ DT[X,mult="first"]         # first row of each group
 DT[X,mult="last"]          # last row of each group
 DT[X,sum(v)*foo]           # join inherited scope
 
-J("a",2)                   # J() is alias for data.table()
-data.table("a",2)          # same
-
 setkey(DT,x,y)             # 2-column key
 setkeyv(DT,c("x","y"))     # same
 
 DT["a"]                    # join to 1st column of key
-DT[J("a")]                 # same
+DT[J("a")]                 # same. J() stands for Join, an alias for list()
+DT[list("a")]              # same
+DT[.("a")]                 # same. In the style of package plyr.
 DT[J("a",3)]               # join to 2 columns
+DT[.("a",3)]               # same
 DT[J("a",3:6)]             # join 4 rows (2 missing)
 DT[J("a",3:6),nomatch=0]   # remove missing
 DT[J("a",3:6),roll=TRUE]   # rolling join (locf)
@@ -238,7 +246,7 @@ DT[J("a",3:6),roll=TRUE]   # rolling join (locf)
 DT[,sum(v),by=list(y\%\%2)]  # by expression
 DT[,.SD[2],by=x]           # 2nd row of each group
 DT[,tail(.SD,2),by=x]      # last 2 rows of each group
-DT[,lapply(.SD,sum),by=x]  # applying through columns by group
+DT[,lapply(.SD,sum),by=x]  # apply through columns by group
 
 DT[,list(MySum=sum(v),
          MyMin=min(v),
@@ -249,21 +257,24 @@ DT[,sum(v),x][V1<20]       # compound query
 DT[,sum(v),x][order(-V1)]  # ordering results
 
 DT[,z:=42L]                # add new column by reference
-DT[,z:=NULL]               # remove column
+DT[,z:=NULL]               # remove column by reference
 DT["a",v:=42L]             # subassign v by reference
 
-DT[,transform(.SD,m=mean(v)),by=x] 
-DT[,.SD[which.min(v)],by=x]
+DT[,m:=mean(v),by=x]       # add new column by reference by group
 
-# Follow posting guide, support is here (not r-help) :
-maintainer("data.table")
+DT[,.SD[which.min(v)],by=x]  # nested query by group
+
+# Follow r-help posting guide, support is here (*not* r-help) :
+# datatable-help@lists.r-forge.r-project.org
+# or
+# http://stackoverflow.com/questions/tagged/data.table
 
 \dontrun{
 vignette("datatable-intro")
 vignette("datatable-faq")
 vignette("datatable-timings")
 
-test.data.table()          # over 300 low level tests
+test.data.table()          # over 700 low level tests
 
 update.packages()          # keep up to date
 }}

@@ -3,12 +3,6 @@
 #include <Rinternals.h>
 #include <Rdefines.h>
 
-#ifdef BUILD_DLL
-#define EXPORT __declspec(dllexport)
-EXPORT SEXP setattrib();
-EXPORT SEXP copy();
-#endif
-
 // Wrappers for R internal functions. We can't rely on calling
 // Rf_setAttrib and Rf_duplicate directly from .Call in R on
 // all platforms, as we found out when v1.6.5 went to CRAN on

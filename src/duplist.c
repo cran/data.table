@@ -5,11 +5,6 @@
 //#include <sys/mman.h>
 #include <fcntl.h>
 
-#ifdef BUILD_DLL
-#define EXPORT __declspec(dllexport)
-EXPORT SEXP duplist();
-#endif
-
 #define cmpnum(a,b) ((ISNAN(a) && ISNAN(b)) || fabs(a-b)<REAL(tol)[0])
 
 SEXP duplist(SEXP l, SEXP ans, SEXP anslen, SEXP order, SEXP tol)  //change name to uniqlist
@@ -67,17 +62,24 @@ SEXP duplist(SEXP l, SEXP ans, SEXP anslen, SEXP order, SEXP tol)  //change name
 //     with no copies or loops through it doing ++ and --) to be passed on as the
 //     columns are looped through in reverse order.
 // iv) not using the rcmp function, saving the 5 if's and funct call
+// v) the section of the "less" macro in main/src/sort.c: "|| (x[a] == x[b] && a > b)" seems to cause instability
+//  when we don't pass in seq_along(x) as idx. Think it might be superfluous in base, but needs to be removed here
+//  where we pass in different orders than seq_along(x).
 
 //  It is still a comparison sort, so is not meant to be super fast, but should be slightly
 //  more efficient than base for the reasons above. Intend to tackle fast radix sort
-//  for floating point later (which does seem to be known).
+//  for floating point later (which does seem to be known), but then what about ties within tolerance (radix would
+//  be stable within ties but at full accuracy by construction as it does no comparison. Could sweep after
+//  within ties to get the original order back, perhaps.  If we do a recursive order through columns 1:n then it
+//  becomes natural and stable to use shell/quick.
 
 extern const int incs[];
 
-//#define cmptol(a,b) (x[a] > x[b]+tol || (a>b && x[a] > x[b]-tol))
-#define cmptol(a,b) ( (ISNAN(x[b]) && !ISNAN(x[a])) || (!ISNAN(x[a]) && !ISNAN(x[b]) && (x[a] > x[b]+tol || (a>b && x[a] > x[b]-tol))))
+//#define cmptol(a,b) (x[a] > x[b]+tol || (a>b && x[a]==x[b]))  [from src/main/sort.c]
+#define cmptol(a,b) ((ISNAN(x[a]) && ISNAN(x[b]) && a>b) || (!ISNAN(x[a]) && ( ISNAN(x[b]) || (x[a]>(x[b]+tol) || (a>b && x[a]>x[b]-tol)) )))
 
-void rorder_tol(SEXP xarg, SEXP indxarg, SEXP tolarg)
+
+SEXP rorder_tol(SEXP xarg, SEXP indxarg, SEXP tolarg)
 {
     R_len_t t, i, j, h, itmp;
     double *x=REAL(xarg)-1;
@@ -87,7 +89,9 @@ void rorder_tol(SEXP xarg, SEXP indxarg, SEXP tolarg)
     double tol = REAL(tolarg)[0];
     
     //for (i=1; i<=n; i++) if (ISNAN(x[i])) error("NA and NaN are not allowed in numeric key columns. They have to be dealt with specially (slowing things down) but also NAs in the key can lead to ambiguities and confusion when it comes to joining to NA values. If you have a real-world example that really does need NAs in the key then consider choosing your own value to represent NA, such as -999.999. If you want to join to the -999.999 values then you can, and if you want to represent an NA row, then you can too. That will be much faster and clearer. We think that requirement is very rare, so data.table is setup to be optimized for the most common cases; i.e., no NAs in key columns. Also, binary search is faster without a check on NA_REAL (it seems we cannot rely on NA_REAL being REAL_MIN, unlike NA_INTEGER being MIN_INT).");
-     
+
+    //Rprintf("%d\n",(long)NA_REAL<0);  True. This would work well, were it not for tolerance. NA_REAL<0 is nan as IEEE returns nan at C level
+    
     for (t = 0; incs[t] > hi-lo+1; t++);
 	for (h = incs[t]; t < 16; h = incs[++t])
     for (i = lo + h; i <= hi; i++) {
@@ -98,6 +102,7 @@ void rorder_tol(SEXP xarg, SEXP indxarg, SEXP tolarg)
 		}
 		indx[j] = itmp;
     }
+    return(R_NilValue);
 }
 
 

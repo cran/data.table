@@ -148,14 +148,15 @@ The comma is optional.
 DT["b"]
 @
 
-Lets now create a new \code{data.frame}. We will make it large enough to demonstrate the
+Let's now create a new \code{data.frame}. We will make it large enough to demonstrate the
 difference between a \emph{vector scan} and a \emph{binary search}.
 <<print=TRUE>>=
 grpsize = ceiling(1e7/26^2)   # 10 million rows, 676 groups
 tt=system.time( DF <- data.frame(
-  x=rep(factor(LETTERS),each=26*grpsize),
-  y=rep(factor(letters),each=grpsize),
-  v=runif(grpsize*26^2))
+  x=rep(LETTERS,each=26*grpsize),
+  y=rep(letters,each=grpsize),
+  v=runif(grpsize*26^2),
+  stringsAsFactors=FALSE)
 )
 head(DF,3)
 tail(DF,3)
@@ -164,7 +165,7 @@ dim(DF)
 
 We might say that \proglang{R} has created a 3 column table and \emph{inserted}
 \Sexpr{format(nrow(DF),big.mark=",",scientific=FALSE)} rows. It took \Sexpr{format(tt[3],nsmall=3)} secs, so it inserted
-\Sexpr{format(as.integer(nrow(DF)/tt[3]),big.mark=",",scientific=FALSE)} rows per second. This is normal in base \proglang{R}.
+\Sexpr{format(as.integer(nrow(DF)/tt[3]),big.mark=",",scientific=FALSE)} rows per second. This is normal in base \proglang{R}. Notice that we set \code{stringsAsFactors=FALSE}. This makes it a little faster for a fairer comparison, but feel free to experiment. 
 
 Let's extract an arbitrary group from \code{DF}:
 
@@ -299,19 +300,19 @@ where calling \code{month()} on \code{dateCol} is what we mean by expressions of
 
 This is also known as last observation carried forward (LOCF) or a \emph{rolling join}.
 
-Recall that x[i] is a join between \code{data.table} x and \code{data.table} i.  If i has 2 columns, the first column is matched
-to the first column of the key of x, and the 2nd column to the 2nd.  An equi-join is performed, meaning that
+Recall that \code{x[i]} is a join between \code{data.table} \code{x} and \code{data.table} \code{i}.  If \code{i} has 2 columns, the first column is matched
+to the first column of the key of \code{x}, and the 2nd column to the 2nd.  An equi-join is performed, meaning that
 the values must be equal.
 
 The syntax for fast rolling join is
 
 \code{x[i,roll=TRUE]}
 
-As before the first column of i is matched to x where the values are equal. The last column of i though, the 2nd one in
+As before the first column of \code{i} is matched to \code{x} where the values are equal. The last column of \code{i} though, the 2nd one in
 this example, is treated specially. If no match is found, then the row before is returned, provided the first
 column still matches.
 
-For examples see \code{example("[.data.table")}
+For examples type \code{example(data.table)} and follow the output at the prompt.
 
 
 

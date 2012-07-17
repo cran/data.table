@@ -1,4 +1,4 @@
-useDynLib(data.table)
+useDynLib(datatable, .registration=TRUE)
 
 ## For S4-ization
 import(methods)
@@ -11,6 +11,7 @@ export(timetaken)
 export(truelength, alloc.col, ":=")
 export(setattr, setnames, setcolorder, set)
 export(chmatch, "%chin%", chorder, chgroup)
+export(rbindlist)
 
 S3method("[", data.table)
 S3method("[<-", data.table)
@@ -57,6 +58,7 @@ export(as.chron.IDate,as.chron.ITime)
 
 S3method("[", ITime)
 S3method(as.character, ITime)
+S3method(as.data.frame, ITime)
 ## S3method(as.chron, IDate)
 ## S3method(as.chron, ITime)
 S3method(as.Date, IDate)
@@ -81,6 +83,9 @@ S3method(rep, ITime)
 S3method(round, IDate)
 S3method(seq, IDate)
 S3method(split, IDate)
+S3method(unique, IDate)
+S3method(unique, ITime)
+
 
 
 # [.factor

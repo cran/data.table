@@ -1,4 +1,5 @@
 \name{merge}
+\alias{merge}
 \alias{merge.data.table}
 \title{ Merge Two Data Tables }
 \description{
@@ -10,7 +11,9 @@
   and not the shared columns with the same names.
   
   For a more \code{data.table}-centric (and faster) way of merging two data.tables,
-  take a look at \code{\link{[.data.table}}; e.g., \code{x[y, ...]}.
+  take a look at \code{\link{[.data.table}}; e.g., \code{x[y, ...]}. In recent
+  versions, however, \code{merge()} is much closer to the speed of \code{x[y, ...]}.
+  See FAQ 2.12 for a detailed comparison of \code{merge} and \code{x[y, ...]}.
 }
 
 \usage{
@@ -35,7 +38,7 @@
 
   \item{all}{
     logical; \code{all = L} is shorthand for \code{all.x = L} and
-    \code{all.y = L}.
+    \code{all.y = L}, where L is either TRUE or FALSE.
   }
 
   \item{all.x}{
@@ -96,9 +99,9 @@
 
     # test it more:
     d1 <- data.table(a=rep(1:2,each=3), b=1:6, key="a,b")
-    d2 <- J(a=0:1, bb=10:11, key="a")
-    d3 <- J(a=0:1, key="a")
-    d4 <- J(a=0:1, b=0:1, key="a,b")
+    d2 <- data.table(a=0:1, bb=10:11, key="a")
+    d3 <- data.table(a=0:1, key="a")
+    d4 <- data.table(a=0:1, b=0:1, key="a,b")
 
     merge(d1, d2)
     merge(d2, d1)
@@ -119,3 +122,5 @@
 }
 
 \keyword{ data }
+
+

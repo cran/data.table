@@ -5,12 +5,6 @@
 #include <fcntl.h>
 #include <stdio.h>
 
-#ifdef BUILD_DLL
-// For Windows only
-#define EXPORT __declspec(dllexport)
-EXPORT SEXP readfile();
-#endif
-
 SEXP readfile(SEXP fnam)
 {
     SEXP c1,c2,ans;
@@ -49,8 +43,8 @@ SEXP readfile(SEXP fnam)
         // columns 11 and 12 in BED.
     }
     fclose(f);
-    LENGTH(c1) = nrow;
-    LENGTH(c2) = nrow;
+    SETLENGTH(c1, nrow);
+    SETLENGTH(c2, nrow);
     UNPROTECT(3);
     return(ans);
 }

@@ -31,8 +31,8 @@ setkeyv = function(x, cols, verbose=getOption("datatable.verbose"))
     }
     alreadykeyedbythiskey = identical(key(x),cols)
     coerced = FALSE   # in future we hope to be able to setkeys on any type, this goes away, and saves more potential copies
+    if (".xi" %in% colnames(x)) stop("x contains a column called '.xi'. Conflicts with internal use by data.table.")
     for (i in cols) {
-        if (".xi" %in% colnames(x)) stop("x contains a column called '.xi'. Conflicts with internal use by data.table.")
         .xi = x[[i]]  # TO DO: check that [[ is copy on write, otherwise checking types itself will be copying each column.
         #if (is.character(.xi)) {
         #    if (verbose) cat("setkey changing the type of column '",i,"' from character to factor by reference.\n",sep="")
@@ -40,18 +40,19 @@ setkeyv = function(x, cols, verbose=getOption("datatable.verbose"))
         #    coerced=TRUE
         #    next
         #}
-        if (typeof(.xi) == "double") {
-            # avoid new vector here, use reallyreal to issue warning that int might be more appropriate
-            toint = as.integer(.xi)   # see [.data.table for similar logic, and comments
-            if (isTRUE(all.equal(as.vector(.xi),toint))) {
-                if (verbose) cat("setkey changing the type of column '",i,"' from numeric to integer by reference, no fractional data present.\n",sep="")
-                mode(.xi) = "integer"
-                x[,i:=.xi,with=FALSE]
-                coerced=TRUE
-                next
-            }
-            stop("Column '",i,"' cannot be coerced to integer without losing fractional data.")
-        }
+        #if (typeof(.xi) == "double") {
+            # TO DO: use reallyreal to issue warning that int might be more appropriate
+            
+        #    toint = as.integer(.xi)   # see [.data.table for similar logic, and comments
+        #    if (isTRUE(all.equal(as.vector(.xi),toint))) {
+        #        if (verbose) cat("setkey changing the type of column '",i,"' from numeric to integer by reference, no fractional data present.\n",sep="")
+        #        mode(.xi) = "integer"
+        #        x[,i:=.xi,with=FALSE]
+        #        coerced=TRUE
+        #        next
+        #    }
+        #    stop("Column '",i,"' cannot be coerced to integer without losing fractional data.")
+        #}
         #if (is.factor(.xi)) {
         #    # check levels are sorted, if not sort them, test 150
         #    # TO DO ... do we need sorted levels now that we use chmatch rather than sortedmatch?
@@ -67,18 +68,18 @@ setkeyv = function(x, cols, verbose=getOption("datatable.verbose"))
         #    }
         #    next
         #}
-        if (!typeof(.xi) %chin% c("integer","logical","character")) stop("Column '",i,"' is type '",typeof(.xi),"' which is not (currently) allowed as a key column type.")
+        if (!typeof(.xi) %chin% c("integer","logical","character","double")) stop("Column '",i,"' is type '",typeof(.xi),"' which is not (currently) allowed as a key column type.")
     }
     if (!is.character(cols) || length(cols)<1) stop("'cols' should be character at this point in setkey")
     o = fastorder(x, cols, verbose=verbose)
     if (is.unsorted(o)) {
-        if (alreadykeyedbythiskey) warning("Already keyed by this key but had invalid row order, key rebuilt. If you didn't go under the hood please let maintainer('data.table') know so the root cause can be fixed.")
-        .Call("reorder",x,o, PACKAGE="data.table")
+        if (alreadykeyedbythiskey) warning("Already keyed by this key but had invalid row order, key rebuilt. If you didn't go under the hood please let datatable-help know so the root cause can be fixed.")
+        .Call(Creorder,x,o)
     }
     if (!alreadykeyedbythiskey) setattr(x,"sorted",cols)   # the if() just to be a tiny bit faster
     if (coerced && alreadykeyedbythiskey) {
         # if (verbose) cat("setkey incurred a copy of the whole table, due to the coercion(s) above.\n")
-        warning("Already keyed by this key but had invalid structure (e.g. unordered factor levels, or incorrect column types), key rebuilt. If you didn't go under the hood please let maintainer('data.table') know so the root cause can be fixed.")
+        warning("Already keyed by this key but had invalid structure (e.g. unordered factor levels, or incorrect column types), key rebuilt. If you didn't go under the hood please let datatable-help know so the root cause can be fixed.")
     }
     invisible(x)
 }
@@ -127,7 +128,7 @@ fastorder <- function(lst, which=seq_along(lst), verbose=getOption("datatable.ve
     w <- last(which)
     v = lst[[w]]
     o = switch(typeof(v),
-        "double" = ordernumtol(v),   # TO DO: just allow double in keys now, already done.
+        "double" = ordernumtol(v),
         "character" = chorder(v),
         # Use a radix sort (fast and stable for ties), but will fail for range > 1e5 elements (and any negatives)
         tryCatch(radixorder1(v),error=function(e) {
@@ -139,7 +140,7 @@ fastorder <- function(lst, which=seq_along(lst), verbose=getOption("datatable.ve
     for (w in rev(take(which))) {
         v = lst[[w]]
         o = switch(typeof(v),
-            "double" = ordernumtol(v, o),
+            "double" = o[ordernumtol(v[o])],   # o was changed by reference by ordernumtol, and returned too, but couldn't get it stable within ties (tests now cover the cases).  TO DO: try again another time
             "character" = o[chorder(v[o])],   # TO DO: avoid the copy and reorder, pass in o to C like ordernumtol
             tryCatch(o[radixorder1(v[o])], error=function(e) {
                 if (verbose) cat("Non-first column",w,"failed radixorder1, reverting to regularorder1\n")
@@ -150,26 +151,34 @@ fastorder <- function(lst, which=seq_along(lst), verbose=getOption("datatable.ve
     o
 }
 
-ordernumtol = function(x, o=1:length(x), tol=.Machine$double.eps^0.5) {
-    .Call("rorder_tol",x,o,tol,PACKAGE="data.table")
+ordernumtol = function(x, tol=.Machine$double.eps^0.5) {
+    o=seq_along(x)
+    .Call(Crorder_tol,x,o,tol)
     o
 }
 
-J = function(...,SORTFIRST=FALSE) {
-    # J because a little like the base function I(). Intended as a wrapper for subscript to DT[]
-    JDT = data.table(...)
-    for (i in 1:length(JDT)) if (storage.mode(JDT[[i]])=="double") mode(JDT[[i]])="integer"
-    if (SORTFIRST) setkey(JDT)
-    JDT
+# TO DO. delete ...
+#    J = function(...,SORTFIRST=FALSE) {
+#    # J because a little like the base function I(). Intended as a wrapper for subscript to DT[]
+#    JDT = data.table(...)   # TO DO: can this be list() for efficiency instead? Yes. Now done directly in [.data.table
+#    # TO DO: delete... for (i in 1:length(JDT)) if (storage.mode(JDT[[i]])=="double") mode(JDT[[i]])="integer"
+#    if (SORTFIRST) setkey(JDT)
+#    JDT
+#}
+
+J = function(...) data.table(...)     # Now deprecated.  Defined like this because with J=data.table we have to put keep.rownames etc into J.Rd.
+
+SJ = function(...) {
+    JDT = as.data.table(list(...))
+    setkey(JDT)
 }
-SJ = function(...) J(...,SORTFIRST=TRUE)
 # S for Sorted, sorts the left table first.
 # Note it may well be faster to do an unsorted join, rather than sort first involving a memory copy plus the
 # sorting overhead. Often its clearer in the code to do an unsorted join anyway. Unsorted join uses less I-chache, at
 # the expense of more page fetches. Very much data dependent, but the various methods are implemented so tests for the
 # fastest method in each case can be performed.
 
-# TO DO: Use the CJ list() method for J and SJ too to avoid alloc.col
+# TO DO: Use the CJ list() method for SJ (and inside as.data.table.list?, #2109) too to avoid alloc.col
 
 CJ = function(...)
 {
@@ -177,7 +186,7 @@ CJ = function(...)
     # Cross Join will then produce a join table with the combination of all values (cross product).
     # The last vector is varied the quickest in the table, so dates should be last for roll for example
     l = list(...)
-    for (i in seq(along=l)) if (storage.mode(l[[i]])=="double") mode(l[[i]])="integer"
+    # for (i in seq(along=l)) if (storage.mode(l[[i]])=="double") mode(l[[i]])="integer"
     if (length(l)>1) {
         n = sapply(l,length)
         nrow = prod(n)
@@ -186,7 +195,13 @@ CJ = function(...)
     }
     setattr(l,"row.names",.set_row_names(length(l[[1]])))
     setattr(l,"class",c("data.table","data.frame"))
-    setattr(l,"names",paste("V",1:length(l),sep=""))
+    vnames = names(l)
+    if (is.null(vnames)) vnames=rep("",length(l))
+    tt = vnames==""
+    if (any(tt)) {
+        vnames[tt] = paste("V", which(tt), sep="")
+        setattr(l,"names",vnames)
+    }
     settruelength(l,0L)
     l=alloc.col(l)  # a tiny bit wasteful to over-allocate a fixed join table (column slots only), doing it anyway for consistency, and it's possible a user may wish to use SJ directly outside a join and would expect consistent over-allocation.
     setkey(l)    # TO DO: if inputs are each !is.unsorted, then no need to setkey here, just setattr("sorted") to save sort

@@ -7,12 +7,14 @@ duplist = function(l,order,tolerance=.Machine$double.eps ^ 0.5)
     #    TRUE has the last in a sequence of dups FALSE (so you can keep the last if thats required)
     # l = list(...)
     # TO DO - its wasteful that ans is allocated at long as the list, it just returns the first of each group.
+    if (!is.list(l)) stop("l not type list")
+    if (!(length(l) || length(l[[1]]))) return(0L)
     ans = integer(length(l[[1]]))
     len = integer(1)
     if (missing(order)) {
-        .Call("duplist",l,ans,len,as.integer(-1),as.numeric(tolerance),PACKAGE="data.table")
+        .Call(Cduplist,l,ans,len,as.integer(-1),as.numeric(tolerance))
     } else {
-        .Call("duplist",l,ans,len,as.integer(order),as.numeric(tolerance),PACKAGE="data.table")
+        .Call(Cduplist,l,ans,len,as.integer(order),as.numeric(tolerance))
     }
     length(ans) = len
     ans
