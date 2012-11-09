@@ -33,41 +33,7 @@ setkeyv = function(x, cols, verbose=getOption("datatable.verbose"))
     coerced = FALSE   # in future we hope to be able to setkeys on any type, this goes away, and saves more potential copies
     if (".xi" %in% colnames(x)) stop("x contains a column called '.xi'. Conflicts with internal use by data.table.")
     for (i in cols) {
-        .xi = x[[i]]  # TO DO: check that [[ is copy on write, otherwise checking types itself will be copying each column.
-        #if (is.character(.xi)) {
-        #    if (verbose) cat("setkey changing the type of column '",i,"' from character to factor by reference.\n",sep="")
-        #    x[,i:=factor(.xi),with=FALSE]
-        #    coerced=TRUE
-        #    next
-        #}
-        #if (typeof(.xi) == "double") {
-            # TO DO: use reallyreal to issue warning that int might be more appropriate
-            
-        #    toint = as.integer(.xi)   # see [.data.table for similar logic, and comments
-        #    if (isTRUE(all.equal(as.vector(.xi),toint))) {
-        #        if (verbose) cat("setkey changing the type of column '",i,"' from numeric to integer by reference, no fractional data present.\n",sep="")
-        #        mode(.xi) = "integer"
-        #        x[,i:=.xi,with=FALSE]
-        #        coerced=TRUE
-        #        next
-        #    }
-        #    stop("Column '",i,"' cannot be coerced to integer without losing fractional data.")
-        #}
-        #if (is.factor(.xi)) {
-        #    # check levels are sorted, if not sort them, test 150
-        #    # TO DO ... do we need sorted levels now that we use chmatch rather than sortedmatch?
-        #    #           good to allow unsorted levels for convenience to avoid "1. orange", "2. apple" workaround
-        #    l = levels(.xi)
-        #    if (is.unsorted(l)) {
-        #        if (verbose) cat("setkey detected the levels of column '",i,"' were not sorted, so sorting them, by reference.\n",sep="")
-        #        r = rank(l)
-        #        l[r] = l
-        #        .xi = structure(r[as.integer(.xi)], levels=l, class="factor")
-        #        x[,i:=.xi,with=FALSE]
-        #        coerced=TRUE
-        #    }
-        #    next
-        #}
+        .xi = x[[i]]  # [[ is copy on write, otherwise checking type would be copying each column
         if (!typeof(.xi) %chin% c("integer","logical","character","double")) stop("Column '",i,"' is type '",typeof(.xi),"' which is not (currently) allowed as a key column type.")
     }
     if (!is.character(cols) || length(cols)<1) stop("'cols' should be character at this point in setkey")
@@ -87,7 +53,7 @@ setkeyv = function(x, cols, verbose=getOption("datatable.verbose"))
 key = function(x) attr(x,"sorted")
 
 "key<-" = function(x,value) {
-    warning("The key(x)<-value form of setkey copies the whole table. This is due to <- in R itself. Please change to setkeyv(x,value) or setkey(x,...) which do not copy and are faster. See help('setkey'). You can safely ignore this warning if it is inconvenient to change right now. Setting options(warn=2) turns this warning into an error, so you can then use traceback() to find and change your key<- calls.")
+    warning("The key(x)<-value form of setkey can copy the whole table. This is due to <- in R itself. Please change to setkeyv(x,value) or setkey(x,...) which do not copy and are faster. See help('setkey'). You can safely ignore this warning if it is inconvenient to change right now. Setting options(warn=2) turns this warning into an error, so you can then use traceback() to find and change your key<- calls.")
     setkeyv(x,value)
     # The returned value here from key<- is then copied by R before assigning to x, it seems. That's
     # why we can't do anything about it without a change in R itself. If we return NULL (or invisible()) from this key<-
@@ -166,7 +132,11 @@ ordernumtol = function(x, tol=.Machine$double.eps^0.5) {
 #    JDT
 #}
 
-J = function(...) data.table(...)     # Now deprecated.  Defined like this because with J=data.table we have to put keep.rownames etc into J.Rd.
+J = function(...) {
+    warning("The J alias is deprecated *outside* DT[...] because J() conflicts with the function J() in XLConnect and rJava. Please use data.table() instead, or define an alias yourself. J() will continue to work *inside* DT[...] as documented. This warning is issued from v1.8.3. J() will be unavailable for use outside DT[...] from v1.8.4. Only then will the conflict with rJava and XLConnect be resolved.")
+    data.table(...)
+    # Defined like this because with J=data.table we have to put keep.rownames etc into J.Rd.
+}
 
 SJ = function(...) {
     JDT = as.data.table(list(...))

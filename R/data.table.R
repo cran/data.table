@@ -5,8 +5,28 @@ dim.data.table <- function(x) {
     # TO DO: consider placing "dim" as an attibute updated on inserts. Saves this 'if'.
 }
 
-print.data.table = function (x, nrows=100L, digits=NULL, ...)
+.global = new.env()  # thanks to: http://stackoverflow.com/a/12605694/403310
+.global$print = TRUE
+.global$depthtrigger =
+    if (exists(".global",.GlobalEnv) || getRversion() < "2.14.0") {
+        7L # this is either development, or pre 2.14, where package isn't compiled
+    } else {
+        2L # normal value when package is loaded in 2.14+ (where functions are compiled in namespace)
+    }
+
+print.data.table = function(x, nrows=getOption("datatable.print.nrows"), digits=NULL,
+                            topn=getOption("datatable.print.topn"), ...)
 {
+    if (!.global$print) {
+        #  := in [.data.table sets print=FALSE, when appropriate, to suppress := autoprinting at the console
+        .global$print = TRUE
+        return(invisible())
+    }
+    if (!is.numeric(nrows)) nrows = 100L
+    if (!is.infinite(nrows)) nrows = as.integer(nrows)
+    if (nrows <= 0L) return(invisible())
+    if (!is.numeric(topn)) topn = 5L
+    topn = as.integer(topn)
     if (nrow(x) == 0L) {
         if (length(x)==0L)
            cat("NULL data.table\n")
@@ -15,17 +35,16 @@ print.data.table = function (x, nrows=100L, digits=NULL, ...)
         return()
     }
     printdots=FALSE
-    n = 5
+
+    if (topn * 2 >= nrows) {
+        ## If nrows is set to a very small number, you might just print the whole data.table
+        ## with a `---` in the middle, anyway.
+        topn = max(floor(nrows / 3), 1L)
+    }
     if (nrow(x)>nrows) {
-        if (missing(nrows)) {
-        #msg=paste("First",nrows,"rows of",nrow(x),"printed.")
-            toprint = rbind(head(x,n),tail(x,n))
-            rn = c(seq_len(n),seq.int(to=nrow(x),length.out=n))
-            printdots = TRUE
-        } else {
-            toprint = head(x,nrows)
-            rn = seq_len(nrows)
-        }
+        toprint = rbind(head(x, topn), tail(x, topn))
+        rn = c(seq_len(topn), seq.int(to=nrow(x), length.out=topn))
+        printdots = TRUE
     } else {
         toprint = x
         rn = seq_len(nrow(x))
@@ -33,11 +52,11 @@ print.data.table = function (x, nrows=100L, digits=NULL, ...)
     toprint=format.data.table(toprint, digits=digits, na.encode = FALSE)
     rownames(toprint)=paste(format(rn,right=TRUE),":",sep="")
     if (printdots) {
-        toprint = rbind(head(toprint,n),"---"="",tail(toprint,n))
+        toprint = rbind(head(toprint,topn),"---"="",tail(toprint,topn))
         rownames(toprint) = format(rownames(toprint),justify="right")
         print(toprint,right=TRUE,quote=FALSE)
         return(invisible())
-    }   
+    }
     if (nrow(toprint)>20L)
         # repeat colnames at the bottom if over 20 rows so you don't have to scroll up to see them
         toprint=rbind(toprint,matrix(names(x),nrow=1))
@@ -91,7 +110,8 @@ data.table = function(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
     # DONE: expression text is checked to be strict name before using as a column name.
     # DONE: if M is a matrix with cols a,b and c,  data.table(A=M,B=M) will create colnames A.a,A.b,A.c,B.a,B,b,B.c.  Also  data.table(M,M) will use make.names to make the columns unique (adds .1,.2,.3)
     # NOTE: It may be faster in some circumstances to create a data.table by creating a list l first, and then class(l)="data.table" at the expense of checking.
-    x <- list(...)
+    #  TO DO: Could use nargs()-!missing(keep.rownames)-!missing(check.names)-!missing(key) to get length of `...`
+    x <- list(...)  # NAMED OBJECTS WILL BE A COPY HERE, TO DO: avoid.
     # TO DO: use ..1 instead, but not clear exactly how in this case.
     # One reason data.table() is needed, different and independent from data.frame(), is to allow list() columns.
     if (identical(x, list(NULL))) return( null.data.table() )
@@ -116,10 +136,10 @@ data.table = function(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
     if (n < 1L)
         return( null.data.table() )
     if (length(vnames) != n) stop("logical error in vnames")
-    vnames <- as.list.default(vnames)    
+    vnames <- as.list.default(vnames)
     nrows = integer(n)          # vector of lengths of each column. may not be equal if silent repetition is required.
     numcols = integer(n)         # the ncols of each of the inputs (e.g. if inputs contain matrix or data.table)
-    for (i in 1L:n) {
+    for (i in seq_len(n)) {
         xi = x[[i]]
         if (is.null(xi)) stop("column or argument ",i," is NULL")
         if (is.matrix(xi) || is.data.frame(xi)) {  # including data.table (a data.frame, too)
@@ -139,7 +159,7 @@ data.table = function(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
         }
     }
     nr <- max(nrows)
-    for (i in (1L:n)[nrows < nr]) {
+    for (i in which(nrows < nr)) {
         # TO DO ... recycle in C, but not high priority as large data already regular from database or file
         xi <- x[[i]]
         if (identical(xi,list())) {
@@ -166,9 +186,9 @@ data.table = function(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
     if (any(numcols>0L)) {
         value = vector("list",sum(pmax(numcols,1L)))
         k = 1L
-        for(i in 1L:n) {
+        for(i in seq_len(n)) {
             if (is.list(x[[i]]) && !is.ff(x[[i]])) {
-                for(j in 1L:length(x[[i]])) {
+                for(j in seq_len(length(x[[i]]))) {
                     value[[k]] = x[[i]][[j]]
                     k=k+1L
                 }
@@ -181,7 +201,7 @@ data.table = function(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
         value = x
     }
     vnames <- unlist(vnames)
-    if (check.names)
+    if (check.names)   # default FALSE
         vnames <- make.names(vnames, unique = TRUE)
     setattr(value,"names",vnames)
     setattr(value,"row.names",.set_row_names(nr))
@@ -194,8 +214,7 @@ data.table = function(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
       }
       setkeyv(value,key)
     }
-    alloc.col(value)
-    # At some point returning it this way made a NAM(1) data.table. Returning "value=alloc.col(value);value" is the same but returned a NAM(2) data.table. Unlike data.frame which is always NAMED==2. We ignore NAMED in data.table generally, and now even when := adds by reference always. The print method still bumps NAMED (as it does in data.frame) for some reason and print appears to copy (TO DO).
+    alloc.col(value)  # returns a NAMED==0 object, unlike data.frame()
 }
 
 is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need to result in 'not sorted' e.g. test 251 where i table is not sorted but f__ without NAs is sorted. Could check if i is sorted too, but that would take time and that's what SJ is for to make the calling code clear to the reader.
@@ -210,7 +229,6 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
 {
     # ..selfcount <<- ..selfcount+1  # in dev, we check no self calls, each of which doubles overhead, or could
     # test explicitly if the caller is [.data.table (even stronger test. TO DO.)
-    
     # the drop=NULL is to sink drop argument when dispatching to [.data.frame; using '...' stops test 147
     if (!cedta()) {
         Nargs = nargs() - (!missing(drop))
@@ -223,10 +241,18 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
     if (!mult %chin% c("first","last","all")) stop("mult argument can only be 'first','last' or 'all'")
     if (roll && rolltolast) stop("roll and rolltolast cannot both be true")
     # TO DO. Removed for now ... if ((roll || rolltolast) && missing(mult)) mult="last" # for when there is exact match to mult. This does not control cases where the roll is mult, that is always the last one.
+    missingnomatch = missing(nomatch)
     if (!is.na(nomatch) && nomatch!=0L) stop("nomatch must either be NA or 0, or (ideally) NA_integer_ or 0L")
     nomatch = as.integer(nomatch)
-    if (which && !missing(j)) stop("'which' is true but 'j' is also supplied")
-    if (missing(i) && missing(j)) stop("must provide either i or j or both. Try DT instead of DT[].")
+    if (!is.logical(which) || length(which)>1) stop("'which' must be a logical vector length 1. Either FALSE, TRUE or NA.")
+    if ((isTRUE(which)||is.na(which)) && !missing(j)) stop("'which' is ",which," (meaning return row numbers) but 'j' is also supplied. Either you need row numbers or the result of j, but only one type of result can be returned.")
+    if (!is.na(nomatch) && is.na(which)) stop("which=NA with nomatch=0 would always return an empty vector. Please change or remove either which or nomatch.")
+    if (missing(i) && missing(j)) {
+        # ...[] == oops at console, forgot print(...)
+        # or some kind of dynamic construction that has edge case of no contents inside [...]
+        .global$print=TRUE
+        return(x)
+    }
     if (!with && missing(j)) stop("j must be provided when with=FALSE")
     bysub=NULL
     if (!missing(by)) bysub=substitute(by)
@@ -235,18 +261,22 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
         by=bysub=substitute(keyby)
         # Assign to 'by' so that by is no longer missing and we can proceed as if there were one by
     }
-    if (!missing(by)) {
-        if (!with) stop("'with' must be TRUE when 'by' or 'keyby' is provided")
-        if (missing(j)) stop("'by' or 'keyby' is supplied but not j")
-    }
+    if (!missing(by) && missing(j)) stop("'by' or 'keyby' is supplied but not j")
     irows = NULL  # Meaning all rows. We avoid creating 1:nrow(x) for efficiency.
     bywithoutby=FALSE
+    potentialredundantby = FALSE
+    notjoin = FALSE
     if (!missing(i)) {
         isub = substitute(i)
+        if (is.call(isub) && isub[[1L]] == as.name("!")) {
+            notjoin = TRUE
+            if (!missingnomatch) stop("not-join '!' prefix is present on i but nomatch is provided. Please remove nomatch.");
+            nomatch = 0L
+            isub = isub[[2L]]
+        }
         if (is.null(isub)) return( null.data.table() )
-        isubl = as.list.default(isub)
-        if (identical(isubl[[1L]],quote(eval))) {  # TO DO: or ..()
-            isub = eval(.massagei(isubl[[2L]]),parent.frame())
+        if (is.call(isub) && isub[[1L]]=="eval") {  # TO DO: or ..()
+            isub = eval(.massagei(isub[[2L]]),parent.frame())
             if (is.expression(isub)) isub=isub[[1L]]
         }
         if (!is.name(isub))
@@ -259,15 +289,17 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
             else i[is.na(i)] = FALSE              # avoids DT[!is.na(ColA) & !is.na(ColB) & ColA==ColB], just DT[ColA==ColB]
         }
         if (is.null(i)) return( null.data.table() )
-        if (is.character(i)) i = list(i)   # for user convenience
-        if (identical(class(i),"list") || identical(class(i),"data.frame")) i = as.data.table(i)
+        if (is.character(i)) i = data.table(V1=i)   # for user convenience
+        else if (identical(class(i),"list") && length(i)==1L && is.data.frame(i[[1L]])) i = as.data.table(i[[1L]])
+        else if (identical(class(i),"list") || identical(class(i),"data.frame")) i = as.data.table(i)
         if (is.data.table(i)) {
             if (!haskey(x)) stop("When i is a data.table (or character vector), x must be keyed (i.e. sorted, and, marked as sorted) so data.table knows which columns to join to and take advantage of x being sorted. Call setkey(x,...) first, see ?setkey.")
-            rightcols = chmatch(key(x),names(x))   # NAs here (i.e. invalid data.table) checked in binarysearch 
+            rightcols = chmatch(key(x),names(x))   # NAs here (i.e. invalid data.table) checked in binarysearch
             leftcols = if (haskey(i))
                 chmatch(head(key(i),length(rightcols)),names(i))
             else
-                1L:min(ncol(i),length(rightcols))
+                seq_len(min(length(i),length(rightcols)))
+            rightcols = head(rightcols,length(leftcols))
             origi = i       # Only needed for factor to factor joins, to recover the original levels
                             # Otherwise, types of i join columns are alyways promoted to match x's
                             # types (with warning or verbose)
@@ -275,7 +307,7 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
                             # TO DO: enforce via .internal.shallow attribute and expose shallow() to users
                             # This is why shallow() is very importantly internal only, currently.
             resetifactor = NULL  # Keep track of any factor to factor join cols (only time we keep orig)
-            for (a in seq(along=leftcols)) {
+            for (a in seq_along(leftcols)) {
                 # This loop is simply to support joining factor columns
                 lc = leftcols[a]   # i   # TO DO: rename left and right to i and x
                 rc = rightcols[a]  # x
@@ -285,14 +317,14 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
                     if (is.character(i[[lc]])) next
                     if (!is.factor(i[[lc]]))
                         stop("x.'",xcnam,"' is a character column being joined to i.'",icnam,"' which is type '",typeof(i[[lc]]),"'. Character columns must join to factor or character columns.")
-                    warning("Coercing factor column i.'",icnam,"' to character to match type of x.'",xcnam,"'.")
+                    if (verbose) cat("Coercing factor column i.'",icnam,"' to character to match type of x.'",xcnam,"'.\n",sep="")
                     set(i,j=lc,value=as.character(i[[lc]]))
                     # no longer copies all of i, thanks to shallow() and :=/set
                     next
                 }
                 if (is.factor(x[[rc]])) {
                     if (is.character(i[[lc]])) {
-                        warning("Coercing character column i.'",icnam,"' to factor to match type of x.'",xcnam,"'. If possible please change x.'",xcnam,"' to character. Character columns are now preferred in joins.")
+                        if (verbose) cat("Coercing character column i.'",icnam,"' to factor to match type of x.'",xcnam,"'. If possible please change x.'",xcnam,"' to character. Character columns are now preferred in joins.\n",sep="")
                         set(i,j=lc,value=factor(i[[lc]]))
                     } else {
                         if (!is.factor(i[[lc]]))
@@ -312,13 +344,13 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
                 if (is.integer(x[[rc]]) && is.real(i[[lc]])) {
                     # TO DO: add warning if reallyreal about loss of precision
                     # or could coerce in binary search on the fly, at cost
-                    if (verbose) cat("Coercing 'double' column i.'",icnam,"' to 'integer' to match type of x.'",xcnam,"'. Please avoid coercion for efficiency.",sep="")
+                    if (verbose) cat("Coercing 'double' column i.'",icnam,"' to 'integer' to match type of x.'",xcnam,"'. Please avoid coercion for efficiency.\n",sep="")
                     newval = i[[lc]]
                     mode(newval) = "integer"  # retains column attributes (such as IDateTime class)
                     set(i,j=lc,value=newval)
                 }
                 if (is.real(x[[rc]]) && is.integer(i[[lc]])) {
-                    if (verbose) cat("Coercing 'integer' column i.'",icnam,"' to 'double' to match type of x.'",xcnam,"'. Please avoid coercion for efficiency.",sep="")
+                    if (verbose) cat("Coercing 'integer' column i.'",icnam,"' to 'double' to match type of x.'",xcnam,"'. Please avoid coercion for efficiency.\n",sep="")
                     newval = i[[lc]]
                     mode(newval) = "double"
                     set(i,j=lc,value=newval)
@@ -327,17 +359,18 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
             f__ = integer(nrow(i))
             len__ = integer(nrow(i))
             allLen1 = TRUE
+            if (verbose) {last.started.at=proc.time()[3];cat("Starting binary search ...");flush.console()}
             .Call(Cbinarysearch, i, x, as.integer(leftcols-1L), as.integer(rightcols-1L), haskey(i), roll, rolltolast, nomatch, sqrt(.Machine$double.eps), f__, len__, allLen1)
-            # length of input nomatch (single 0 or NA) is 1 in both cases. 
+            if (verbose) {cat("done in",round(proc.time()[3]-last.started.at,3),"secs\n");flush.console}
+            # length of input nomatch (single 0 or NA) is 1 in both cases.
             # When no match, len__ is 0 for nomatch=0 and 1 for nomatch=NA, so len__ isn't .N
+            if (is.na(which)) return(which(if (notjoin) f__!=0L else is.na(f__)))
             for (ii in resetifactor) set(i,j=ii,value=origi[[ii]])
             if (mult=="all") {
-                if (!missing(by) || which || missing(j)) {
-                    irows = if (allLen1) f__ else {
-                        as.integer(unlist(mapply(seq,f__,length.out=len__,SIMPLIFY=FALSE)))
-                        # TO DO: *** if works, port the unlist mapply to C
-                        #        *** This is potentially relatively slow currently.
-                    }
+                if (!missing(by) || which || missing(j) || !with || notjoin) {
+                    irows = if (allLen1) f__ else vecseq(f__,len__)
+                    if (!missing(by) && !which && !missing(j) && with && !notjoin)
+                        potentialredundantby = TRUE
                 } else {
                     bywithoutby=TRUE  # TO DO: use allLen1 to detect if joining to unique rows?
                     # Important that f__ is as long as nrow(i) (rather than taking away 0s), to know the i groups
@@ -347,25 +380,34 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
                 if (identical(nomatch,0L)) irows = irows[len__>0L]  # 0s are len 0, so this removes -1 irows
                 len__ = pmin(len__,1L)  # for test 456, and consistency generally
             }
-            if (which) return(irows)
+
         } else {
             # i is not a data.table
             if (!is.logical(i) && !is.numeric(i)) stop("i has not evaluated to logical, integer or double")
             if (is.logical(i)) {
                 if (length(i)==nrow(x)) irows=which(i)   # e.g. DT[colA>3,which=TRUE]
-                else if (!isTRUE(i)) irows=(1L:nrow(x))[i]  # e.g. recycling DT[c(TRUE,FALSE),which=TRUE], for completeness
+                else if (!isTRUE(i)) irows=seq_len(nrow(x))[i]  # e.g. recycling DT[c(TRUE,FALSE),which=TRUE], for completeness
             } else {
                 irows = as.integer(i)  # e.g. DT[c(1,3)]
                 irows[irows>nrow(x)] = NA_integer_  # not needed for vector subsetting, but for is.unsorted to return NA
             }
-            if (which)
-                return(if (is.null(irows)) 1L:nrow(x) else irows)
         }
+        if (notjoin) {
+            if (bywithoutby || !is.integer(irows) || is.na(nomatch)) stop("Internal error: notjoin but bywithoutby or !integer or nomatch==NA")
+            irows = irows[irows!=0L]
+            i = isub = irows = if (length(irows)) seq_len(nrow(x))[-irows] else NULL  # NULL meaning all rows i.e. seq_len(nrow(x))
+            # Doing this once here, helps speed later when repeatedly subsetting each column. R's [irows] would do this for each column when
+            # irows contains negatives. Assigning to isub is because by uses isub later (TO DO - removed that).
+        }
+        if (which) return(if (is.null(irows)) seq_len(nrow(x)) else irows)
         if (missing(j)) {
             if (!is.data.table(i)) {
                 if (is.null(irows)) return(copy(x))  # Must return a copy. Shallow copy only when i is missing.
             	ans = vector("list",ncol(x))
-                for (s in seq_len(ncol(x))) ans[[s]] = x[[s]][irows]
+                for (s in seq_len(ncol(x))) {
+                    ans[[s]] = x[[s]][irows]
+                    copyattr(x[[s]],ans[[s]])
+                }
                 setattr(ans, "names", names(x))
                 if (haskey(x) && (is.logical(i) || is.sorted(irows))) {
                     setattr(ans,"sorted",key(x))
@@ -374,21 +416,24 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
                 ans = vector("list",ncol(i)+ncol(x)-length(leftcols))
                 inonjoin = seq_len(ncol(i))[-leftcols]
                 if ((allLen1 || mult!="all") && (is.na(nomatch) || !any(f__==0L))) {
-                    for (s in seq_along(leftcols)) ans[[s]] = i[[leftcols[s]]]
+                    for (s in seq_along(leftcols)) ans[[s]] = i[[leftcols[s]]]  # won't copy so will retain attribs such as "comments"
                     for (s in seq_along(inonjoin)) ans[[s+ncol(x)]] = i[[inonjoin[s]]]
                 } else {
-                    ii = rep(1L:nrow(i),len__)
-                    for (s in seq_along(leftcols)) ans[[s]] = i[[leftcols[s]]][ii]
-                    for (s in seq_along(inonjoin)) ans[[s+ncol(x)]] = i[[inonjoin[s]]][ii]
+                    ii = rep.int(seq_len(nrow(i)),len__)
+                    for (s in seq_along(leftcols)) {ans[[s]] = i[[leftcols[s]]][ii]; copyattr(i[[leftcols[s]]], ans[[s]])}
+                    for (s in seq_along(inonjoin)) {ans[[s+ncol(x)]] = i[[inonjoin[s]]][ii]; copyattr(i[[inonjoin[s]]], ans[[s+ncol(x)]])}
                 }
-                rightcols = head(rightcols,length(leftcols))
                 xnonjoin = seq_len(ncol(x))[-rightcols]
-                if (is.null(irows)) 
+                if (is.null(irows))
                     for (s in seq_along(xnonjoin)) ans[[s+length(leftcols)]] = x[[xnonjoin[s]]]
                 else
-                    for (s in seq_along(xnonjoin)) ans[[s+length(leftcols)]] = x[[xnonjoin[s]]][irows]
-                setattr(ans, "names", make.names(c(names(x)[rightcols],names(x)[-rightcols],names(i)[-leftcols]),unique=TRUE))
-                if (haskey(i) || is.sorted(f__))
+                    for (s in seq_along(xnonjoin)) {ans[[s+length(leftcols)]] = x[[xnonjoin[s]]][irows]; copyattr(x[[xnonjoin[s]]], ans[[s+length(leftcols)]])}
+                setattr(ans, "names", make.unique(c(names(x)[rightcols],names(x)[-rightcols],names(i)[-leftcols])))
+                if (haskey(i) || is.sorted(f__) || (is.na(nomatch) && any(is.na(f__)) && is.sorted(fastorder(i,leftcols))) ||
+                                                   (nomatch==0L && any(f__==0L) && is.sorted(f__[f__!=0L])))
+                    # TO DO: any(is.na()) could be anyNA() and any0, and we need an efficient is.unsorted(DT) method.
+                    # But we only need is.sorted(i) when there are NA matches, so the above should rarely bite.
+                    # Most efficient method would be || (is.na(nomatch) && anyNA(f__) && !is.unsorted(f__,na.rm=TRUE) && **where there are NA's, those rows in i are >= previous row in i**!
                     setattr(ans,"sorted",key(x))
             }
             setattr(ans,"class",c("data.table","data.frame"))
@@ -399,6 +444,10 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
     } # end of  if !missing(i)
     if (missing(j)) stop("logical error, j missing")
     jsub = substitute(j)
+    if (!with && is.call(jsub) && jsub[[1]]==as.name("!")) {
+        notj = TRUE
+        jsub = jsub[[2]]
+    } else notj = FALSE
     if (is.null(jsub)) return(NULL)
     jsubl = as.list.default(jsub)
     if (identical(jsubl[[1L]],quote(eval))) {
@@ -410,6 +459,9 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
     newnames = NULL
     if (length(av) && av[1L] == ":=") {
         if (identical(attr(x,".data.table.locked"),TRUE)) stop(".SD is locked. Using := in .SD's j is reserved for possible future use; a tortuously flexible way to modify by group. Use := in j directly to modify by group by reference.")
+        if (notj) stop("doesn't make sense to combine !j with :=")
+        if (.Call(CEvalDepth)<=.global$depthtrigger)
+            .global$print = FALSE
         if (!is.null(irows)) {
             if (!length(irows)) {
                 if (verbose) cat("No rows pass i clause so quitting := early with no changes made.\n")
@@ -417,26 +469,37 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
             }
             if (!missing(keyby)) stop("When i is present, keyby := on a subset of rows doesn't make sense. Either change keyby to by, or remove i")
         }
-        lhs = jsub[[2]]
-        jsub = jsub[[3]]
-        av = all.vars(jsub,TRUE)
-        
-        if (with) {
-            if (!is.name(lhs)) stop("LHS of := must be a single column name when with=TRUE. When with=FALSE the LHS may be a vector of column names or positions.")
-            lhs = as.character(lhs)
-            m = chmatch(lhs,names(x))
+        if (is.null(names(jsub))) {
+            # regular LHS:=RHS usage, or `:=`(...) with no named arguments (an error)
+            # `:=`(LHS,RHS) is valid though, but more because can't see how to detect that, than desire
+            if (length(jsub)!=3L) stop("In `:=`(col1=val1, col2=val2, ...) form, all arguments must be named.")
+            lhs = jsub[[2]]
+            jsub = jsub[[3]]
+            if (is.name(lhs) && with)
+                lhs = as.character(lhs)
+            else {
+                if (!with && !is.name(lhs) && verbose) cat("with=FALSE ignored (LHS of := isn't a symbol)\n")  # TO DO: upgrade to warning
+                lhs = eval(lhs, envir=parent.frame(), enclos=parent.frame())
+            }
+            # to use a variable of column names on LHS, use eval(mycols):=  or get("mycols"):=, or with=FALSE for backwards compatibility
         } else {
-            lhs = eval(lhs, envir=parent.frame(), enclos=parent.frame())
-            if (!is.atomic(lhs)) stop("LHS of := must evaluate to an atomic vector (column names or positions) when with=FALSE")
-            if (is.character(lhs))
-                m = chmatch(lhs,names(x))
-            else if (is.numeric(lhs)) {
-                m = as.integer(lhs)
-                if (!all(1L<=m | m<=ncol(x))) stop("numeric LHS of := out of bounds")
-                lhs = names(x)[m]
-            } else
-                stop("LHS of := isn't column names ('character') or positions ('integer' or 'numeric')")
+            # `:=`(c2=1L,c3=2L,...)
+            if (!with) warning("with=FALSE ignored. Not needed in `:=`(...) syntax.")
+            lhs = names(jsub)[-1]
+            if (any(lhs=="")) stop("In `:=`(col1=val1, col2=val2, ...) form, all arguments must be named.")
+            names(jsub)=""
+            jsub[[1]]=as.name("list")
         }
+        av = all.vars(jsub,TRUE)
+        if (!is.atomic(lhs)) stop("LHS of := must be a symbol, or an atomic vector (column names or positions).")
+        if (is.character(lhs))
+            m = chmatch(lhs,names(x))
+        else if (is.numeric(lhs)) {
+            m = as.integer(lhs)
+            if (any(m<1L | ncol(x)<m)) stop("LHS of := appears to be column positions but are outside [1,ncol] range. New columns can only be added by name.")
+            lhs = names(x)[m]
+        } else
+            stop("LHS of := isn't column names ('character') or positions ('integer' or 'numeric')")
         if (all(!is.na(m))) {
             # updates by reference to existing columns
             cols = as.integer(m)
@@ -444,44 +507,77 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
         } else {
             # Adding new column(s). TO DO: move after the first eval incase the jsub has an error.
             newnames=setdiff(lhs,names(x))
-            cols = as.integer(c(m[!is.na(m)],ncol(x)+1L:length(newnames)))
+            m[is.na(m)] = ncol(x)+seq_len(length(newnames))
+            cols = as.integer(m)
             if ((ok<-selfrefok(x,verbose))==0L)   # ok==0 so no warning when loaded from disk (-1) [-1 considered TRUE by R]
-                warning("Invalid .internal.selfref detected and fixed by taking a copy of the whole table, so that := can add this new column by reference. At an earlier point, this data.table has been copied by R. Avoid key<-, names<- and attr<- which in R currently (and oddly) all copy the whole data.table. Use set* syntax instead to avoid copying: setkey(), setnames() and setattr(). If this message doesn't help, please report to datatable-help so the root cause can be fixed.")
+                warning("Invalid .internal.selfref detected and fixed by taking a copy of the whole table, so that := can add this new column by reference. At an earlier point, this data.table has been copied by R. Avoid key<-, names<- and attr<- which in R currently (and oddly) may copy the whole data.table. Use set* syntax instead to avoid copying: setkey(), setnames() and setattr(). Also, list(DT1,DT2) will copy the entire DT1 and DT2 (R's list() copies named objects), use reflist() instead if needed (to be implemented). If this message doesn't help, please report to datatable-help so the root cause can be fixed.")
             if ((ok<1L) || (truelength(x) < ncol(x)+length(newnames))) {
                 n = max(ncol(x)+100, ncol(x)+2*length(newnames))
                 name = substitute(x)
                 if (is.name(name) && ok && verbose) { # && NAMED(x)>0 (TO DO)    # ok here includes -1 (loaded from disk)
-                    cat("Growing vector of column pointers from truelength ",truelength(x)," to ",n,". A shallow copy has been taken, see ?alloc.col. Only a potential issue if two variables point to the same data (we can't yet detect that well) and if not you can safely ignore this. To avoid this message you could alloc.col() first, deep copy first using copy(), wrap with suppressWarnings() or increase the 'datatable.alloccol' option.")
+                    cat("Growing vector of column pointers from truelength ",truelength(x)," to ",n,". A shallow copy has been taken, see ?alloc.col. Only a potential issue if two variables point to the same data (we can't yet detect that well) and if not you can safely ignore this. To avoid this message you could alloc.col() first, deep copy first using copy(), wrap with suppressWarnings() or increase the 'datatable.alloccol' option.\n")
                     # Verbosity should not issue warnings, so cat rather than warning.
-                    # TO DO: Add option 'datatable.pedantic' to turn on warnings like this. 
-                # TO DO test   DT[....][,foo:=42L],  i.e. where the foo does the realloc. Would it see DT name or the call.
-                # inherits=TRUE is correct and mimicks what the setVar in C was doing before being moved up to R level.
-                # Comment moved up from C ... to revisit ... Note that the NAMED(dt)>1 doesn't work because .Call
-                # always sets to 2 (see R-ints), it seems. Work around
-                # may be possible but not yet working. When the NAMED test works, we can drop allocwarn argument too
-                # because that's just passed in as FALSE from [<- where we know `*tmp*` isn't really NAMED=2.
-                # Note also that this growing will happen for missing columns assigned NULL, too. But so rare, we
-                # don't mind.
+                    # TO DO: Add option 'datatable.pedantic' to turn on warnings like this.
+
+                    # TO DO ... comments moved up from C ...
+                    # Note that the NAMED(dt)>1 doesn't work because .Call
+                    # always sets to 2 (see R-ints), it seems. Work around
+                    # may be possible but not yet working. When the NAMED test works, we can drop allocwarn argument too
+                    # because that's just passed in as FALSE from [<- where we know `*tmp*` isn't really NAMED=2.
+                    # Note also that this growing will happen for missing columns assigned NULL, too. But so rare, we
+                    # don't mind.
                 }
                 alloc.col(x, n, verbose=verbose)   # always assigns to calling scope; i.e. this scope
-                if (is.name(name))
-                    assign(as.character(name),x,pos=parent.frame(),inherits=TRUE)
+                if (is.name(name)) {
+                    assign(as.character(name),x,parent.frame(),inherits=TRUE)
+                } else if (is.call(name) && name[[1L]]=="[[" && is.name(name[[2L]])) {
+                    k = eval(name[[2L]],parent.frame())
+                    origj = j = eval(name[[3L]],parent.frame())
+                    if (is.character(j)) {
+                        if (length(j)!=1L) stop("L[[i]][,:=] syntax only valid when i is length 1, but it's length %d",length(j))
+                        j = match(j, names(k))
+                        if (is.na(j)) stop("Item '",origj,"' not found in names of list")
+                    }
+                    .Call(Csetlistelt,k,as.integer(j), x)
+                } # TO DO: else if env$<- or list$<-
             }
         }
     } else if (!with) {
+        if (!missing(by)) warning("'with=FALSE ignored when 'by' or 'keyby' is provided and not using :=")
+        if (notj) j = eval(jsub,parent.frame()) # else j will be evaluated for the first time on next line
+        if (is.logical(j)) j <- which(j)
         if (!length(j)) return( null.data.table() )
-        if (is.character(j)) j = chmatch(j, names(x))
-        # TO DO:  DT[,-"columntoremove",with=FALSE] might be nice
-        if (any(is.na(j))) stop("undefined columns selected")  # TO DO: include which ones in msg
+        if (is.character(j)) {
+            origj = j
+            j = chmatch(j, names(x))
+            if (any(is.na(j))) {
+                if (notj) {
+                    warning("column(s) not removed because not found: ",paste(origj[is.na(j)],collapse=","))
+                    j = j[!is.na(j)]
+                } else {
+                    stop("column(s) not found: ",paste(origj[is.na(j)],collapse=","))
+                }
+            }
+        }
         if (any(abs(j) > ncol(x) | j==0L)) stop("j out of bounds")
         if (any(j<0L) && any(j>0L)) stop("j mixes positive and negative")
         if (any(j<0L)) j = seq_len(ncol(x))[j]
+        if (notj) j = seq_len(ncol(x))[-j]  # DT[,!"columntoexclude",with=FALSE], if a copy is needed, rather than :=NULL
         ans = vector("list",length(j))
         if (is.null(irows))
-            for (s in seq(along=j)) ans[[s]] = x[[j[s]]]  # TO DO: return marked/safe shallow copy back to user
+            for (s in seq_along(j)) ans[[s]] = x[[j[s]]]  # TO DO: return marked/safe shallow copy back to user
         else {
-            for (s in seq(along=j)) ans[[s]] = x[[j[s]]][irows]
-            # TO DO: allow i's non join columns to be included by name
+            if (is.data.table(i) && is.na(nomatch) && any(is.na(irows))) {   # TO DO: any(is.na()) => anyNA() and presave it
+                if (any(j %in% rightcols)) ii = rep(seq_len(nrow(i)),len__)
+                for (s in which(j %in% rightcols))
+                    ans[[s]] = i[[leftcols[match(j[s],rightcols)]]][ii]
+                    # So that NA matches from i get the i values, as xss expects further below.
+                for (s in which(!j %in% rightcols))
+                    ans[[s]] = x[[j[s]]][irows]
+                # TO DO: allow i's non join columns to be included by name
+            } else {
+                for (s in seq_along(j)) ans[[s]] = x[[j[s]]][irows]
+            }
         }
         setattr(ans, "names", names(x)[j])
         if (haskey(x) && all(key(x) %chin% names(ans)) && (missing(i) || is.logical(i) || (is.data.table(i) && haskey(i)) || is.sorted(irows))) {
@@ -498,7 +594,7 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
     if (missing(by) && !bywithoutby) {
         if (is.null(irows)) {
             len__ = 0L   # len 0 here so that max(len__) is 0 later to leave NULL irows unchanged.
-            bysameorder = TRUE  # 1st and only group is the entire table 
+            bysameorder = TRUE  # 1st and only group is the entire table
         } else {
             len__ = length(irows)
             bysameorder = is.sorted(irows)
@@ -550,19 +646,25 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
                 bysubl = as.list.default(bysub)
             }
             allbyvars = intersect(unlist(sapply(bysubl,all.vars,functions=TRUE)),names(x))
+            if (potentialredundantby && all(sapply(bysubl,is.name)) && identical(allbyvars,names(x)[rightcols]) && options("datatable.warnredundantby")[[1L]]) {
+                warning("by is not necessary in this query; it equals all the join columns in the same order. j is already evaluated by group of x that each row of i matches to (by-without-by, see ?data.table). Setting by will be slower because a subset of x is taken and then grouped again. Consider removing by, or changing it.")
+            }
             orderedirows = is.sorted(irows)  # TRUE when irows is NULL (i.e. no i clause)
             bysameorder = orderedirows && haskey(x) && all(sapply(bysubl,is.name)) && identical(allbyvars,head(key(x),length(allbyvars)))
             if (is.null(irows))
                 byval = eval(bysub, x, parent.frame())
             else {
                 if (!is.integer(irows)) stop("Internal error: irows isn't integer")  # length 0 when i returns no rows
-                if (any(irows<1L | irows>nrow(x))) stop("Internal error: some irows<1 or >nrow(x)")
+                # We might pass irows as i to x[] below (and did in 1.8.2): irows may contain NA, 0, negatives and >nrow(x) here, all ok.
+                # But we need i join column values to be retained, hence the eval(isub) approach.
+                # TO DO: do directly here rather than a recursive call and rejoin. Then also no need to assign to isub way above in if(notjoin).
+                if (!is.na(nomatch)) irows = irows[irows!=0L]
                 if (length(allbyvars)) {
                     if (verbose) cat("i clause present and columns used in by detected, only these subset:",paste(allbyvars,collapse=","),"\n")
-                    xss = x[irows,allbyvars,with=FALSE]
+                    xss = x[eval(isub),allbyvars,with=FALSE,nomatch=nomatch,mult=mult,roll=roll,rolltolast=rolltolast]
                 } else {
                     if (verbose) cat("i clause present but columns used in by not detected. Having to subset all columns before evaluating 'by': '",deparse(by),"'\n",sep="")
-                    xss = x[irows]
+                    xss = x[eval(isub),nomatch=nomatch,mult=mult,roll=roll,rolltolast=rolltolast]
                 }
                 byval = eval(bysub, xss, parent.frame())
                 xnrow = nrow(xss)
@@ -588,7 +690,7 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
                     if (is.name(bysuborig))
                         bynames = as.character(bysuborig)
                     else
-                        bynames = names(byval)    
+                        bynames = names(byval)
                 }
             }
             if (!is.list(byval)) stop("'by' or 'keyby' must evaluate to vector or list of vectors (where 'list' includes data.table and data.frame which are lists, too)")
@@ -633,7 +735,11 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
                     f__ = f__[origorder]
                     len__ = len__[origorder]
                 }
-            } else {f__=NULL;len__=0L}
+            } else {
+                f__=NULL
+                len__=0L
+                bysameorder=TRUE   # for test 724
+            }
             if (verbose) {cat("done in ",round(proc.time()[3]-last.started.at,3),"secs. bysameorder=",bysameorder," and o__ is length ",length(o__),"\n",sep="");flush.console}
             # TO DO: allow secondary keys to be stored, then we see if our by matches one, if so use it, and no need to sort again. TO DO: document multiple keys.
         }
@@ -651,7 +757,7 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
         if (length(jsubl)>1) {
             jvnames = names(jsubl)[-1L]   # check list(a=sum(v),v)
             if (is.null(jvnames)) jvnames = rep("", length(jsubl)-1L)
-            for (jj in 2L:length(jsubl)) {
+            for (jj in seq.int(2L,length(jsubl))) {
                 if (jvnames[jj-1L] == "" && mode(jsubl[[jj]])=="name")
                     jvnames[jj-1L] = gsub("^[.]N$","N",deparse(jsubl[[jj]]))
                 # TO DO: if call to a[1] for example, then call it 'a' too
@@ -701,35 +807,34 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
         if (verbose) cat("New:",paste(xvars,collapse=","),"\n")
     }
 
-    SDenv = new.env(hash=TRUE,parent=parent.frame())
-    # hash (the default anyway) does seem better as expected using e.g. test 645
+    SDenv = new.env(parent=parent.frame())
+    # hash=TRUE (the default) does seem better as expected using e.g. test 645
     # TO DO: experiment with size argument
-        
+
     if (".N" %chin% xvars) stop("The column '.N' can't be grouped because it conflicts with the special .N variable. Try setnames(DT,'.N','N') first.")
-    SDenv$.BY = lapply(byval,"[",1L)  # byval is list() not data.table
     SDenv$.iSD = NULL  # null.data.table()
-    if (bywithoutby) {   
+    if (bywithoutby) {
         jisvars = intersect(gsub("^i[.]","",ws),names(i))
         # JIS (non join cols) but includes join columns too (as there are named in i)
         if (length(jisvars)) {
             tt = min(nrow(i),1L)
             SDenv$.iSD = i[tt,jisvars,with=FALSE]
             for (ii in jisvars) {
-                assign(ii, SDenv$.iSD[[ii]], envir=SDenv)
-                assign(paste("i.",ii,sep=""), SDenv$.iSD[[ii]], envir=SDenv)
+                assign(ii, SDenv$.iSD[[ii]], SDenv)
+                assign(paste("i.",ii,sep=""), SDenv$.iSD[[ii]], SDenv)
             }
         }
     }
-    
-    for (ii in names(SDenv$.BY)) assign(ii, SDenv$.BY[[ii]], envir=SDenv)
-    
-    assign("print", function(x,...){base::print(x,...);NULL}, envir=SDenv)
+
+    for (ii in names(SDenv$.BY)) assign(ii, SDenv$.BY[[ii]], SDenv)
+
+    assign("print", function(x,...){base::print(x,...);NULL}, SDenv)
     # Now ggplot2 returns data from print, we need a way to throw it away otherwise j accumulates the result
-    
-    lockBinding(".BY",SDenv)
-    lockBinding(".iSD",SDenv) 
+
+    lockBinding(".iSD",SDenv)
     SDenv$.SD = null.data.table()  # e.g. test 607. Grouping still proceeds even though no .SD e.g. grouping key only tables, or where j consists of .N only
-    SDenv$.N = 0L
+    SDenv$.N = as.integer(0)     # not 0L for the reson on next line :
+    SDenv$.GRP = as.integer(1)   # oddly using 1L doesn't work reliably here! Possible R bug? TO DO: create reproducible example and report. To reproduce change to 1L and run test.data.table, test 780 fails. The assign seems ineffective and a previous value for .GRP from a previous test is retained, despite just creating a new SDenv.
     if ((missing(by) || !length(byval)) && !bywithoutby) {
         # No grouping, or mult="first"|"last", or by=NULL|character()|""|list()
         if (length(xvars)) {
@@ -743,13 +848,15 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
             SDenv$.SD = null.data.table()   # no columns used by j so .SD can be empty. Only needs to exist so that we can rely on it being there when locking it below for example. If .SD were used by j, of course then xvars would be the columns and we wouldn't be in this leaf.
             SDenv$.N = if (is.null(irows)) nrow(x) else sum(!is.na(irows) & irows>0L)
         }
-        setattr(SDenv$.SD,".data.table.locked",TRUE)   # used to stop := modifying .SD via j=f(.SD), bug#1727. The more common case of j=.SD[,subcol:=1] was already caught when jsub is inspected for :=. 
+        SDenv$.I = seq_len(SDenv$.N)
+        setattr(SDenv$.SD,".data.table.locked",TRUE)   # used to stop := modifying .SD via j=f(.SD), bug#1727. The more common case of j=.SD[,subcol:=1] was already caught when jsub is inspected for :=.
         lockBinding(".SD",SDenv)
         lockBinding(".N",SDenv)
-        for (ii in xvars) assign(ii, SDenv$.SD[[ii]], envir=SDenv)
+        lockBinding(".I",SDenv)
+        for (ii in xvars) assign(ii, SDenv$.SD[[ii]], SDenv)
         # Since .SD is inside SDenv, alongside its columns as variables, R finds .SD symbol more quickly, if used.
         # There isn't a copy of the columns here, the xvar symbols point to the SD columns (copy-on-write).
-    
+
         jval = eval(jsub,SDenv)
 
         if (!is.null(lhs)) {
@@ -757,7 +864,9 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
             .Call(Cassign,x,irows,cols,newnames,jval,verbose)
             return(x)
         }
-        if ((is.call(jsub) && jsub[[1L]]=="list") || !missing(by)) {  # selecting from a list column should return list, though
+        if ((is.call(jsub) && is.list(jval) && !is.object(jval)) || !missing(by)) {
+            # is.call: selecting from a list column should return list
+            # is.object: for test 168 and 168.1 (S4 object result from ggplot2::qplot). Just plain list results should result in data.table
             if (is.atomic(jval)) {
                 setattr(jval,"names",NULL)
                 jval = data.table(jval)
@@ -772,34 +881,37 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
         }
         return(jval)
     }
-    if (length(xvars)) {        
-        alloc = seq_len(max(len__))
+    alloc = if (length(len__)) seq_len(max(len__)) else 0L
+    SDenv$.I = alloc
+    if (length(xvars)) {
         SDenv$.SD = x[alloc, xvars, with=FALSE]
-        # TO DO: **** Instead just for loop assigning vector(typeof(...)). Saves recursion overhead.  
+        # TO DO: **** Instead just for loop assigning vector(typeof(...)). Saves recursion overhead.
         # Must not shallow copy xvars here. This is the allocation for the largest group. Since i is passed in here, it won't shallow copy, even in future. Only DT[,xvars,with=FALSE] might ever shallow copy automatically.
     }
     if (nrow(SDenv$.SD)==0L) setattr(SDenv$.SD,"row.names",c(NA_integer_,0L))
     # .set_row_names() basically other than not integer() for 0 length, otherwise dogroups has no [1] to modify to -.N
-    setattr(SDenv$.SD,".data.table.locked",TRUE)   # used to stop := modifying .SD via j=f(.SD), bug#1727. The more common case of j=.SD[,subcol:=1] was already caught when jsub is inspected for :=. 
+    setattr(SDenv$.SD,".data.table.locked",TRUE)   # used to stop := modifying .SD via j=f(.SD), bug#1727. The more common case of j=.SD[,subcol:=1] was already caught when jsub is inspected for :=.
     lockBinding(".SD",SDenv)
     lockBinding(".N",SDenv)
-    
+    lockBinding(".GRP",SDenv)
+    lockBinding(".I",SDenv)
+
     if (options("datatable.optimize")[[1L]]>0L) {  # Abilility to turn off if problems
         # Optimization to reduce overhead of calling mean and lapply over and over for each group
-        nomeanopt=FALSE
-        optmean = function(expr) {
-            if (length(expr)==2L)
-                return(call(".Internal",expr))  # couldn't get .External as fast as .Internal, but no na.rm this route
-            if (length(expr)==3L && identical("na",substring(names(expr)[3L],1,2)))
-                return(call(".External",quote(Cfastmean),expr[[2L]], expr[[3L]]))  # faster than .Call
-            nomeanopt<<-TRUE
-            expr  # e.g. trim is not optimized, just na.rm
-        }
+        nomeanopt=FALSE  # to be set by .optmean() using <<- inside it
         oldjsub = jsub
         if (is.call(jsub)) {
             if (jsub[[1L]]=="lapply" && jsub[[2L]]==".SD" && length(xvars)) {
                 txt = as.list(jsub)[-1L]
-                txt[1L] = txt[2L]
+                fun = txt[[2L]]
+                if (is.call(fun) && fun[[1L]]=="function") {
+                    assign("..FUN",eval(fun),SDenv)  # to avoid creating function() for each column of .SD
+                    lockBinding("..FUN",SDenv)
+                    txt[[1L]] = as.name("..FUN")
+                } else {
+                    if (is.character(fun)) fun = as.name(fun)
+                    txt[[1L]] = fun
+                }
                 ans = vector("list",length(xvars)+1L)
                 ans[[1L]] = as.name("list")
                 for (ii in seq_along(xvars)) {
@@ -810,7 +922,7 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
                 jvnames = xvars      # but here instead
                 # It may seem inefficient to constuct a potentially long expression. But, consider calling
                 # lapply 100000 times. The C code inside lapply does the LCONS stuff anyway, every time it
-                # is called, involving small memory allocations. 
+                # is called, involving small memory allocations.
                 # The R level lapply calls as.list which needs a shallow copy.
                 # lapply also does a setAttib of names (duplicating the same names over and over again
                 # for each group) which is terrible for our needs. We replace all that with a
@@ -823,25 +935,25 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
             if (jsub[[1L]]=="list") {
                 for (ii in seq_along(jsub)[-1L])
                     if (is.call(jsub[[ii]]) && jsub[[ii]][[1L]]=="mean")
-                        jsub[[ii]] = optmean(jsub[[ii]])
+                        jsub[[ii]] = .optmean(jsub[[ii]])
             } else if (jsub[[1L]]=="mean") {
-                jsub = optmean(jsub)
+                jsub = .optmean(jsub)
             }
         }
         if (nomeanopt) {
             warning("Unable to optimize call to mean() and could be very slow. Only mean(x) and mean(x,na.rm=TRUE) are optimized, and you must name 'na.rm' like that otherwise if you do mean(x,TRUE) the TRUE is taken to mean 'trim' which is the 2nd argument. 'trim' is not yet optimized.",immediate.=TRUE)
         }
-        if (verbose) { 
+        if (verbose) {
             if (!identical(oldjsub, jsub))
-                cat("Optimized j from '",deparse(oldjsub),"' to '",deparse(jsub),"'\n",sep="")
+                cat("Optimized j from '",deparse(oldjsub),"' to '",deparse(jsub,width.cutoff=200),"'\n",sep="")
             else
-                cat("Optimization is on but j left unchanged as '",deparse(jsub),"'\n",sep="")
+                cat("Optimization is on but j left unchanged as '",deparse(jsub,width.cutoff=200),"'\n",sep="")
         }
-        assign("Cfastmean", Cfastmean, envir=SDenv)
-        assign("mean", base::mean.default, envir=SDenv)
+        assign("Cfastmean", Cfastmean, SDenv)
+        assign("mean", base::mean.default, SDenv)
         # Here in case nomeanopt=TRUE or some calls to mean weren't detected somehow. Better but still very slow.
         # Maybe change to :
-        #     assign("mean", fastmean, envir=SDenv)  # neater than the hard work above, but slower
+        #     assign("mean", fastmean, SDenv)  # neater than the hard work above, but slower
         # when fastmean can do trim.
     }
 
@@ -850,11 +962,14 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
         groups = i
         grpcols = leftcols # 'leftcols' are the columns in i involved in the join (either head of key(i) or head along i)
         jiscols = chmatch(jisvars,names(i))  # integer() if there are no jisvars (usually there aren't, advanced feature)
+        SDenv$.BY = groups[1L,grpcols,with=FALSE]
     } else {
         groups = byval
         grpcols = seq_along(byval)
         jiscols = NULL   # NULL rather than integer() is used in C to know when using by
+        SDenv$.BY = lapply(byval,"[",1L)  # byval is list() not data.table
     }
+    lockBinding(".BY",SDenv)
     grporder = o__
     if (length(irows) && !isTRUE(irows)) {
         if (length(o__) && length(irows)!=length(o__)) stop("Internal error: length(irows)!=length(o__)")
@@ -866,18 +981,18 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
         # for consistency of empty case in test 184
         f__=len__=0L
     }
-    
+
     if (verbose) {last.started.at=proc.time()[3];cat("Starting dogroups ... ");flush.console()}
     ans = .Call(Cdogroups, x, xcols, groups, grpcols, jiscols, grporder, o__, f__, len__, jsub, SDenv, cols, newnames, verbose)
     if (verbose) {cat("done dogroups in",round(proc.time()[3]-last.started.at,3),"secs\n");flush.console}
-    
+
     # TO DO: xrows would be a better name for irows: irows means the rows of x that i joins to
     # Grouping by i: icols the joins columns (might not need), isdcols (the non join i and used by j), all __ are length x
     # Grouping by by: i is by val, icols NULL, o__ may be subset of x, f__ points to o__ (or x if !length o__)
-    
+
     # TO DO: at the top of dogroups change xcols, grpcols, jiscols, irows, o__ and f__ to be 0-based than 1-based, by
     # reference in C, to save lots of -1 inside C for loops.
-    
+
     # TO DO: don't want to eval j for every row of i unless it really is mult='all'
     # TO DO: setkey could mark the key whether it is unique or not.
 
@@ -889,11 +1004,16 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
             if (all(cnames %chin% names(x)))
                 setkeyv(x,cnames)  # TO DO: setkey before grouping to get memcpy benefit.
             else warning(":= keyby not straightforward character column names or list() of column names, treating as a by:",paste(cnames,collapse=","),"\n")
-        } 
+        }
         return(x)
     }
-    if (is.null(ans)) return(as.data.table.list(lapply(groups,"[",0L)))  # side-effects only such as test 168
-    
+    if (is.null(ans)) {
+        ans = as.data.table.list(lapply(groups,"[",0L))  # side-effects only such as test 168
+        setnames(ans,seq_along(bynames),bynames)   # TO DO: why doesn't groups have bynames in the first place?
+        return(ans)
+    }
+    setattr(ans,"row.names",.set_row_names(length(ans[[1L]])))
+    setattr(ans,"class",c("data.table","data.frame"))
     if (is.null(names(ans))) {
         # Efficiency gain of dropping names has been successful. Ordinarily this will run.
         if (is.null(jvnames)) jvnames = character(length(ans)-length(bynames))
@@ -902,10 +1022,9 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
         ww = which(jvnames=="")
         if (any(ww)) jvnames[ww] = paste("V",ww,sep="")
         setattr(ans, "names", c(bynames, jvnames))
+    } else {
+        setnames(ans,seq_along(bynames),bynames)   # TO DO: why doesn't .BY (where dogroups gets names when j is named list) have bynames?
     }
-    
-    setattr(ans,"row.names",.set_row_names(length(ans[[1L]])))
-    setattr(ans,"class",c("data.table","data.frame"))
     if (haskey(x) && ((!missing(by) && bysameorder) || (!missing(i) && (haskey(i) || is.sorted(f__))))) {
         setattr(ans,"sorted",names(ans)[seq_along(grpcols)])
     } else if (!missing(keyby)) {
@@ -917,6 +1036,15 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
     alloc.col(ans)
 }
 
+.optmean = function(expr) {   # called by optimization of j inside [.data.table only. Outside for a small speed advantage.
+    if (length(expr)==2L)  # no parameters passed to mean, so defaults of trim=0 and na.rm=FALSE
+        return(call(".External",quote(Cfastmean),expr[[2L]], FALSE))
+        # return(call(".Internal",expr))  # slightly faster than .External, but R now blocks .Internal in coerce.c from apx Sep 2012
+    if (length(expr)==3L && identical("na",substring(names(expr)[3L],1,2)))   # one parameter passed to mean()
+        return(call(".External",quote(Cfastmean),expr[[2L]], expr[[3L]]))  # faster than .Call
+    assign("nomeanopt",TRUE,parent.frame())
+    expr  # e.g. trim is not optimized, just na.rm
+}
 
 #  [[.data.frame is now dispatched due to inheritance.
 #  The code below tried to avoid that but made things
@@ -956,7 +1084,7 @@ as.matrix.data.table = function(x,...)
     class(X) <- NULL
     non.numeric <- non.atomic <- FALSE
     all.logical <- TRUE
-    for (j in 1L:p) {
+    for (j in seq_len(p)) {
         if (is.ff(X[[j]])) X[[j]] <- X[[j]][]   # to bring the ff into memory, since we need to create a matrix in memory
         xj <- X[[j]]
         if (length(dj <- dim(xj)) == 2L && dj[2L] > 1L) {
@@ -966,7 +1094,7 @@ as.matrix.data.table = function(x,...)
             collabs[[j]] <- paste(collabs[[j]], if (length(dnj) >
                 0L)
                 dnj
-            else 1L:dj[2L], sep = ".")
+            else seq_len(dj[2L]), sep = ".")
         }
         if (!is.logical(xj))
             all.logical <- FALSE
@@ -978,7 +1106,7 @@ as.matrix.data.table = function(x,...)
             non.atomic <- TRUE
     }
     if (non.atomic) {
-        for (j in 1L:p) {
+        for (j in seq_len(p)) {
             xj <- X[[j]]
             if (is.recursive(xj)) {
             }
@@ -988,7 +1116,7 @@ as.matrix.data.table = function(x,...)
     else if (all.logical) {
     }
     else if (non.numeric) {
-        for (j in 1L:p) {
+        for (j in seq_len(p)) {
             if (is.character(X[[j]]))
                 next
             xj <- X[[j]]
@@ -1011,9 +1139,9 @@ as.data.table.matrix = function(x, keep.rownames=FALSE)
     if (keep.rownames) return(data.table(rn=rownames(x), x, keep.rownames=FALSE))
     d <- dim(x)
     nrows <- d[1L]
-    ir <- seq(length = nrows)
+    ir <- seq_len(nrows)
     ncols <- d[2L]
-    ic <- seq(length = ncols)
+    ic <- seq_len(ncols)
     dn <- dimnames(x)
     collabs <- dn[[2L]]
     if (any(empty <- nchar(collabs) == 0L))
@@ -1056,7 +1184,7 @@ as.data.table.list = function(x, keep.rownames=FALSE) {
     x = copy(x)
     if (any(n<max(n)))
         for (i in which(n<max(n))) x[[i]] = rep(x[[i]],length=max(n))
-    if (is.null(names(x))) setattr(x,"names",paste("V",1L:length(x),sep=""))
+    if (is.null(names(x))) setattr(x,"names",paste("V",seq_len(length(x)),sep=""))
     setattr(x,"row.names",.set_row_names(max(n)))
     setattr(x,"class",c("data.table","data.frame"))
     settruelength(x,0L)
@@ -1067,12 +1195,12 @@ as.data.table.data.table = function(x, keep.rownames=FALSE) return(x)
 
 head.data.table = function(x, n=6, ...) {
     if (!cedta()) return(NextMethod())
-    i = seq(len=min(n,nrow(x)))
+    i = seq_len(min(n,nrow(x)))
     x[i]
 }
 tail.data.table = function(x, n=6, ...) {
     if (!cedta()) return(NextMethod())
-    i = seq(to=nrow(x), length=min(n, nrow(x)))
+    i = seq.int(max(min(1,nrow(x)),nrow(x)-n+1), nrow(x))  # min for 0-row x
     x[i]
 }
 
@@ -1122,7 +1250,7 @@ tail.data.table = function(x, n=6, ...) {
         # DT["a",]$y <- 1.1  winds up creating `*tmp*` subset of rows and assigning _all_ the columns into x and
         # over-writing the key columns with the same value (not just the single 'y' column).
         # That isn't good for speed; it's an R thing. Solution is to use := instead to avoid all this, but user
-        # expects key to be retained in this case because _he_ didn't assign to a key column (the internal base R 
+        # expects key to be retained in this case because _he_ didn't assign to a key column (the internal base R
         # code did).
         reinstatekey=key(x)
     }
@@ -1181,7 +1309,7 @@ tail.data.table = function(x, n=6, ...) {
     }
     nm = names(allargs[[1L]])
     if (use.names && length(nm) && n>1L) {
-        for (i in 2:n) if (length(names(allargs[[i]]))) {
+        for (i in seq.int(2,n)) if (length(names(allargs[[i]]))) {
             if (!all(names(allargs[[i]]) %chin% nm))
                 stop("Some colnames of argument ",i," (",paste(setdiff(names(allargs[[i]]),nm),collapse=","),") are not present in colnames of item 1. If an argument has colnames they can be in a different order, but they must all be present. Alternatively, you can drop names (by using an unnamed list) and the columns will then be joined by position. Or, set use.names=FALSE.")
             if (!all(names(allargs[[i]]) == nm))
@@ -1193,7 +1321,7 @@ tail.data.table = function(x, n=6, ...) {
         }
     }
     allargs = lapply(allargs, as.data.table)  # To recycle items to match length if necessary, bug #2003. rbind will always be slow anyway, so not worrying about efficiency here. Later there'll be fast insert() by reference.
-    
+
     if (!any(sapply(allargs[[1L]],is.factor)))
         return(rbindlist(allargs))  # do.call("c",...) is now in C
     # TO DO: Move earlier logic above for use.names (binding by name) into rbindlist C, too.
@@ -1274,23 +1402,15 @@ dimnames.data.table = function(x) {
     if ( ((tt<-identical(caller,"colnames<-")) && cedta(3)) ||
          cedta() ) warning("The ",if(tt)"col","names(x)<-value syntax copies the whole table. This is due to <- in R itself. Please change to setnames(x,old,new) which does not copy and is faster. See help('setnames'). You can safely ignore this warning if it is inconvenient to change right now. Setting options(warn=2) turns this warning into an error, so you can then use traceback() to find and change your ",if(tt)"col","names<- calls.")
     if (is.null(value))
-        setattr(x,"names",NULL)   # e.g. plyr::melt() calls base::unname() 
+        setattr(x,"names",NULL)   # e.g. plyr::melt() calls base::unname()
     else
         setnames(x,value)
     x   # it's this returned value that is copied via *tmp* and we cannot avoid that when using <- currently in R
 }
 
-
-last = function(x) x[NROW(x)]     # last row for a data.table, last element for a vector.
-
 within.data.table <- function (data, expr, ...)
 # basically within.list but retains key (if any)
-# will be slower than using := or a regular query
-# `within` and other similar functions in data.table are
-# not just provided for users who expect them to work, or
-# prefer syntax they're used to, but for non-data.table-aware
-# packages to retain keys (for example). Hopefully users and
-# code will use the faster data.table syntax in time.
+# will be slower than using := or a regular query (see ?within for further info).
 {
     if (!cedta()) return(NextMethod())
     parent <- parent.frame()
@@ -1314,8 +1434,8 @@ within.data.table <- function (data, expr, ...)
 }
 
 
-# basically transform.data.frame with data.table instead of data.frame
 transform.data.table <- function (`_data`, ...)
+# basically transform.data.frame with data.table instead of data.frame, and retains key
 {
     if (!cedta()) return(NextMethod())
     e <- eval(substitute(list(...)), `_data`, parent.frame())
@@ -1353,9 +1473,9 @@ subset.data.table <- function (x, subset, select, ...)
     }
 
     if (missing(select)) {
-        vars <- 1L:ncol(x)
+        vars <- seq_len(ncol(x))
     } else {
-        nl <- as.list(1L:ncol(x))
+        nl <- as.list(seq_len(ncol(x)))
         setattr(nl,"names",names(x))
         vars <- eval(substitute(select), nl, parent.frame())  # e.g.  select=colF:colP
         if (is.numeric(vars)) vars=names(x)[vars]
@@ -1363,13 +1483,13 @@ subset.data.table <- function (x, subset, select, ...)
     }
 
     ans <- x[r, vars, with = FALSE]
-    
+
     if (nrow(ans) > 0L) {
         if (!missing(select) && length(key.cols)) {
             ## Set the key on the returned data.table as long as the key
             ## columns that "remain" are the same as the original, or a
             ## prefix of it.
-            is.prefix <- all(key(x)[1L:length(key.cols)] == key.cols)
+            is.prefix <- all(key(x)[seq_len(length(key.cols))] == key.cols)
             if (is.prefix) {
                 setattr(ans, "sorted", key.cols)
             }
@@ -1428,12 +1548,16 @@ copy = function(x) {
     # may be tricky; more robust to rely on R's duplicate which deep copies.
 }
 
+copyattr = function(from, to) {
+    .Call(Ccopyattr, from, to)
+}
+
 shallow = function(x) {
     if (!is.data.table(x)) stop("x is not a data.table. Shallow copy is a copy of the vector of column pointers (only), so is only meaningful for data.table")
     .Call(Cshallowwrapper,x)  # copies VECSXP only
 }
 
-alloc.col = function(DT, n=options("datatable.alloccol")[[1L]], verbose=options("datatable.verbose")[[1L]]) 
+alloc.col = function(DT, n=options("datatable.alloccol")[[1L]], verbose=options("datatable.verbose")[[1L]])
 {
     name = substitute(DT)
     if (identical(name,quote(`*tmp*`))) stop("alloc.col attempting to modify `*tmp*`")
@@ -1442,7 +1566,7 @@ alloc.col = function(DT, n=options("datatable.alloccol")[[1L]], verbose=options(
         name = as.character(name)
         assign(name,ans,parent.frame(),inherits=TRUE)
     }
-    ans
+    .Call(Csetnamed,ans,0L)
 }
 
 selfrefok = function(DT,verbose=getOption("datatable.verbose")) {
@@ -1458,12 +1582,12 @@ settruelength = function(x,n) {
     #if (getRversion() >= "2.14.0")
     #    if (truelength(x) != 0L) warning("This is R>=2.14.0 but truelength isn't initialized to 0")
         # grep for suppressWarnings(settruelength) for where this is needed in 2.14.0+ (otherwise an option would be to make data.table depend on 2.14.0 so settruelength could be removed)
-    
-    
+
+
     .Call(Csettruelength,x,as.integer(n))
-    
-    
-    
+
+
+
     #if (is.data.table(x))
     #    .Call(Csettruelength,attr(x,"class"),-999L)
     #    # So that (in R 2.13.2-) we can detect tables loaded from disk (tl is not initialized there)
@@ -1493,7 +1617,7 @@ setnames = function(x,old,new) {
     # Sets by reference, maintains truelength, no copy of table at all.
     # But also more convenient than names(DT)[i]="newname"  because we can also do setnames(DT,"oldname","newname")
     # without an onerous match() ourselves. old can be positions, too, but we encourage by name for robustness.
-    if (!is.data.table(x)) stop("x is not a data.table")
+    if (!is.data.frame(x)) stop("x is not a data.table or data.frame")
     if (!length(attr(x,"names"))) stop("x has no column names")  # because setnames is for user user. Internally, use setattr(x,"names",...)
     if (missing(new)) {
         # for setnames(DT,new); e.g., setnames(DT,c("A","B")) where ncol(DT)==2
@@ -1501,7 +1625,7 @@ setnames = function(x,old,new) {
         m = chmatch(key(x), names(x))
         if (length(m) && any(is.na(m))) stop("Internal error: attr(x,'sorted') not all in names(x)")
         .Call(Csetcharvec, names(x), seq_along(names(x)), old)
-        # setcharvec (rather than setattr) so as not to affect selfref. 
+        # setcharvec (rather than setattr) so as not to affect selfref.
         if (length(m)) .Call(Csetcharvec, attr(x,"sorted"), m, old[m])
         return(invisible(x))
     } else {
@@ -1509,29 +1633,32 @@ setnames = function(x,old,new) {
         if (length(new)!=length(old)) stop("'old' is length ",length(old)," but 'new' is length ",length(new))
     }
     if (is.numeric(old)) {
-        tt = old<1L | old>length(x)
-        if (any(tt)) stop("Items of 'old' outside range [1,",length(x),"]: ",paste(old[tt],collapse=","))
-        old = names(x)[old]
+        tt = old<1L | old>length(x) | is.na(old)
+        if (any(tt)) stop("Items of 'old' either NA or outside range [1,",length(x),"]: ",paste(old[tt],collapse=","))
+        i = as.integer(old)
+        if (any(duplicated(i))) stop("Some duplicates exist in 'old': ",paste0(i[duplicated(i)],collapse=","))
+    } else {
+        if (!is.character(old)) stop("'old' is type ",typeof(old)," but should be integer, double or character")
+        if (any(duplicated(old))) stop("Some duplicates exist in 'old': ", paste0(old[duplicated(old)],collapse=","))
+        i = chmatch(old,names(x))
+        if (any(is.na(i))) stop("Items of 'old' not found in column names: ",paste(old[is.na(i)],collapse=","))
     }
-    if (!is.character(old)) stop("'old' is type ",typeof(old)," but should be integer, double or character")
-    i = chmatch(old,names(x))
-    if (any(is.na(i))) stop("Items of 'old' not found in column names: ",paste(old[is.na(i)],collapse=","))
     if (!is.character(new)) stop("'new' is not a character vector")
-    
     if (length(names(x)) != length(x)) stop("dt is length ",length(dt)," but its names are length ",length(names(x)))
 
     # update the key too if the column name being change is in the key
-    m = chmatch(old, key(x))  # use old here before .Call that (when old=names(DT)) changes old by reference, too 
+    m = chmatch(names(x)[i], key(x))
     w = which(!is.na(m))
     .Call(Csetcharvec, attr(x,"names"), as.integer(i), new)
     if (length(w))
-        .Call(Csetcharvec, attr(x,"sorted"), as.integer(m[w]), new[w])    
+        .Call(Csetcharvec, attr(x,"sorted"), as.integer(m[w]), new[w])
     invisible(x)
 }
 
 setcolorder = function(x,neworder)
 {
     if (!is.data.table(x)) stop("x is not a data.table")
+    if (any(duplicated(names(x)))) stop("x has some duplicated column name(s): ",paste(names(x)[duplicated(names(x))],collapse=","),". Please remove or rename the duplicate(s) and try again.")
     if (length(neworder)!=length(x)) stop("neworder is length ",length(neworder)," but x has ",length(x)," columns.")
     if (is.character(neworder)) {
         if (any(duplicated(neworder))) stop("neworder contains duplicate column names")
@@ -1540,11 +1667,11 @@ setcolorder = function(x,neworder)
     } else {
         if (!is.numeric(neworder)) stop("neworder is not a character or numeric vector")
         o = as.integer(neworder)
-        m = !(o %in% 1L:length(x))
+        m = !(o %in% seq_len(length(x)))
         if (any(m)) stop("Column numbers in neworder out of bounds: ",paste(o[m],collapse=","))
     }
     .Call(Csetcolorder,x,o)
-    invisible(x)   
+    invisible(x)
 }
 
 set = function(x,i=NULL,j,value)
@@ -1574,6 +1701,8 @@ rbindlist = function(l) {
     settruelength(ans,0L)
     alloc.col(ans)
 }
+
+vecseq = function(x,y) .Call(Cvecseq,x,y)
 
 ":=" = function(LHS,RHS) stop(':= is defined for use in j only, and (currently) only once; i.e., DT[i,col:=1L] and DT[,newcol:=sum(colB),by=colA] are ok, but not DT[i,col]:=1L, not DT[i]$col:=1L and not DT[,{newcol1:=1L;newcol2:=2L}]. Please see help(":="). Check is.data.table(DT) is TRUE.')
 

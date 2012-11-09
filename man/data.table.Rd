@@ -58,13 +58,13 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
 
   expression is evaluated within the frame of the \code{data.table} (i.e. it sees column names as if they are variables) and can evaluate to any of the other types.
 
-  When \code{i} is a \code{data.table}, \code{x} must have a key. \code{i} is \emph{joined} to \code{x} using \code{x}'s key and the rows in \code{x} that match are returned. An equi-join is performed between each column in \code{i} to each column in \code{x}'s key; i.e., column 1 of \code{i} is matched to the 1st column of \code{x}'s key, column 2 to the second, etc. The match is a binary search in compiled C in O(log n) time. If \code{i} has fewer columns than \code{x}'s key then many rows of \code{x} will ordinarily match to each row of \code{i} since not all of {x}'s key columns will be joined to (a common use case). If \code{i} has more columns than \code{x}'s key, the columns of \code{i} not involved in the join are included in the result. If \code{i} also has a key, it is \code{i}'s key columns that are used to match to \code{x}'s key columns (column 1 of \code{i}'s key is joined to column 1 of \code{x}'s key, column 2 to column 2, and so on) and a binary merge of the two tables is carried out. In all joins the names of the columns are irrelevant. The columns of \code{x}'s key are joined to in order, either from column 1 onwards of \code{i} when \code{i} is unkeyed, or from column 1 onwards of \code{i}'s key.
+  When \code{i} is a \code{data.table}, \code{x} must have a key. \code{i} is \emph{joined} to \code{x} using \code{x}'s key and the rows in \code{x} that match are returned. An equi-join is performed between each column in \code{i} to each column in \code{x}'s key; i.e., column 1 of \code{i} is matched to the 1st column of \code{x}'s key, column 2 to the second, etc. The match is a binary search in compiled C in O(log n) time. If \code{i} has \emph{fewer} columns than \code{x}'s key then not all of {x}'s key columns will be joined to (a common use case) and many rows of \code{x} will (ordinarily) match to each row of \code{i}. If \code{i} has \emph{more} columns than \code{x}'s key, the columns of \code{i} not involved in the join are included in the result. If \code{i} also has a key, it is \code{i}'s key columns that are used to match to \code{x}'s key columns (column 1 of \code{i}'s key is joined to column 1 of \code{x}'s key, column 2 of \code{i}'s key to column 2 of \code{x}'s key, and so on for as long as the shorter key) and a binary merge of the two tables is carried out. In all joins the names of the columns are irrelevant; the columns of \code{x}'s key are joined to in order, either from column 1 onwards of \code{i} when \code{i} is unkeyed, or from column 1 onwards of \code{i}'s key. In code, the number of join columns is determined by \code{min(length(key(x)),if (haskey(i)) length(key(i)) else ncol(i))}.
+  
+  All types of `i` may be prefixed with \code{!}. This signals a \emph{not-join} or \emph{not-select} should be performed. Throughout \code{data.table} documentation, where we refer to the type of `i`, we mean the type of `i` \emph{after} the `!`, if present. See examples.
 
   Advanced: When \code{i} is an expression of column names that evaluates to \code{data.table} or \code{list}, a join is performed. We call this a \emph{self join}.
 
   Advanced: When \code{i} is a single variable name, it is not considered an expression of column names and is instead evaluated in calling scope.
-  
-  Advanced: When \code{i} is a regular \code{list} (such as \code{.BY}), it is automatically converted to \code{data.table}.
 
 }
   \item{j}{ A single column name, single expresson of column names, \code{list()} of expressions of column names, an expression or function call that evaluates to \code{list} (including \code{data.frame} and \code{data.table} which are \code{list}s, too), or (when \code{with=FALSE}) same as \code{j} in \code{[.data.frame}.
@@ -80,7 +80,7 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
 
   Advanced: Aggregation for a subset of known groups is particularly efficient when passing those groups in \code{i}. When \code{i} is a \code{data.table}, \code{DT[i,j]} evaluates \code{j} for each row of \code{i}. We call this \emph{by without by} or \emph{grouping by i}. Hence, the self join \code{DT[data.table(unique(colA)),j]} is identical to \code{DT[,j,by=colA]}.
 
-  Advanced: When grouping by \code{by} or by \code{i}, symbols \code{.SD}, \code{.BY} and \code{.N} may be used in the \code{j} expression, defined as follows.
+  Advanced: When grouping by \code{by} or by \code{i}, symbols \code{.SD}, \code{.BY}, \code{.N}, \code{.I} and \code{.GRP} may be used in the \code{j} expression, defined as follows.
   
   \code{.SD} is a \code{data.table} containing the \bold{S}ubset of \code{x}'s \bold{D}ata for each group, excluding the group column(s).
   
@@ -88,7 +88,11 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
   
   \code{.N} is an integer, length 1, containing the number of rows in the group. This may be useful when the column names are not known in advance and for convenience generally. When grouping by \code{i}, \code{.N} is the number of rows in \code{x} matched to, for each row of \code{i}, regardless of whether \code{nomatch} is \code{NA} or \code{0}. It is renamed to \code{N} (no dot) in the result (otherwise a column called \code{".N"} could conflict with the \code{.N} variable, see FAQ 4.6 for more details and example), unless it is explicity named; e.g., \code{DT[,list(total=.N),by=a]}.
   
-  \code{.SD}, \code{.BY} and \code{.N} are \emph{read only}. Their bindings are locked and attempting to assign to them will generate an error. If you wish to manipulate \code{.SD} before returning it, take a \code{copy(.SD)} first (see FAQ 4.5). Using \code{:=} in the \code{j} of \code{.SD} is reserved for future use as a (tortuously) flexible way to update \code{DT} by reference by group (even when groups are not contiguous in an ad hoc by).
+  \code{.I} is an integer vector length \code{.N} holding the row locations in \code{x} for this group. This is useful to subset in j; e.g. DT[,.I[which.max(somecol)],by=grp].
+  
+  \code{.GRP} is an integer, length 1, containing a simple group counter. 1 for the 1st group, 2 for the 2nd, etc.
+  
+  \code{.SD}, \code{.BY}, \code{.N}, \code{.I} and \code{.GRP} are \emph{read only}. Their bindings are locked and attempting to assign to them will generate an error. If you wish to manipulate \code{.SD} before returning it, take a \code{copy(.SD)} first (see FAQ 4.5). Using \code{:=} in the \code{j} of \code{.SD} is reserved for future use as a (tortuously) flexible way to update \code{DT} by reference by group (even when groups are not contiguous in an ad hoc by).
 
   Advanced: In the \code{X[Y,j]} form of grouping, the \code{j} expression sees variables in \code{X} first, then \code{Y}. We call this \emph{join inherited scope}. If the variable is not in \code{X} or \code{Y} then the calling frame is searched, its calling frame, and so on in the usual way up to and including the global environment.
 
@@ -111,7 +115,7 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
   \item{rolltolast}{ Like \code{roll} but the data is not rolled forward past the \emph{last} observation within each group defined by the join columns. The value of \code{i} must fall in a gap in \code{x} but not after the end of the data, for that group defined by all but the last join column. \code{roll} and \code{rolltolast} may not both be \code{TRUE}.
 
 }
-  \item{which}{ \code{TRUE} returns the integer row numbers of \code{x} that \code{i} matches to.
+  \item{which}{ \code{TRUE} returns the row numbers of \code{x} that \code{i} matches to. \code{NA} returns the row numbers of \code{i} that have no match in \code{x}. By default \code{FALSE} and the rows in \code{x} that match are returned.
 
 }
   \item{.SDcols}{ Advanced. Specifies the columns of \code{x} included in \code{.SD}. May be character column names or numeric positions. This is useful for speed when applying a function through a subset of (possible very many) columns; e.g., \code{DT[,lapply(.SD,sum),by="x,y",.SDcols=301:350]}.
@@ -256,13 +260,22 @@ DT[,list(MySum=sum(v),
 DT[,sum(v),x][V1<20]       # compound query
 DT[,sum(v),x][order(-V1)]  # ordering results
 
-DT[,z:=42L]                # add new column by reference
-DT[,z:=NULL]               # remove column by reference
-DT["a",v:=42L]             # subassign v by reference
+print(DT[,z:=42L])         # add new column by reference
+print(DT[,z:=NULL])        # remove column by reference
+print(DT["a",v:=42L])      # subassign to existing v column by reference
+print(DT["b",v2:=84L])     # subassign to new column by reference (NA padded)
 
-DT[,m:=mean(v),by=x]       # add new column by reference by group
+DT[,m:=mean(v),by=x][]     # add new column by reference by group
+                           # NB: postfix [] is shortcut to print()
 
-DT[,.SD[which.min(v)],by=x]  # nested query by group
+DT[,.SD[which.min(v)],by=x][]  # nested query by group
+
+DT[!J("a")]                # not join
+DT[!"a"]                   # same
+DT[!2:4]                   # all rows other than 2:4
+DT[x!="b" | y!=3]          # multiple vector scanning approach, slow
+DT[!J("b",3)]              # same result but much faster
+
 
 # Follow r-help posting guide, support is here (*not* r-help) :
 # datatable-help@lists.r-forge.r-project.org

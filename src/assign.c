@@ -13,19 +13,41 @@ int sizes[100];
 
 extern SEXP growVector(SEXP x, R_len_t newlen, Rboolean verbose);
 extern SEXP chmatch(SEXP x, SEXP table, R_len_t nomatch, Rboolean in);
-extern SEXP keepattr(SEXP to, SEXP from);
 SEXP alloccol(SEXP dt, R_len_t n, Rboolean verbose);
 SEXP *saveds;
 R_len_t *savedtl, nalloc, nsaved;
 SEXP allocNAVector(SEXPTYPE type, R_len_t n);
 void savetl_init(), savetl(SEXP s), savetl_end();
 
+static void finalizer(SEXP p)
+{
+    SEXP x;
+    R_len_t n, l, tl;
+    if(!R_ExternalPtrAddr(p)) error("Internal error: finalizer hasn't received an ExternalPtr");
+    p = R_ExternalPtrTag(p);
+    if (!isString(p)) error("Internal error: finalizer's ExternalPtr doesn't see names in tag");
+    l = LENGTH(p);
+    tl = TRUELENGTH(p);
+    if (l<0 || tl<l) error("Internal error: finalizer sees l=%d, tl=%d",l,tl);
+    n = tl-l;
+    if (n==0) {
+        // gc's ReleaseLargeFreeVectors() will have reduced R_LargeVallocSize by the correct amount
+        // already, so nothing to do (but almost never the case).
+        return;
+    }
+    x = PROTECT(allocVector(VECSXP, 50));   // 50 so it's big enough to be on LargeVector heap. See NodeClassSize in memory.c:allocVector
+    SETLENGTH(x,50+n*2);  // 1*n for the names, 1*n for the VECSXP itself (both are over allocated)
+    UNPROTECT(1);
+    return;
+}
+
 void setselfref(SEXP x) {   
+    SEXP p;
     // Store pointer to itself so we can detect if the object has been copied. See
     // ?copy for why copies are not just inefficient but cause a problem for over-allocated data.tables.
     // Called from C only, not R level, so returns void.
-    setAttrib(x, SelfRefSymbol, R_MakeExternalPtr(
-        R_NilValue,                  // for identical() to return TRUE
+    setAttrib(x, SelfRefSymbol, p=R_MakeExternalPtr(
+        R_NilValue,                  // for identical() to return TRUE. identical() doesn't look at tag and prot
         getAttrib(x, R_NamesSymbol), // to detect if names has been replaced and its tl lost, e.g. setattr(DT,"names",...)
         R_MakeExternalPtr(           // to avoid an infinite loop in object.size(), if prot=x here
             x,                       // to know if this data.table has been copied by key<-, attr<-, names<-, etc.
@@ -33,6 +55,8 @@ void setselfref(SEXP x) {
             R_NilValue
         )
     ));
+    R_RegisterCFinalizerEx(p, finalizer, FALSE);
+    
 /*  *  base::identical doesn't check prot and tag of EXTPTR, just that the ptr itself is the
        same in both objects. R_NilValue is always equal to R_NilValue.  R_NilValue is a memory
        location constant within an R session, but can vary from session to session. So, it
@@ -166,7 +190,10 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
     }
     // Check all inputs :
     for (i=0; i<length(cols); i++) {
-        coln = INTEGER(cols)[i]-1;
+        coln = INTEGER(cols)[i];
+        if (coln<1 || coln>oldncol+length(newcolnames))
+            error("Item %d of j is %d which is outside range. Cannot add columns with set(), use := instead to add columns by reference.",i+1,coln);
+        coln--;
         if (TYPEOF(values)==VECSXP && (length(cols)>1 || length(values)==1))
             thisvalue = VECTOR_ELT(values,i%LENGTH(values));
         else
@@ -174,7 +201,7 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
         vlen = length(thisvalue);
         if (coln+1 <= oldncol) colnam = STRING_ELT(names,coln);
         else colnam = STRING_ELT(newcolnames,coln-length(names));
-        if (vlen<1) {
+        if (vlen<1 && nrow>0) {
             if (coln+1 <= oldncol) {
                 if (isNull(thisvalue)) continue;  // delete existing column(s) afterwards, near end of this function
                 error("RHS of assignment to existing column '%s' is zero length but not NULL. If you intend to delete the column use NULL. Otherwise, the RHS must have length > 0; e.g., NA_integer_. If you are trying to change the column type to be an empty list column then, as with all column type changes, provide a full length RHS vector such as vector('list',nrow(DT)); i.e., 'plonk' in the new column.", CHAR(STRING_ELT(names,coln)));
@@ -189,8 +216,10 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
                 error("RHS of assignment to new column '%s' is zero length but not empty list(). For new columns the RHS must either be empty list() to create an empty list column, or, have length > 0; e.g. NA_integer_, 0L, etc.", CHAR(STRING_ELT(newcolnames,newcolnum)));
             }
         }
-        if (!isVector(thisvalue) && !(isVector(thisvalue) && length(thisvalue)==targetlen))
+        if (!(isVectorAtomic(thisvalue) || isNewList(thisvalue)))  // NULL had a continue earlier above
             error("RHS of assignment is not NULL, not an an atomic vector (see ?is.atomic) and not a list column.");
+        if (isMatrix(thisvalue) && (j=INTEGER(getAttrib(thisvalue, R_DimSymbol))[1]) > 1)  // matrix passes above (considered atomic vector)
+            warning("%d column matrix RHS of := will be treated as one vector", j);
         if ((coln+1)<=oldncol && isFactor(VECTOR_ELT(dt,coln)) &&
             !isString(thisvalue) && TYPEOF(thisvalue)!=INTSXP && !isReal(thisvalue))  // !=INTSXP includes factor
             error("Can't assign to column '%s' (type 'factor') a value of type '%s' (not character, factor, integer or numeric)", CHAR(STRING_ELT(names,coln)),type2char(TYPEOF(thisvalue)));
@@ -235,8 +264,8 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
     }
     for (i=0; i<length(cols); i++) {
         coln = INTEGER(cols)[i]-1;
-        if (TYPEOF(values)==VECSXP && (length(cols)>1 || length(values)==1))
-            thisvalue = VECTOR_ELT(values,i%length(values));
+        if (TYPEOF(values)==VECSXP && (LENGTH(cols)>1 || LENGTH(values)==1))
+            thisvalue = VECTOR_ELT(values,i%LENGTH(values));
         else
             thisvalue = values;   // One vector applied to all columns, often NULL or NA for example
         if (TYPEOF(thisvalue)==NILSXP) {
@@ -245,14 +274,27 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
         }
         vlen = length(thisvalue);
         if (length(rows)==0 && targetlen==vlen) {
+            if (  NAMED(thisvalue)==2 ||  // NAMED is already 1 from the 'value' local variable at R level passed to Cassign.
+                 (TYPEOF(values)==VECSXP && i>LENGTH(values)-1)) { // recycled RHS would have columns pointing to others, #2298.
+                PROTECT(thisvalue = duplicate(thisvalue));
+                protecti++;
+                if (verbose) Rprintf("RHS for item %d has been duplicated. Either NAMED vector or recycled list RHS.\n",i+1);
+            } else {
+                if (verbose) Rprintf("Direct plonk of unnamed RHS, no copy.\n");  // e.g. DT[,a:=as.character(a)] as tested by 754.3
+            }
+            setAttrib(thisvalue, R_NamesSymbol, R_NilValue);     // clear names such as  DT[,a:=mapvector[a]]
+            setAttrib(thisvalue, R_DimSymbol, R_NilValue);       // so that matrix is treated as vector
+            setAttrib(thisvalue, R_DimNamesSymbol, R_NilValue);  // the 3rd of the 3 attribs not copied by copyMostAttrib, for consistency.
             SET_VECTOR_ELT(dt,coln,thisvalue);
             // plonk new column in as it's already the correct length
             // if column exists, 'replace' it (one way to change a column's type i.e. less easy, as it should be, for speed, correctness and to get the user thinking about their intent)        
             continue;
         }
         if (coln+1 > oldncol) {  // new column
-            PROTECT(newcol = keepattr(allocNAVector(TYPEOF(thisvalue),nrow),thisvalue));
+            PROTECT(newcol = allocNAVector(TYPEOF(thisvalue),nrow));
             protecti++;
+            if (isVectorAtomic(thisvalue)) copyMostAttrib(thisvalue,newcol);  // class etc but not names
+            // else for lists (such as data.frame and data.table) treat them as raw lists and drop attribs
             SET_VECTOR_ELT(dt,coln,newcol);
             if (vlen<1) continue;   // e.g. DT[,newcol:=integer()] (adding new empty column)
             targetcol = newcol;
@@ -366,7 +408,8 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
                 break;
             case VECSXP :
                 for (r=0; r<targetlen; r++)
-                    SET_VECTOR_ELT(targetcol, r, STRING_ELT(RHS, r%vlen));
+                    SET_VECTOR_ELT(targetcol, r, VECTOR_ELT(RHS, r%vlen));
+                    // TO DO: would need duplicate here if := in future could ever change a list item's contents by reference.
                 break;
             default :
                 for (r=0; r<(targetlen/vlen); r++) {
@@ -386,7 +429,7 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
                 break;
             case VECSXP :
                 for (r=0; r<targetlen; r++)
-                    SET_VECTOR_ELT(targetcol, INTEGER(rows)[r]-1, STRING_ELT(RHS, r%vlen));
+                    SET_VECTOR_ELT(targetcol, INTEGER(rows)[r]-1, VECTOR_ELT(RHS, r%vlen));
                 break;
             default :
                 for (r=0; r<targetlen; r++)
@@ -398,11 +441,11 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
     }
     if (anytodelete) {
         // Delete any columns assigned NULL (there was a 'continue' earlier in loop above)
-        // In reverse order to make repeated memmove easy.
+        // In reverse order to make repeated memmove easy. Otherwise cols would need to be updated as well after each delete.
         PROTECT(colorder = duplicate(cols));
         protecti++;
         R_isort(INTEGER(colorder),LENGTH(cols));
-        PROTECT(colorder = match(colorder, cols, 0));
+        PROTECT(colorder = match(cols, colorder, 0));   // actually matches colorder to cols (oddly, arguments are that way around)
         protecti++;
         // Can't find a visible R entry point to return ordering of cols, above is only way I could find.
         // Need ordering (rather than just sorting) because the RHS corresponds in order to the LHS.
@@ -568,7 +611,7 @@ SEXP alloccol(SEXP dt, R_len_t n, Rboolean verbose)
         tl=l;
         SET_TRUELENGTH(dt,l);
         if (!isNull(names)) SET_TRUELENGTH(names,l);
-        setselfref(dt);
+        if (n==l) setselfref(dt);  // never happens, other than test 849 where we reduce datatable.alloccol to 2L, for testing 
     } else {
         tl = TRUELENGTH(dt);
         if (tl<0) error("Internal error, tl of class is marked but tl<0.");  // R <= 2.13.2 and we didn't catch uninitialized tl somehow
@@ -578,12 +621,9 @@ SEXP alloccol(SEXP dt, R_len_t n, Rboolean verbose)
         // if (TRUELENGTH(getAttrib(dt,R_NamesSymbol))!=tl)
         //    error("Internal error: tl of dt passes checks, but tl of names (%d) != tl of dt (%d)", tl, TRUELENGTH(getAttrib(dt,R_NamesSymbol)));
     }
-    if (n<l) warning("table has %d column slots in use. Attept to allocate less (%d)",l,n);
     if (n>tl) return(shallow(dt,n)); // usual case (increasing alloc)
-    // Reduce the allocation (most likely to the same value as length).
-    //if (n!=l) warning("Reducing alloc cols from %d to %d, but not to length (%d)",TRUELENGTH(dt),n,LENGTH(dt));
-    SET_TRUELENGTH(dt, n);
-    if (!isNull(names)) SET_TRUELENGTH(names, n);
+    if (n<tl) warning("Attempt to reduce allocation from %d to %d ignored. Can only increase allocation via shallow copy.",tl,n);
+              // otherwise the finalizer can't clear up the Large Vector heap
     return(dt);
 }
 
