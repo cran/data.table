@@ -4,18 +4,57 @@ The ChangeLog for data.table is the SVN commit log itself :
 
 This NEWS file summarises the main changes.
 
-        **********************************************
-        **                                          **
-        **   CHANGES IN DATA.TABLE VERSION 1.8.4    **
-        **                                          **
-        **********************************************
+        *********************************************
+        **                                         **
+        **   CHANGES IN DATA.TABLE VERSION 1.8.6   **
+        **                                         **
+        **           On CRAN: 13 Nov 2012          **
+        **                                         **
+        *********************************************
+
+BUG FIXES
+
+    o   A variable in calling scope was not found when combining i, j and by in
+        one query, i used that local variable, and that query occurred inside a
+        function, #2368. This worked in 1.8.2, a regression. Test added.
+
+COMPATIBILITY FOR R 2.12.0-2.15.0
+
+    o   setnames used paste0() to construct its error messages, a function
+        added to R 2.15.0. Reverted to use paste(). Tests added.
+        
+    o   X[Y] where Y is empty (test 764) failed due to reliance on a pmin()
+        enhancement in R 2.15.1. Removed reliance.
+
+NOTES
+
+    o   test.data.table() now passes in 2.12.0, the stated dependency, as well as
+        2.14.0, 2.15.0, 2.15.1, 2.15.2 and R-devel.
+        
+    o   Full R CMD check (i.e. including compatibility tests with the 9 Suggest-ed
+        packages and S4 tests run using testthat which in turn depends on packages
+        which depend on R >= 2.14.0) passes ok in 2.14.0 onwards.
+        
+    o   There are now 876 raw tests, as reported by test.data.table().
+    
+    o   v1.8.5 was on R-Forge only. v1.8.6 was released to CRAN.
+        Odd numbers are development, evens on CRAN.
+
+
+        *********************************************
+        **                                         **
+        **   CHANGES IN DATA.TABLE VERSION 1.8.4   **
+        **                                         **
+        **           On CRAN: 9 Nov 2012           **
+        **                                         **
+        *********************************************
 
 NEW FEATURES
 
     o   New printing options have been added :
             options(datatable.print.nrows=100)
             options(datatable.print.topn=10)
-        If the table to printed has more than nrows, the top and bottom topn rows
+        If the table to be printed has more than nrows, the top and bottom topn rows
         are printed. Otherwise, below nrows, the entire table is printed.
         Thanks to Allan Engelhardt and Melanie Bacou for useful discussions :
         http://lists.r-forge.r-project.org/pipermail/datatable-help/2012-September/001303.html
@@ -67,7 +106,7 @@ NEW FEATURES
         locations in DT. This implements FR#1962.
             DT[,.I[which.max(colB)],by=colA]      # row numbers of maxima by group
 
-    o   A new "!" prefix on i signals 'not-join' (a.k.a. 'not-where'), #1384(i).
+    o   A new "!" prefix on i signals 'not-join' (a.k.a. 'not-where'), #1384i.
             DT[-DT["a", which=TRUE, nomatch=0]]   # old not-join idiom, still works
             DT[!"a"]                              # same result, now preferred.
             DT[!J(6),...]                         # !J == not-join
@@ -82,7 +121,7 @@ NEW FEATURES
             * to leave DT[+J...] and DT[-J...] available for future use
             
     o   When with=FALSE, "!" may also be a prefix on j, #1384ii. This selects all but the named columns.
-            SF[,-match("somecol",names(DF))]              # works when somecol exists. If not, NA causes an error.
+            DF[,-match("somecol",names(DF))]              # works when somecol exists. If not, NA causes an error.
             DF[,-match("somecol",names(DF),nomatch=0)]    # works when somecol exists. Empty data.frame when it doesn't, silently.
             DT[,-match("somecol",names(DT)),with=FALSE]   # same issues.
             DT[,setdiff(names(DT),"somecol"),with=FALSE]  # works but you have to know order of arguments, and no warning if doesn't exist
@@ -274,7 +313,7 @@ USER VISIBLE CHANGES
         can be used on columns of a data.frame, for example.
         
     o   Efficiency warnings when joining between a factor column and a character column are now downgraded
-        to messages when verbosity is on, #2265(i). Thanks to Christian Hudon for the suggestion.
+        to messages when verbosity is on, #2265i. Thanks to Christian Hudon for the suggestion.
 
 THANKS TO BETA TESTING (bugs caught in 1.8.3 before release to CRAN)
 

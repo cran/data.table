@@ -1,5 +1,5 @@
 Package: data.table
-Version: 1.8.4
+Version: 1.8.6
 Title: Extension of data.frame for fast indexing, fast ordered joins,
         fast assignment, fast grouping and list columns.
 Author: M Dowle, T Short, S Lianoglou
@@ -17,6 +17,6 @@ License: GPL (>= 2)
 URL: http://datatable.r-forge.r-project.org/
 BugReports: https://r-forge.r-project.org/tracker/?group_id=240
 ByteCompile: TRUE
-Packaged: 2012-11-09 14:39:44 UTC; mdowle
+Packaged: 2012-11-13 01:08:06 UTC; mdowle
 Repository: CRAN
-Date/Publication: 2012-11-09 15:23:05
+Date/Publication: 2012-11-13 13:28:37
