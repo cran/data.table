@@ -9,13 +9,15 @@ dim.data.table <- function(x) {
 .global$print = TRUE
 .global$depthtrigger =
     if (exists(".global",.GlobalEnv) || getRversion() < "2.14.0") {
-        7L # this is either development, or pre 2.14, where package isn't compiled
+        9L # this is either development, or pre 2.14, where package isn't compiled
     } else {
-        2L # normal value when package is loaded in 2.14+ (where functions are compiled in namespace)
+        3L # normal value when package is loaded in 2.14+ (where functions are compiled in namespace)
     }
 
-print.data.table = function(x, nrows=getOption("datatable.print.nrows"), digits=NULL,
-                            topn=getOption("datatable.print.topn"), ...)
+print.data.table = function(x,
+    topn=getOption("datatable.print.topn"),   # (5) print the top topn and bottom topn rows with '---' inbetween
+    nrows=getOption("datatable.print.nrows"), # (100) under this the whole (small) table is printed, unless topn is provided
+    digits=NULL, ...)
 {
     if (!.global$print) {
         #  := in [.data.table sets print=FALSE, when appropriate, to suppress := autoprinting at the console
@@ -24,9 +26,10 @@ print.data.table = function(x, nrows=getOption("datatable.print.nrows"), digits=
     }
     if (!is.numeric(nrows)) nrows = 100L
     if (!is.infinite(nrows)) nrows = as.integer(nrows)
-    if (nrows <= 0L) return(invisible())
+    if (nrows <= 0L) return(invisible())   # ability to turn off printing
     if (!is.numeric(topn)) topn = 5L
-    topn = as.integer(topn)
+    topnmiss = missing(topn)
+    topn = max(as.integer(topn),1L)
     if (nrow(x) == 0L) {
         if (length(x)==0L)
            cat("NULL data.table\n")
@@ -34,20 +37,14 @@ print.data.table = function(x, nrows=getOption("datatable.print.nrows"), digits=
            cat("Empty data.table (0 rows) of ",length(x)," col",if(length(x)>1L)"s",": ",paste(head(names(x),6),collapse=","),if(ncol(x)>6)"...","\n",sep="")
         return()
     }
-    printdots=FALSE
-
-    if (topn * 2 >= nrows) {
-        ## If nrows is set to a very small number, you might just print the whole data.table
-        ## with a `---` in the middle, anyway.
-        topn = max(floor(nrows / 3), 1L)
-    }
-    if (nrow(x)>nrows) {
+    if (topn*2<nrow(x) && (nrow(x)>nrows || !topnmiss)) {
         toprint = rbind(head(x, topn), tail(x, topn))
         rn = c(seq_len(topn), seq.int(to=nrow(x), length.out=topn))
         printdots = TRUE
     } else {
         toprint = x
         rn = seq_len(nrow(x))
+        printdots = FALSE
     }
     toprint=format.data.table(toprint, digits=digits, na.encode = FALSE)
     rownames(toprint)=paste(format(rn,right=TRUE),":",sep="")
@@ -168,20 +165,19 @@ data.table = function(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
         }
         if (nrows[i]==0L) stop("Item ",i," has no length. Provide at least one item (such as NA, NA_integer_ etc) to be repeated to match the ",nr," rows in the longest column. Or, all columns can be 0 length, for insert()ing rows into.")
         if (nr%%nrows[i] == 0L) {
-            if (nrows[i]<nr && (is.atomic(xi) || is.list(xi))) {
+            if (is.data.frame(xi)) {   # including data.table
+                ..i = rep(seq_len(nrow(xi)), length.out = nr)
+                x[[i]] = xi[..i,,drop=FALSE]
+                next
+            }
+            if (is.atomic(xi) || is.list(xi)) {
                 # TO DO: surely use set() here, or avoid the coercion
                 x[[i]] = rep(xi, length.out = nr)
                 next
             }
-            # don't know why this is here, take it out and see what bites
-            # if (is.character(xi) && class(xi) == "AsIs") {
-            #    cl <- class(xi)
-            #    x[[i]] <- list(structure(rep(xi, length.out = nr), class = cl))
-            #    next
-            #}
             stop("problem recycling column ",i,", try a simpler type")
         }
-        stop("arguments cannot be silently repeated to match max nr: ", paste(unique(nrows), collapse = ", "))
+        stop("argument ",i," (nrow ",nrows[i],") cannot be recycled without remainder to match longest nrow (",nr,")")
     }
     if (any(numcols>0L)) {
         value = vector("list",sum(pmax(numcols,1L)))
@@ -225,7 +221,7 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
     x
 }
 
-"[.data.table" = function (x, i, j, by, keyby, with=TRUE, nomatch=getOption("datatable.nomatch"), mult="all", roll=FALSE, rolltolast=FALSE, which=FALSE, .SDcols, verbose=getOption("datatable.verbose"), drop=NULL)
+"[.data.table" = function (x, i, j, by, keyby, with=TRUE, nomatch=getOption("datatable.nomatch"), mult="all", roll=FALSE, rollends=if (roll=="nearest") c(TRUE,TRUE) else {if (roll>=0) c(FALSE,TRUE) else c(TRUE,FALSE)}, which=FALSE, .SDcols, verbose=getOption("datatable.verbose"), allow.cartesian=getOption("datatable.allow.cartesian"), drop=NULL, rolltolast=FALSE)
 {
     # ..selfcount <<- ..selfcount+1  # in dev, we check no self calls, each of which doubles overhead, or could
     # test explicitly if the caller is [.data.table (even stronger test. TO DO.)
@@ -239,8 +235,18 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
         return(ans)
     }
     if (!mult %chin% c("first","last","all")) stop("mult argument can only be 'first','last' or 'all'")
-    if (roll && rolltolast) stop("roll and rolltolast cannot both be true")
-    # TO DO. Removed for now ... if ((roll || rolltolast) && missing(mult)) mult="last" # for when there is exact match to mult. This does not control cases where the roll is mult, that is always the last one.
+    if (length(roll)!=1L || is.na(roll)) stop("roll must be a single TRUE, FALSE, positive/negative integer/double including +Inf and -Inf or 'nearest'")
+    if (is.character(roll)) {
+        if (roll!="nearest") stop("roll is '",roll,"' (type character). Only valid character value is 'nearest'.")
+    } else {
+        roll = if (isTRUE(roll)) +Inf else as.double(roll)
+    }
+    force(rollends)
+    if (isTRUE(rolltolast)) { roll=+Inf; rollends=c(FALSE,FALSE) }  # for backwards compatibility (rolltolast is deprecated)
+    if (!is.logical(rollends)) stop("rollends must be a logical vector")
+    if (length(rollends)>2) stop("rollends must be length 1 or 2")
+    if (length(rollends)==1) rollends=rep(rollends,2)
+    # TO DO (document/faq/example). Removed for now ... if ((roll || rolltolast) && missing(mult)) mult="last" # for when there is exact match to mult. This does not control cases where the roll is mult, that is always the last one.
     missingnomatch = missing(nomatch)
     if (!is.na(nomatch) && nomatch!=0L) stop("nomatch must either be NA or 0, or (ideally) NA_integer_ or 0L")
     nomatch = as.integer(nomatch)
@@ -333,7 +339,7 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
                         # Retain original levels of i's factor columns in factor to factor joins (important when NAs,
                         # see tests 687 and 688).
                     }
-                    if ((roll || rolltolast) && lc==length(leftcols)) stop("Attempting roll join on factor column i.",names(i)[lc],". Only integer, double or character colums may be roll joined.")   # because the chmatch on next line returns NA for missing chars in x (rather than some integer greater than existing).
+                    if (roll!=0.0 && a==length(leftcols)) stop("Attempting roll join on factor column x.",names(x)[rc],". Only integer, double or character colums may be roll joined.")   # because the chmatch on next line returns NA for missing chars in x (rather than some integer greater than existing). Note roll!=0.0 is ok in this 0 special floating point case e.g. as.double(FALSE)==0.0 is ok, and "nearest"!=0.0 is also true.
                     newfactor = chmatch(levels(i[[lc]]), levels(x[[rc]]), nomatch=NA_integer_)[i[[lc]]]
                     levels(newfactor) = levels(x[[rc]])
                     class(newfactor) = "factor"
@@ -341,7 +347,7 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
                     # NAs can be produced by this level match, in which case the C code (it knows integer value NA)
                     # can skip over the lookup. It's therefore important we pass NA rather than 0 to the C code.
                 }
-                if (is.integer(x[[rc]]) && is.real(i[[lc]])) {
+                if (is.integer(x[[rc]]) && is.double(i[[lc]])) {
                     # TO DO: add warning if reallyreal about loss of precision
                     # or could coerce in binary search on the fly, at cost
                     if (verbose) cat("Coercing 'double' column i.'",icnam,"' to 'integer' to match type of x.'",xcnam,"'. Please avoid coercion for efficiency.\n",sep="")
@@ -349,7 +355,7 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
                     mode(newval) = "integer"  # retains column attributes (such as IDateTime class)
                     set(i,j=lc,value=newval)
                 }
-                if (is.real(x[[rc]]) && is.integer(i[[lc]])) {
+                if (is.double(x[[rc]]) && is.integer(i[[lc]])) {
                     if (verbose) cat("Coercing 'integer' column i.'",icnam,"' to 'double' to match type of x.'",xcnam,"'. Please avoid coercion for efficiency.\n",sep="")
                     newval = i[[lc]]
                     mode(newval) = "double"
@@ -360,7 +366,7 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
             len__ = integer(nrow(i))
             allLen1 = TRUE
             if (verbose) {last.started.at=proc.time()[3];cat("Starting binary search ...");flush.console()}
-            .Call(Cbinarysearch, i, x, as.integer(leftcols-1L), as.integer(rightcols-1L), haskey(i), roll, rolltolast, nomatch, sqrt(.Machine$double.eps), f__, len__, allLen1)
+            .Call(Cbinarysearch, i, x, as.integer(leftcols-1L), as.integer(rightcols-1L), haskey(i), roll, rollends, nomatch, sqrt(.Machine$double.eps), f__, len__, allLen1)
             if (verbose) {cat("done in",round(proc.time()[3]-last.started.at,3),"secs\n");flush.console}
             # length of input nomatch (single 0 or NA) is 1 in both cases.
             # When no match, len__ is 0 for nomatch=0 and 1 for nomatch=NA, so len__ isn't .N
@@ -368,7 +374,7 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
             for (ii in resetifactor) set(i,j=ii,value=origi[[ii]])
             if (mult=="all") {
                 if (!missing(by) || which || missing(j) || !with || notjoin) {
-                    irows = if (allLen1) f__ else vecseq(f__,len__)
+                    irows = if (allLen1) f__ else vecseq(f__,len__,if(allow.cartesian)NULL else as.integer(max(nrow(x),nrow(i))))
                     if (!missing(by) && !which && !missing(j) && with && !notjoin)
                         potentialredundantby = TRUE
                 } else {
@@ -457,15 +463,19 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
     lhs = NULL
     av = all.vars(jsub,TRUE)
     newnames = NULL
+    suppPrint = identity
     if (length(av) && av[1L] == ":=") {
         if (identical(attr(x,".data.table.locked"),TRUE)) stop(".SD is locked. Using := in .SD's j is reserved for possible future use; a tortuously flexible way to modify by group. Use := in j directly to modify by group by reference.")
         if (notj) stop("doesn't make sense to combine !j with :=")
-        if (.Call(CEvalDepth)<=.global$depthtrigger)
-            .global$print = FALSE
+        if (Cstack_info()[["eval_depth"]] <= .global$depthtrigger) {
+            suppPrint = function(x) { .global$print=FALSE; x }
+            # Suppress print when returns ok not on error, bug #2376. Thanks to: http://stackoverflow.com/a/13606880/403310
+            # All appropriate returns following this point are wrapped i.e. return(suppPrint(x)).
+        }
         if (!is.null(irows)) {
             if (!length(irows)) {
                 if (verbose) cat("No rows pass i clause so quitting := early with no changes made.\n")
-                return(x)
+                return(suppPrint(x))
             }
             if (!missing(keyby)) stop("When i is present, keyby := on a subset of rows doesn't make sense. Either change keyby to by, or remove i")
         }
@@ -510,7 +520,7 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
             m[is.na(m)] = ncol(x)+seq_len(length(newnames))
             cols = as.integer(m)
             if ((ok<-selfrefok(x,verbose))==0L)   # ok==0 so no warning when loaded from disk (-1) [-1 considered TRUE by R]
-                warning("Invalid .internal.selfref detected and fixed by taking a copy of the whole table, so that := can add this new column by reference. At an earlier point, this data.table has been copied by R. Avoid key<-, names<- and attr<- which in R currently (and oddly) may copy the whole data.table. Use set* syntax instead to avoid copying: setkey(), setnames() and setattr(). Also, list(DT1,DT2) will copy the entire DT1 and DT2 (R's list() copies named objects), use reflist() instead if needed (to be implemented). If this message doesn't help, please report to datatable-help so the root cause can be fixed.")
+                warning("Invalid .internal.selfref detected and fixed by taking a copy of the whole table, so that := can add this new column by reference. At an earlier point, this data.table has been copied by R (or been created manually using structure() or similar). Avoid key<-, names<- and attr<- which in R currently (and oddly) may copy the whole data.table. Use set* syntax instead to avoid copying: setkey(), setnames() and setattr(). Also, list(DT1,DT2) will copy the entire DT1 and DT2 (R's list() copies named objects), use reflist() instead if needed (to be implemented). If this message doesn't help, please report to datatable-help so the root cause can be fixed.")
             if ((ok<1L) || (truelength(x) < ncol(x)+length(newnames))) {
                 n = max(ncol(x)+100, ncol(x)+2*length(newnames))
                 name = substitute(x)
@@ -664,10 +674,10 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
                 if (!is.na(nomatch)) irows = irows[irows!=0L]
                 if (length(allbyvars)) {
                     if (verbose) cat("i clause present and columns used in by detected, only these subset:",paste(allbyvars,collapse=","),"\n")
-                    xss = x[irows,allbyvars,with=FALSE,nomatch=nomatch,mult=mult,roll=roll,rolltolast=rolltolast]
+                    xss = x[irows,allbyvars,with=FALSE,nomatch=nomatch,mult=mult,roll=roll,rollends=rollends]
                 } else {
                     if (verbose) cat("i clause present but columns used in by not detected. Having to subset all columns before evaluating 'by': '",deparse(by),"'\n",sep="")
-                    xss = x[irows,nomatch=nomatch,mult=mult,roll=roll,rolltolast=rolltolast]
+                    xss = x[irows,nomatch=nomatch,mult=mult,roll=roll,rollends=rollends]
                 }
                 byval = eval(bysub, xss, parent.frame())
                 xnrow = nrow(xss)
@@ -865,7 +875,7 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
         if (!is.null(lhs)) {
             if (verbose) cat("Assigning to ",if (is.null(irows)) "all " else paste(length(irows),"row subset of "), nrow(x)," rows\n",sep="")
             .Call(Cassign,x,irows,cols,newnames,jval,verbose)
-            return(x)
+            return(suppPrint(x))
         }
         if ((is.call(jsub) && is.list(jval) && !is.object(jval)) || !missing(by)) {
             # is.call: selecting from a list column should return list
@@ -1008,7 +1018,7 @@ is.sorted = function(x)identical(FALSE,is.unsorted(x))    # NA's anywhere need t
                 setkeyv(x,cnames)  # TO DO: setkey before grouping to get memcpy benefit.
             else warning(":= keyby not straightforward character column names or list() of column names, treating as a by:",paste(cnames,collapse=","),"\n")
         }
-        return(x)
+        return(suppPrint(x))
     }
     if (is.null(ans)) {
         ans = as.data.table.list(lapply(groups,"[",0L))  # side-effects only such as test 168
@@ -1316,7 +1326,7 @@ tail.data.table = function(x, n=6, ...) {
             if (!all(names(allargs[[i]]) %chin% nm))
                 stop("Some colnames of argument ",i," (",paste(setdiff(names(allargs[[i]]),nm),collapse=","),") are not present in colnames of item 1. If an argument has colnames they can be in a different order, but they must all be present. Alternatively, you can drop names (by using an unnamed list) and the columns will then be joined by position. Or, set use.names=FALSE.")
             if (!all(names(allargs[[i]]) == nm))
-                warning("Argument ",i," has names in a different order. Columns will be bound by name for consistency with base. Alternatively, you can drop names (by using an unnamed list) and the columns will then be joined by position. Or, set use.names=FALSE.")
+                if (missing(use.names)) warning("Argument ",i," has names in a different order. Columns will be bound by name for consistency with base. You can drop names (by using an unnamed list) and the columns will then be joined by position, or set use.names=FALSE. Alternatively, explicitly setting use.names to TRUE will remove this warning.")
                 allargs[[i]] = as.list(allargs[[i]])[nm]
                 # TO DO : could use setcolorder() to speed this line up but i) it only currently works on data.table
                 # (not data.frame or list) and ii) it would change the original by reference so would need to be copied
@@ -1624,12 +1634,13 @@ setnames = function(x,old,new) {
     if (!length(attr(x,"names"))) stop("x has no column names")  # because setnames is for user user. Internally, use setattr(x,"names",...)
     if (missing(new)) {
         # for setnames(DT,new); e.g., setnames(DT,c("A","B")) where ncol(DT)==2
+        if (!is.character(old)) stop("Passed a vector of type '",typeof(old),"'. Needs to be type 'character'.")
         if (length(old) != ncol(x)) stop("Can't assign ",length(old)," names to a ",ncol(x)," column data.table")
         m = chmatch(key(x), names(x))
         if (length(m) && any(is.na(m))) stop("Internal error: attr(x,'sorted') not all in names(x)")
         .Call(Csetcharvec, names(x), seq_along(names(x)), old)
         # setcharvec (rather than setattr) so as not to affect selfref.
-        if (length(m)) .Call(Csetcharvec, attr(x,"sorted"), m, old[m])
+        if (length(m)) .Call(Csetcharvec, attr(x,"sorted"), seq_along(key(x)), old[m])
         return(invisible(x))
     } else {
         if (missing(old)) stop("When 'new' is provided, 'old' must be provided too")
@@ -1706,7 +1717,7 @@ rbindlist = function(l) {
     alloc.col(ans)
 }
 
-vecseq = function(x,y) .Call(Cvecseq,x,y)
+vecseq = function(x,y,clamp) .Call(Cvecseq,x,y,clamp)
 
 ":=" = function(LHS,RHS) stop(':= is defined for use in j only, and (currently) only once; i.e., DT[i,col:=1L] and DT[,newcol:=sum(colB),by=colA] are ok, but not DT[i,col]:=1L, not DT[i]$col:=1L and not DT[,{newcol1:=1L;newcol2:=2L}]. Please see help(":="). Check is.data.table(DT) is TRUE.')
 

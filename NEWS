@@ -6,9 +6,135 @@ This NEWS file summarises the main changes.
 
         *********************************************
         **                                         **
+        **   CHANGES IN DATA.TABLE VERSION 1.8.8   **
+        **                                         **
+        **          On CRAN : 06 Mar 2013          **
+        **                                         **
+        *********************************************
+
+NEW FEATURES
+
+    o   New function fread(), a fast and friendly file reader.
+        *  header, skip, nrows, sep and colClasses are all auto detected.
+        *  integers>2^31 are detected and read natively as bit64::integer64.
+        *  accepts filenames, URLs and "A,B\n1,2\n3,4" directly
+        *  new implementation entirely in C
+        *  with a 50MB .csv, 1 million rows x 6 columns :
+             read.csv("test.csv")                                        # 30-60 sec (varies)
+             read.table("test.csv",<all known tricks and known nrows>)   #    10 sec
+             fread("test.csv")                                           #     3 sec
+        * airline data: 658MB csv (7 million rows x 29 columns)
+             read.table("2008.csv",<all known tricks and known nrows>)   #   360 sec
+             fread("2008.csv")                                           #    40 sec
+        See ?fread. Many thanks to Chris Neff, Garrett See, Hideyoshi Maeda, Patrick
+        Nic, Akhil Behl and Aykut Firat for ideas, discussions and beta testing.
+        ** The fread function is still under development; e.g., dates are read as
+        ** character and embedded quotes ("\"" and """") cause problems.
+        
+    o   New argument 'allow.cartesian' (default FALSE) added to X[Y] and merge(X,Y), #2464.
+        Prevents large allocations due to misspecified joins; e.g., duplicate key values in Y
+        joining to the same group in X over and over again. The word 'cartesian' is used loosely
+        for when more than max(nrow(X),nrow(Y)) rows would be returned. The error message is
+        verbose and includes advice. Thanks to a question by Nick Clark, help from user1935457
+        and a detailed reproducible crash report from JR.
+          http://stackoverflow.com/questions/14231737/greatest-n-per-group-reference-with-intervals-in-r-or-sql
+        If the new option affects existing code you can set :
+            options(datatable.allow.cartesian=TRUE)
+        to restore the previous behaviour until you have time to address.
+        
+    o   In addition to TRUE/FALSE, 'roll' may now be a positive number (roll forwards/LOCF) or
+        negative number (roll backwards/NOCB). A finite number limits the distance a value is
+        rolled (limited staleness). roll=TRUE and roll=+Inf are equivalent.
+        'rollends' is a new parameter holding two logicals. The first observation is rolled
+        backwards if rollends[1] is TRUE. The last observation is rolled forwards if rollends[2]
+        is TRUE. If roll is a finite number, the same limit applies to the ends.
+        New value roll='nearest' joins to the nearest value (either backwards or forwards) when
+        the value falls in a gap, and to the end value according to 'rollends'.
+        'rolltolast' has been deprecated. For backwards compatibility it is converted to
+        {roll=TRUE;rollends=c(FALSE,FALSE)}.
+        This implements FR#2300 & FR#206 and helps several recent S.O. questions :
+            https://r-forge.r-project.org/tracker/?group_id=240&atid=978&func=detail&aid=2300
+        
+BUG FIXES
+
+    o   setnames(DT,c(NA,NA)) is now a type error rather than a segfault, #2393.
+        Thanks to Damian Betebenner for reporting.
+
+    o   rbind() no longers warns about inputs having columns in a different order
+        if use.names has been explicitly set TRUE, #2385. Thanks to Simon Judes
+        for reporting.
+        
+    o   := by group with 0 length RHS could crash in some circumstances. Thanks to
+        Damien Challet for the reproducible example using obfuscated data and 
+        pinpointing the version that regressed. Fixed and test added.
+        
+    o   Error 'attempting to roll join on a factor column' could occur when a non last
+        join column was a factor column, #2450. Thanks to Blue Magister for
+        highlighting.
+        
+    o   NA in a join column of type double could cause both X[Y] and merge(X,Y)
+        to return incorrect results, #2453. Due to an errant x==NA_REAL in the C source
+        which should have been ISNA(x). Support for double in keyed joins is a relatively
+        recent addition to data.table, but embarrassing all the same. Fixed and tests added.
+        Many thanks to statquant for the thorough and reproducible report :
+        http://stackoverflow.com/questions/14076065/data-table-inner-outer-join-to-merge-with-na
+        
+    o   setnames() of all column names (such as setnames(DT,toupper(names(DT)))) failed on a
+        keyed table where columns 1:length(key) were not the key. Fixed and test added.
+        
+    o   setkey could sort 'double' columns (such as POSIXct) incorrectly when not the
+        last column of the key, #2484. In data.table's C code :
+            x[a] > x[b]-tol
+        should have been :
+            x[a]-x[b] > -tol  [or  x[b]-x[a] < tol ]
+        The difference may have been machine/compiler dependent. Many thanks to statquant
+        for the short reproducible example. Test added.
+        
+    o   cbind(DT,1:n) returned an invalid data.table (some columns were empty) when DT
+        had one row, #2478. Grouping now warns if j evaluates to an invalid data.table,
+        to aid tracing root causes like this in future. Tests added. Many thanks to
+        statquant for the reproducible example revealed by his interesting solution
+        and to user1935457 for the assistance :
+            http://stackoverflow.com/a/14359701/403310
+            
+    o   merge(...,all.y=TRUE) was 'setcolorder' error if a y column name included a space
+        and there were rows in y not in x, #2555. The non syntactically valid column names
+        are now preserved as intended. Thanks to Simon Judes for reporting. Tests added.
+        
+    o   An error in := no longer suppresses the next print, #2376; i.e.,
+            > DT[,foo:=colnameTypo+1]
+            Error: object 'colnameTypo' not found
+            > DT    # now prints DT ok
+            > DT    # used to have to type DT a second time to see it
+        Many thanks to Charles, Joris Meys, and, Spacedman whose solution is now used
+        by data.table internally (http://stackoverflow.com/a/13606880/403310).
+
+NOTES
+
+    o   print(DT,topn=2), where topn is provided explicitly, now prints the top and bottom 2 rows
+        even when nrow(x)<100 [options()$datatable.print.nrows]. And the 'topn' argument is now first
+        for easier interactive use: print(DT,2), head(DT,2) and tail(DT,2).
+        
+    o   The J() alias is now removed *outside* DT[...], but will still work inside DT[...];
+        i.e., DT[J(...)] is fine. As warned in v1.8.2 (see below in this file) and deprecated
+        with warning() in v1.8.6. This resolves the conflict with function J() in package
+        XLConnect (#1747) and rJava (#2045).
+        Please use data.table() directly instead of J(), outside DT[...].
+        
+    o   ?merge.data.table and FAQ 1.12 have been improved (#2457), and FAQ 2.24 added.
+        Thanks to dnlbrky for highlighting : http://stackoverflow.com/a/14164411/403310.
+        
+    o   There are now 943 raw tests, as reported by test.data.table().
+    
+    o   v1.8.7 was on R-Forge only. v1.8.8 was released to CRAN.
+        Odd numbers are development, evens on CRAN.
+
+
+        *********************************************
+        **                                         **
         **   CHANGES IN DATA.TABLE VERSION 1.8.6   **
         **                                         **
-        **           On CRAN: 13 Nov 2012          **
+        **          On CRAN : 13 Nov 2012          **
         **                                         **
         *********************************************
 
@@ -1799,9 +1925,8 @@ NEW FEATURES
         data.table-style indexing for i. Both of these changes may
         introduce incompatibilities for existing code.
 
-    o   Logical columns are now allowed in keys. Logical columns (and
-        expressions that evaluate to logical) are now allowed in 'by'.
-        Thanks to David Winsemius for highlighting.
+    o   Logical columns are now allowed in keys and in 'by', as are expressions
+	    that evaluate to logical. Thanks to David Winsemius for highlighting.
 
 
 BUG FIXES

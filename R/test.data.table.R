@@ -3,8 +3,12 @@ test.data.table = function(verbose=FALSE) {
     if (exists("test.data.table",.GlobalEnv,inherits=FALSE)) {
         # package developer
         if ("package:data.table" %in% search()) stop("data.table package loaded")
-        d = path.expand("~/R/datatable/pkg/inst/tests")
-        assign(".devtesting",TRUE,envir=.GlobalEnv)
+        if (.Platform$OS.type == "unix")
+            d = path.expand("~/R/datatable/pkg/inst/tests")
+        else {
+            if (!"pkg" %in% dir()) stop("'pkg' not in dir()") 
+            d = paste(getwd(),"/pkg/inst/tests",sep="")
+        }
     } else {
         # user
         d = paste(getNamespaceInfo("data.table","path"),"/tests",sep="")
@@ -14,6 +18,8 @@ test.data.table = function(verbose=FALSE) {
     # TO DO: reinstate solution for C locale of CRAN's Mac (R-Forge's Mac is ok)
     # oldlocale = Sys.getlocale("LC_CTYPE")
     # Sys.setlocale("LC_CTYPE", "")   # just for CRAN's Mac to get it off C locale (post to r-devel on 16 Jul 2012)
+    olddir = setwd(d)
+    on.exit(setwd(olddir))
     for (fn in file.path(d, 'tests.Rraw')) {    # not testthat
         cat("Running",fn,"\n")
         oldverbose = getOption("datatable.verbose")
