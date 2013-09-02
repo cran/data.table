@@ -58,7 +58,7 @@ merge.data.table <- function(x, y, by = NULL, all = FALSE, all.x = all,
     end = setdiff(names(y),by)     # X[Y] sytax puts JIS i columns at the end, merge likes them alongside i.
     setcolorder(dt,c(setdiff(names(dt),end),end))
     
-    if (all.y) {
+    if (all.y && nrow(y)) {  # If y does not have any rows, no need to proceed
         # Perhaps not very commonly used, so not a huge deal that the join is redone here.
         missingyidx = seq.int(nrow(y))
         whichy = y[xkey,which=TRUE,nomatch=0,allow.cartesian=allow.cartesian]  # !!TO DO!!:  Use not join (i=-xkey) here now that's implemented
@@ -68,7 +68,7 @@ merge.data.table <- function(x, y, by = NULL, all = FALSE, all.x = all,
             yy <- y[missingyidx]
             othercolsx <- setdiff(names(xkey), by)
             if (length(othercolsx)) {
-                tmp = rep(NA_integer_, length(missingyidx))
+                tmp = rep.int(NA_integer_, length(missingyidx))
                 yy <- cbind(yy, xkey[tmp, othercolsx, with = FALSE])
                 setnames(yy, make.unique(names(yy)))
             }
@@ -86,5 +86,4 @@ merge.data.table <- function(x, y, by = NULL, all = FALSE, all.x = all,
     
     dt
 }
-
 

@@ -19,39 +19,62 @@ if (!exists("test.data.table",.GlobalEnv,inherits=FALSE)) {
 options(warn=2)
 nfail = ntest = lastnum = 0
 whichfail = NULL
-test = function(num,x,y=NULL,error,warning,output) {
+compactprint = function(DT, topn=2) {
+    cn = paste(" [Key=",paste(key(DT),collapse=",")," Types=",paste(substring(sapply(DT,class),1,3),collapse=","),"]",sep="")
+    print(copy(DT)[,(cn):=""], topn=topn)
+    invisible()
+}
+test = function(num,x,y,error=NULL,warning=NULL,output=NULL) {
+    # Usage:
+    # i) tests that x equals y when both x and y are supplied, the most common usage
+    # ii) tests that x is TRUE when y isn't supplied
+    # iii) if error is supplied, y should be missing and x is tested to result in an error message matching the pattern
+    # iv) if warning is supplied, y (if supplied) is checked to equal x, and x should result in a warning message matching the pattern
+    # v) if output is supplied, x is evaluated and printed and the output is checked to match the pattern
+    # At most one of error, warning or output may be supplied, all single character strings (passed to grep)
+    # num just needs to be numeric and unique. We normally increment integers at the end, but inserts can be made using decimals e.g. 10,11,11.1,11.2,12,13,...
+    # Motivations:
+    # 1) we'd like to know all tests that fail not just stop at the first. This often helps by revealing a common feature across a set of
+    #    failing tests
+    # 2) test() tests more deeply than a diff on console output and uses a data.table appropriate definition of "equals" different
+    #    from all.equal and different to identical related to row.names and unused factor levels
+    # 3) each test has a unique id which we refer to in commit messages, emails etc.
     .lasttest <<- num
     ntest <<- ntest + 1
     lastnum <<- num
-    err <- if (missing(output)) try(x,TRUE) else out<-paste(capture.output(try(x,TRUE)),collapse="")
-    if (!missing(error) || !missing(warning)) {
-        type = ifelse(!missing(error),"error","warning")
-        patt = txt = ifelse(!missing(error),error,warning)
+    err <- if (is.null(output)) try(x,TRUE) else out<-paste(capture.output(try(x,TRUE)),collapse="")
+    if (!is.null(error) || !is.null(warning)) {
+        type = ifelse(!is.null(error),"error","warning")
+        patt = txt = ifelse(!is.null(error),error,warning)
         patt = gsub("[(]","[(]",patt)
         patt = gsub("[)]","[)]",patt)
         patt = gsub("\\^","\\\\^", patt)  # for test 923 containing 2^31 in error message
+        observedtype = ifelse(length(grep("converted from warning",err)), "warning", "error")
         if (! (inherits(err,"try-error") &&
-              length(grep(patt,err)) &&
-              ((type=="error" && !length(grep("converted from warning",err))) ||
-               (type=="warning" && length(grep("converted from warning",err))))) ) {
+               length(grep(patt,err)) &&
+               type==observedtype)) {
             cat("Test",num,"didn't produce correct",type,":\n")
-            cat("Expected: '",txt,"'\n",sep="")
-            cat("Observed: '",gsub("^[(]converted from warning[)] ","",gsub("\n$","",gsub("^Error.* : \n  ","",as.character(err)))),"'\n",sep="")
+            cat(">",deparse(substitute(x)),"\n")
+            cat("Expected ",type,": '",txt,"'\n",sep="")
+            if (!inherits(err,"try-error"))
+                cat("Observed: no error or warning\n")
+            else
+                cat("Observed ",observedtype,": '",gsub("^[(]converted from warning[)] ","",gsub("\n$","",gsub("^Error.* : \n  ","",as.character(err)))),"'\n",sep="")
             nfail <<- nfail + 1
             whichfail <<- c(whichfail, num)
             return()
         }
         if (type=="warning")
-            err <- if (missing(output)) x<-try(suppressWarnings(x),TRUE) else out<-paste(capture.output(x<-try(suppressWarnings(x),TRUE)),collapse="")
+            err <- if (is.null(output)) x<-try(suppressWarnings(x),TRUE) else out<-paste(capture.output(x<-try(suppressWarnings(x),TRUE)),collapse="")
         else return()
     }
-    if (inherits(err,"try-error") || inherits(err<-try(y,TRUE),"try-error")) {
+    if (inherits(err,"try-error") || (!missing(y) && inherits(err<-try(y,TRUE),"try-error"))) {
         cat("Test",num,err)
         nfail <<- nfail + 1
         whichfail <<- c(whichfail, num)
         return()
     }
-    if (!missing(output)) {
+    if (!is.null(output)) {
         output = gsub("[[]","<LBRACKET>",output)
         output = gsub("[]]","<RBRACKET>",output)
         output = gsub("<LBRACKET>","[[]",output)
@@ -60,6 +83,7 @@ test = function(num,x,y=NULL,error,warning,output) {
         output = gsub("[)]","[)]",output)
         if (!length(grep(output,out))) {
             cat("Test",num,"didn't produce correct output:\n")
+            cat(">",deparse(substitute(x)),"\n")
             cat("Expected: '",output,"'\n",sep="")
             cat("Observed: '",out,"'\n",sep="")
             nfail <<- nfail + 1
@@ -70,12 +94,9 @@ test = function(num,x,y=NULL,error,warning,output) {
     }
     if (missing(y)) {
         if (isTRUE(as.vector(x))) return()  # as.vector to drop names of a named vector such as returned by system.time
-        cat("Test",num,"expected TRUE (y is missing) but observed:\n")
-        if (is.data.table(x)) {
-            print(x,topn=2)
-            cat("Key: ",paste(key(x),collapse=","),"\n")
-            cat("Types: ",paste(sapply(x,class),collapse=","),"\n")
-        } else print(x)
+        cat("Test",num,"expected TRUE but observed:\n")
+        cat(">",deparse(substitute(x)),"\n")
+        if (is.data.table(x)) compactprint(x) else print(x)
         nfail <<- nfail + 1
         whichfail <<- c(whichfail, num)
         return()
@@ -100,18 +121,13 @@ test = function(num,x,y=NULL,error,warning,output) {
             y = factor(y)
             if (identical(x,y)) return()
         }
+        if (is.atomic(x) && is.atomic(y) && isTRUE(all.equal(x,y))) return()   # For test 617 on r-prerel-solaris-sparc on 7 Mar 2013
     }
-    cat("Test",num,"ran without errors but failed check:\n")
-    if (is.data.table(x)) {
-        print(x,topn=2)
-        cat("Key: ",paste(key(x),collapse=","),"\n")
-        cat("Types: ",paste(sapply(x,class),collapse=","),"\n")
-    } else print(x)
-    if (is.data.table(y)) {
-        print(y,topn=2)
-        cat("Key: ",paste(key(y),collapse=","),"\n")
-        cat("Types: ",paste(sapply(y,class),collapse=","),"\n")
-    } else print(y)
+    cat("Test",num,"ran without errors but failed check that x equals y:\n")
+    cat("> x =",deparse(substitute(x)),"\n")
+    if (is.data.table(x)) compactprint(x) else print(x)
+    cat("> y =",deparse(substitute(y)),"\n")
+    if (is.data.table(y)) compactprint(y) else print(y)
     nfail <<- nfail + 1
     whichfail <<- c(whichfail, num)
 }
@@ -1175,7 +1191,7 @@ test(381, DT[,{if (a==2) {.SD$b[1]=10L;.SD} else .SD}, by=a], error="locked bind
 
 # test that direct := is trapped, but := within a copy of .SD is allowed (FAQ 4.5). See also tests 556-557.
 test(382, DT[,b:=.N*2L,by=a], data.table(a=rep(1:3,1:3),b=rep(2L*(1:3),1:3)))
-test(383, DT[,{z=10L;b:=z},by=a], error=":= is defined for use in j only, and (currently) only once")
+test(383, DT[,{z=10L;b:=z},by=a], error=":= and `:=`(...) are defined for use in j, once only and in particular ways")
 test(384, DT[,{mySD=copy(.SD);mySD[1,b:=99L];mySD},by=a], data.table(a=rep(1:3,1:3),b=c(99L,99L,4L,99L,6L,6L)))
 
 # somehow missed testing := on logical subset with mixed TRUE/FALSE, reported by Muhammad Waliji
@@ -1249,7 +1265,7 @@ test(413, key(cbind(DT,DT)), "x")
 test(414, key(cbind(DT,as.data.frame(DT))), "x")
 
 # Test friendly error when := is used in wrong place
-test(415, x:=1, error="defined for use in j only")
+test(415, x:=1, error="defined for use in j, once only and in particular ways")
 
 # Somehow never tested that X[Y] is error if X is unkeyed.
 DT = data.table(a=1:3,b=4:6)
@@ -1509,7 +1525,7 @@ DT = data.table(a=3:1,b=4:6)
 test(506, key(DT)<-"a", "a", warning="can copy the whole table")
 test(508, DT, data.table(a=1:3,b=6:4,key="a"))
 test(509, DT[,b:=10L], data.table(a=1:3,b=10L,key="a"))
-test(510, DT[,c:=11L], data.table(a=1:3,b=10L,c=11L,key="a"))  # Used to be warning about invalid .internal.selfref detected and fixed. As from v1.8.3 data.table() returns a NAMED==0 object, and key<- appears not to copy that. But within functions, key<- would still copy. TO DO: add tests.... 
+test(510, DT[,c:=11L], data.table(a=1:3,b=10L,c=11L,key="a"))  # Used to be warning about invalid .internal.selfref detected and fixed. As from v1.8.3 data.table() returns a NAMED==0 object, and key<- appears not to copy that. But within functions, key<- would still copy. TO DO: add tests....
 #test(511,)
 
 # Test new functons chmatch and %chin%
@@ -1862,12 +1878,12 @@ DT[c(2,5),x:=NA]  # seed chosen to get a group of size 2 and 3 in the first 5 to
 DT[c(3,4),y:=NA]
 tt1 = system.time(ans1<-DT[,list(mean(x),mean(y)),by=list(grp1,grp2)])    # 1.1s
 tt2 = system.time(ans2<-DT[,list(.Internal(mean(x)),.Internal(mean(y))),by=list(grp1,grp2)])  # 1.1s
-basemean = base::mean  # to isolate `::` itself
+basemean = base::mean  # to isolate time of `::` itself
 tt3 = system.time(ans3<-DT[,list(basemean(x),basemean(y)),by=list(grp1,grp2)])   # 11s
-test(646, identical(ans1, ans2))  # identical, not all.equal, deliberately as strong test
-test(647, identical(ans1, ans3))
+test(646, ans1, ans2)
+test(647, ans1, ans3)
 test(648, any(is.na(ans1$V1)) && !any(is.nan(ans1$V1)))
-if (.devtesting) test(649, tt1["user.self"] < 2*tt2["user.self"])   # should be same speed, but *2 as large margin
+if (.devtesting) test(649, tt1["user.self"] < 10*tt2["user.self"])   # should be same speed, but *10 as large margin
 if (.devtesting) test(650, tt1["user.self"] < tt3["user.self"]/2)   # 10 times faster, but test 2 times faster as large margin
 
 tt1 = system.time(ans1<-DT[,list(mean(x,na.rm=TRUE),mean(y,na.rm=TRUE)),by=list(grp1,grp2)])   # 2.0s
@@ -2032,7 +2048,7 @@ test(719, nrow(DT[, c(FALSE, FALSE, FALSE), with=FALSE]), 0L)
 DT = data.table(a = 1, b = 2, c = 4, key="a")
 test(720, DT[list(c(5,6,7)), .N, by=b], data.table(b=NA_real_,N=3L,key="b"))
 test(721, DT[list(c(5,6,7))][, .N, by=b], DT[list(c(5,6,7)), .N, by=b])
-test(722, DT[list(c(5,6,7)), .N, by=b, mult="first"], data.table(b=NA_real_,N=3L,key="b"))    
+test(722, DT[list(c(5,6,7)), .N, by=b, mult="first"], data.table(b=NA_real_,N=3L,key="b"))
 test(723, DT[list(c(5,6,7)), .N, by=b, nomatch=0], data.table(b=numeric(),N=integer(),key="b")) # Key here is correct. by is ordered (albeit empty)
 test(724, DT[list(c(5,6,7)), .N, by=b, nomatch=0], DT[list(c(5,6,7)),nomatch=0][,.N,by=b])      # Splitting should always be consistent
 
@@ -2085,7 +2101,7 @@ test(741, DT[,`:=`(4:6,7:9,10:12)], error="all arguments must be named")  # test
 test(742, DT[,3:6:=1L], error="outside.*range")
 test(743, DT[,2:3:=99L], data.table(c1=1:3,c2=99L,c3=99L))
 test(744, DT[,(ncol(DT)+1):=1L], error="outside.*range")
-test(745, DT[,ncol(DT):=1L], data.table(c1=1:3,c2=99L,c3=1L)) 
+test(745, DT[,ncol(DT):=1L], data.table(c1=1:3,c2=99L,c3=1L))
 
 # multiple LHS with by without by, #2215
 DT = data.table(a=letters[c(1:3,3L)],key="a")
@@ -2192,7 +2208,7 @@ test(783, DT[,.I,by=a]$.I, 1:8)
 test(784, DT[,.I[which.max(b)],by=a], data.table(a=1:4,V1=INT(2,4,6,8),key="a"))
 test(785, DT[J(2:4),.I,by=a%%2L], data.table(a=rep(0:1,c(4,2)),.I=INT(3,4,7,8,5,6),key="a"))
 test(786, DT[J(c(3,2,4)),list(.I,.GRP)], data.table(a=rep(c(3L,2L,4L),each=2),.I=INT(5,6,3,4,7,8),.GRP=rep(1:3,each=2L)))
-test(787, DT[J(3:2),`:=`(i=.I,grp=.GRP)][,list(i,grp)], data.table(i=INT(NA,NA,3:6,NA,NA),grp=INT(NA,NA,2,2,1,1,NA,NA))) 
+test(787, DT[J(3:2),`:=`(i=.I,grp=.GRP)][,list(i,grp)], data.table(i=INT(NA,NA,3:6,NA,NA),grp=INT(NA,NA,2,2,1,1,NA,NA)))
 
 # New not-join (a.k.a. not-select, since not just for data.table i but integer, logical and character too)
 DT = data.table(A=rep(1:3,each=2),B=1:6,key="A")
@@ -2318,7 +2334,7 @@ if ("package:xts" %in% search()) {  # e.g. when run via R CMD check
     # providing a last.data.table method and using Enhances and Imports in DESCRIPTION with import() and S3method() in
     # NAMESPACE but nothing I tried made last.data.table available to xts's last if xts was loaded above data.table (which was
     # frustrating to test as well, see comment to test 839 above).
-} 
+}
 
 # Test L[[1L]][,:=] updates by reference, #2204
 l = list(data.table(a=1:3), data.table(b=4:6))
@@ -2343,8 +2359,16 @@ options(datatable.alloccol=old)
 # Now create the list from named objected
 DT1 = data.table(a=1:3, b=4:6)
 DT2 = data.table(c=7:9)
-l = list(DT1, DT2)   # TO DO: implement reflist(). Same as list() but doesn't copy named inputs.
-test(853, l[[1]][,d:=10:12], data.table(a=1:3,b=4:6,d=10:12), warning="Invalid .internal.selfref detected and fixed.*R's list.*copies named objects")  # correct and desired warning
+l = list(DT1, DT2)
+if (getRversion() >= "3.1.0") {
+    # list() no longer copies NAMED inputs (a very welcome change in R 3.1.0, r63767)
+    test(853, address(DT1) == address(l[[1L]]))
+    w = NULL
+} else {
+    test(853, address(DT1) != address(l[[1L]]))
+    w = "Invalid .internal.selfref detected and fixed.*R's list() used to copy named objects"
+}
+test(854, l[[1]][,d:=10:12], data.table(a=1:3,b=4:6,d=10:12), warning = w)
 test(855, l[[1]], data.table(a=1:3,b=4:6,d=10:12))
 
 # Test setnames on data.frame, #2273.
@@ -2435,7 +2459,7 @@ DT[5,d:=""]
 DT[2,e:=+Inf]
 DT[3,e:=-Inf]
 DT[4,e:=NaN]  # write.table writes NaN as NA, though, and all.equal considers NaN==NA. fread would read NaN as NaN if "NaN" was in file
-write.table(DT,f<-tempfile(),sep=",",row.names=FALSE,quote=FALSE)  
+write.table(DT,f<-tempfile(),sep=",",row.names=FALSE,quote=FALSE)
 test(880, fread(f), as.data.table(read.csv(f,stringsAsFactors=FALSE)))
 test(881, fread(f), DT)
 DT[3,d:="NA"]
@@ -2491,7 +2515,7 @@ if ("package:bit64" %in% search()) {
     test(897, class(DT$b), "integer64")
     test(898, fread(f), DT)
     unlink(f)
-    
+
     # Test all mid read bump coercions
     DT[,a2:=as.integer64(a)][,a3:=as.double(a)][,a4:=gsub(" ","",format(a))]
     DT[,b2:=as.double(b)][,b3:=gsub(" ","",format(b))]
@@ -2502,7 +2526,7 @@ if ("package:bit64" %in% search()) {
     DT[15, b2:=1234567890123.45]
     DT[16, b3:="12345678901234567890A"]  # A is needed otherwise read as double with loss of precision (TO DO: should detect and bump to STR)
     DT[17, r2:="3.14A"]
-    write.table(DT,f<-tempfile(),sep=",",row.names=FALSE,quote=FALSE)  
+    write.table(DT,f<-tempfile(),sep=",",row.names=FALSE,quote=FALSE)
     test(899, fread(f), DT, warning="Bumped column.*to type character.*may not be lossless")
     unlink(f)
 } else {
@@ -2511,7 +2535,7 @@ if ("package:bit64" %in% search()) {
 
 # getwd() has been set by test.data.table() to the location of this tests.Rraw file. Test files should be in the same directory.
 f = "ch11b.dat"  # http://www.stats.ox.ac.uk/pub/datasets/csb/ch11b.dat
-test(900, fread(f), as.data.table(read.table(f)))  
+test(900, fread(f), as.data.table(read.table(f)))
 
 f = "1206FUT.txt"    # a CRLF line ending file (DOS)
 test(901, DT<-fread(f), as.data.table(read.table(f,sep="\t",header=TRUE,colClasses=as.vector(sapply(DT,class)))))
@@ -2549,7 +2573,7 @@ test(911, fread("02-FEB-2009,09:55:04:962,26022009,2500,PE,36,500,44,200,11850,1
 txt = "A;B;C|D,E\n1;3;4|5,6\n2;4;6|8,10\n"
 test(912, names(fread(txt)), c("A;B;C|D","E"))
 test(913, fread(txt,sep=";"), data.table(A=1:2,B=3:4,"C|D,E"=c("4|5,6","6|8,10")))
-test(914, fread(txt,sep="*"), error="The supplied 'sep' was not found on line 3") 
+test(914, fread(txt,sep="*"), error="The supplied 'sep' was not found on line 3")
 test(915, fread(txt,sep="\n"), data.table("A;B;C|D,E"=c("1;3;4|5,6","2;4;6|8,10"))) # like a fast readLines
 
 # Crash bug when RHS is 0 length and := by group, fixed in 1.8.7
@@ -2617,7 +2641,176 @@ Y = data.table(a=2:4,"d 1"=5:7) # space in Y's column name
 test(942, merge(X,Y,all=TRUE,by="a"), data.table(a=1:4,b=INT(4:6,NA),"d 1"=INT(NA,5:7),key="a"))
 test(943, merge(X,Y,all.y=TRUE,by="a"), data.table(a=2:4,b=INT(5:6,NA),"d 1"=5:7,key="a"))
 
+# Test error message say NULL rather than empty table
+DT = data.table(NULL)
+test(944, DT[,a:=1L], error = "Cannot use := to add columns to a null data.table.*You can use")
+DT = data.table(a=numeric())
+test(945, DT[,b:=a+1], data.table(a=numeric(),b=numeric()))
 
+# fread blank column names get default names
+test(946, fread('A,B,,D\n1,3,foo,5\n2,4,bar,6\n'), data.table(A=1:2,B=3:4,c("foo","bar"),D=5:6))
+test(947, fread('0,2,,4\n1,3,foo,5\n2,4,bar,6\n'), data.table(0:2,2:4,c("","foo","bar"),4:6))
+test(948, fread('A,B,C\nD,E,F\n',header=TRUE), data.table(A="D",B="E",C="F"))
+test(949, fread('A,B,\nD,E,F\n',header=TRUE), data.table(A="D",B="E",V3="F"))
+
+# +/- with no numbers afterwards should read as character
+test(950, fread('A,B,C\n1,+,4\n2,-,5\n3,-,6\n'), data.table(A=1:3,B=c("+","-","-"),C=4:6))
+
+# catching misuse of `:=`
+x = data.table(a=1:5)
+test(951, x[,{b=a+3; `:=`(c=b)}], error="defined for use in j, once only and in particular ways")
+
+# fread colClasses
+input = 'A,B,C\n01,foo,3.140\n002,bar,6.28000\n'
+test(952, fread(input, colClasses=c(C="character")), data.table(A=1:2,B=c("foo","bar"),C=c("3.140","6.28000")))
+test(953, fread(input, colClasses=c(C="character",A="numeric")), data.table(A=c(1.0,2.0),B=c("foo","bar"),C=c("3.140","6.28000")))
+test(954, fread(input, colClasses=c(C="character",A="double")), data.table(A=c(1.0,2.0),B=c("foo","bar"),C=c("3.140","6.28000")))
+test(955, fread(input, colClasses=list(character="C",double="A")), data.table(A=c(1.0,2.0),B=c("foo","bar"),C=c("3.140","6.28000")))
+test(956, fread(input, colClasses=list(character=2:3,double="A")), data.table(A=c(1.0,2.0),B=c("foo","bar"),C=c("3.140","6.28000")))
+test(957, fread(input, colClasses=list(character=1:3)), data.table(A=c("01","002"),B=c("foo","bar"),C=c("3.140","6.28000")))
+test(958, fread(input, colClasses="character"), data.table(A=c("01","002"),B=c("foo","bar"),C=c("3.140","6.28000")))
+test(959, fread(input, colClasses=c("character","double","numeric")), data.table(A=c("01","002"),B=c("foo","bar"),C=c(3.14,6.28)))
+
+test(960, fread(input, colClasses=c("character","double")), error="colClasses is unnamed and length 2 but there are 3 columns. See")
+test(961, fread(input, colClasses=1:3), error="colClasses is not type list or character vector")
+test(962, fread(input, colClasses=list(1:3)), error="colClasses is type list but has no names")
+test(963, fread(input, colClasses=list(character="D")), error="Column name 'D' in colClasses not found in data")
+test(964, fread(input, colClasses=c(D="character")), error="Column name 'D' in colClasses not found in data")
+test(965, fread(input, colClasses=list(character=0)), error="Column number 0 (colClasses..1...1.) is out of range .1,ncol=3.")
+test(966, fread(input, colClasses=list(character=2:4)), error="Column number 4 (colClasses..1...3.) is out of range .1,ncol=3.")
+
+# Character input more than 4096 bytes (used to be passed through path.expand which imposed the limit), #2649
+test(967, nrow(fread( paste( rep('a\tb\n', 10000), collapse=''), header=FALSE)), 10000L)
+
+# Test fread warns about removal of any footer (and autostart skips up over it)
+test(968, fread("A,B\n1,3\n2,4\n\nRowcount: 2\n"), data.table(A=1:2,B=3:4), warning="Stopped reading at empty line 4.*discarded.*Rowcount: 2")
+test(969, fread("A,B\n1,3\n2,4\n\n\nRowcount: 2"), data.table(A=1:2,B=3:4), warning="Stopped reading at empty line 4.*discarded.*Rowcount: 2")
+test(970, fread("A,B\n1,3\n2,4\n\n\nRowcount: 2\n\n"), data.table(A=1:2,B=3:4), warning="Stopped reading at empty line 4.*discarded.*Rowcount: 2")
+
+# fread skip override
+input = "some,bad,data\nA,B,C\n1,3,5\n2,4,6\n"
+test(971, fread(input), data.table(some=c("A",1:2),bad=c("B",3:4),data=c("C",5:6)))
+test(972, fread(input, skip=1), data.table(A=1:2,B=3:4,C=5:6))
+test(973, fread(input, skip=2), data.table(V1=1:2,V2=3:4,V3=5:6))
+test(974, fread(input, skip=2, header=TRUE), data.table("1"=2L,"3"=4L,"5"=6L))
+test(975, fread(input, skip="B"), data.table(A=1:2,B=3:4,C=5:6))
+input = "\n\nA,B\n1,3\n2,4\n\nC,D\n5,7\n6,8\n\nE,F\n9,11\n10,12\n"   # 3 tables in one file
+test(976, fread(input), data.table(E=9:10,F=11:12))   # autostart 30 finds the last one
+test(977, fread(input, autostart=8), data.table(C=5:6,D=7:8), warning="Stopped reading at empty line 10.*but text exists afterwards")
+test(978, fread(input, skip="D"), data.table(C=5:6,D=7:8), warning="Stopped reading at empty line, 2 lines after.*but text exists afterward")
+
+# mixed add and update in same `:=` bug/crash, #2528 and #2778
+DT = data.table(x=rep(1:2, c(3,2)), y=6:10)
+DT[, z:=.GRP, by=x]                 # first assignment
+test(979, DT[, `:=`(z=.GRP, w=2), by=x], data.table(x=INT(1,1,1,2,2),y=6:10,z=INT(1,1,1,2,2),w=2))  # mixed update and add
+# and example from http://stackoverflow.com/a/14732348/403310 :
+dt1 = fread("Date,Time,A,B
+01/01/2013,08:00,10,30
+01/01/2013,08:30,15,25
+01/01/2013,09:00,20,20
+02/01/2013,08:00,25,15
+02/01/2013,08:30,30,10
+02/01/2013,09:00,35,5")
+dt2 = fread("Date,A,B,C
+01/01/2013,100,300,1
+02/01/2013,200,400,2")
+setkey(dt1, "Date")
+setkey(dt2, "Date")
+test(980, dt1[dt2, `:=`(A=A+i.A, B=B+i.B, C=i.C)][,list(A,B,C)],
+          data.table(A=INT(110,115,120,225,230,235),B=INT(330,325,320,415,410,405),C=rep(1:2,each=3)))
+DT = data.table(A=1:2,B=3:4,C=5:6)
+test(981, DT[,`:=`(D=B+4L,B=0:1,E=A*2L,F=A*3L,C=C+1L,G=C*2L),by=A],
+          data.table(A=1:2,B=0L,C=6:7,D=7:8,E=c(2L,4L),F=c(3L,6L),G=c(10L,12L)), warning="RHS 2 is length 2")
+DT = data.table(A=1:2,B=3:4,C=5:6)
+test(982, DT[,`:=`(D=B+4L,B=0L,E=A*2L,F=A*3L,C=C+1L,G=C*2L),by=A],
+          data.table(A=1:2,B=0L,C=6:7,D=7:8,E=c(2L,4L),F=c(3L,6L),G=c(10L,12L))) # Also note that G is not yet iterative. In future: c(12,14)
+
+# rbindlist binding factors, #2650
+test(983, rbindlist(list(data.table(factor(c("A","A","B","C","A"))), data.table(factor(c("B","F","A","G"))))), data.table(V1=factor(c("A","A","B","C","A","B","F","A","G"))))
+test(984, rbindlist(list(data.table(factor(c("A","B"))), data.table(c("C","A")))), data.table(factor(c("A","B","C","A"))))
+test(985, rbindlist(list(data.table(c("A","B")), data.table(factor(c("C","A"))))), data.table(c("A","B","C","A")))
+# with NA
+test(985.1, rbindlist(list(data.table(factor(c("A","B"))), data.table(factor(c("C",NA))))), data.table(factor(c("A","B","C",NA))))
+test(985.2, rbindlist(list(data.table(c("A","B")), data.table(factor(c("C",NA))))), data.table(c("A","B","C",NA)))
+
+## Allow unique/duplicated to accept custom colum combination to query for
+## uniqueness
+dt <- data.table(A = rep(1:3, each=4), B = rep(11:14, each=3), C = rep(21:22, 6), key = "A,B")
+df <- as.data.frame(dt)
+test(986, unique(dt), dt[!duplicated(df[, key(dt)]),])
+test(987, unique(dt, by='A'), dt[!duplicated(df[, 'A'])])
+test(988, unique(dt, by='B'), dt[!duplicated(df[, 'B'])])
+test(989, unique(dt, by='C'), dt[!duplicated(df[, 'C'])])
+test(990, unique(dt, by=c('B', 'C')), dt[!duplicated(df[, c('B', 'C')])])
+test(991, unique(dt, by=NULL), dt[!duplicated(df)])
+test(991.1, unique(dt, by=4), error="Integer values between 1 and ncol are required")
+test(991.2, unique(dt, by=c(1,3.1)), error="Integer values between 1 and ncol are required")
+test(991.3, unique(dt, by=2:3), dt[!duplicated(df[,c('B','C')])])
+test(991.4, unique(dt, by=c('C','D','E')), error="by specifies column names that do not exist. First 5: D,E")
+
+# :=NULL on factor column in empty data.table, #4809
+DT = data.table(A = integer(), B = factor())
+test(992, DT[, B:=NULL], data.table(A=integer()))
+
+# That including FUN= works in j=lapply, #4839
+DT = as.data.table(iris)
+test(993, DT[, lapply(.SD, function(x) sum(!is.na(x), na.rm=TRUE)), by = Species],
+          DT[, lapply(.SD, FUN=function(x) sum(!is.na(x), na.rm=TRUE)), by = Species])
+
+# fread more than 50,000 columns, the R_PPSSIZE limit in Defn.h
+M = matrix(1,nrow=3,ncol=200000)
+f = tempfile()
+write.csv(M,f,row.names=FALSE)
+test(994, fread(f)[[200000]], rep(1L,3))
+unlink(f)
+
+# CJ with `sorted = FALSE` option
+DT <- data.table(x=rep(3:5, each=4), y=rep(1:6, each=2), z=1:12)
+setkey(DT, x, y)
+OUT <- DT[J(c(5,5,3,3), c(5,1,5,1))]
+test(995, DT[CJ(c(5,3), c(5,1), sorted=FALSE)], OUT)
+
+# CJ with ordered factor
+xx <- factor(letters[1:2], ordered=TRUE)
+yy <- sample(2)
+test(996, CJ(xx, yy), setkey(data.table(rep(xx, each=2), rep(sort.int(yy), 2))))
+
+# That CJ orders NA consistently with setkey and historically, now it doesn't use setkey.
+# NA must always come first in data.table throughout, since binary search relies on that internally.
+test(997, DT <- CJ(c(1,3,NA,2), 5:6), setkey(setkey(copy(DT),NULL)))  # double setkey to really rebuild key
+test(998, DT <- CJ(as.integer(c(1,3,NA,2)), 5:6), setkey(setkey(copy(DT),NULL)))
+test(999, DT <- CJ(c("A","B",NA,"C"), 5:6), setkey(setkey(copy(DT),NULL)))
+test(1000, DT <- CJ(c(1,NA,3), c("B",NA,"A"), c(5L,NA_integer_)), setkey(setkey(copy(DT),NULL)))
+test(1001, DT <- CJ(c(1,NA,3)), setkey(setkey(copy(DT),NULL)))  # The 1 column case is switched inside CJ() so test that too.
+
+# merge all=TRUE when y is empty, #2633
+a = data.table(P=1:2,Q=3:4,key='P')
+b = data.table(P=2:3,R=5:6,key='P')
+test(1002, merge(a,b[0],all=TRUE), data.table(merge.data.frame(a,b[0],all=TRUE),key='P'))
+a = data.table(c=c(1,2),key='c')
+b = data.table(c=3,key='c')
+test(1003, merge(a,b[0],all=TRUE), data.table(merge.data.frame(a,b[0],all=TRUE),key='c'))
+
+# setkey with backticks, #2452
+DT = data.table("Date and Time"=1:3,x=4:6)
+test(1004, setkey(copy(DT),`Date and Time`), setkey(DT,"Date and Time"))
+
+# rbinding with duplicate names, NA or "", #2384 and #2726
+DT = data.table(a=1:3,b=4:6,b=7:9,c=10:12)
+test(1005, rbind(DT,DT), data.table(a=rep(1:3,2),b=rep(4:6,2),b=rep(7:9,2),c=rep(10:12,2)))
+M <- mtcars
+colnames(M)[11] <- NA
+test(1006, print(as.data.table(M), nrows=10), output="gear NA.*1: 21.0")
+
+# rbinding factor with non-factor/character
+DT1 <- data.table(x=1:5, y=factor("a"))
+DT2 <- data.table(x=1:5, y=2)
+test(1007, rbindlist(list(DT1, DT2)), error="Column 2 of item 2 is not factor or character, inconsistent with column 2 of item 1")
+test(1008, rbindlist(list(DT2, DT1)), error="Column 2 of item 2 is factor, inconsistent with column 2 of item 1")
+
+# optimized mean() respects na.rm=TRUE by default, as intended
+DT = data.table(a=c(NA,NA,FALSE,FALSE), b=c(1,1,2,2))
+test(1009, DT[,list(mean(a), sum(a)),by=b], data.table(b=c(1,2),V1=c(NA,0),V2=c(NA,0)))
 
 
 # TO DO: add examples of multiple LHS (name and position) and multiple RHS to example(":=")
@@ -2640,10 +2833,11 @@ test(943, merge(X,Y,all.y=TRUE,by="a"), data.table(a=2:4,b=INT(5:6,NA),"d 1"=5:7
 ##########################
 options(warn=0)
 if (nfail > 0) {
-    stop(nfail," error",ifelse(nfail>1,"s","")," out of ",lastnum, " in test.data.table() : ",paste(whichfail,collapse=","))
-    # important to stop here, so than 'R CMD check' fails
+    if (nfail>1) {s1="s";s2="s: "} else {s1="";s2=" "}
+    stop(nfail," error",s1," out of ",lastnum, " in inst/tests/tests.Rraw. Search tests.Rraw for test number",s2,paste(whichfail,collapse=","),". The test() function is defined at the top of tests.Rraw and contains usage info.")
+    # important to stop here, so that 'R CMD check' fails
 }
-cat("All",lastnum,"tests in test.data.table() completed ok in",timetaken(started.at),"on",date(),"\n")
+cat("All",lastnum,"tests in inst/tests/tests.Rraw completed ok in",timetaken(started.at),"on",date(),"\n")
 # Reporting lastnum rather than ntest makes it easier to check user has the latest version, assuming
 # each release or patch has extra tests.
 # date() is included so we can tell when CRAN checks were run (in particular if they have been rerun since an update, yet)

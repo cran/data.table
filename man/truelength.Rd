@@ -8,8 +8,8 @@
 \usage{
 truelength(x)
 alloc.col(DT,
-          n = options("datatable.alloccol")[[1L]],        # default: quote(max(100,2*ncol(DT)))
-          verbose = options("datatable.verbose")[[1L]])   # default: FALSE
+    n = getOption("datatable.alloccol"),        # default: quote(max(100L,ncol(DT)+64L))
+    verbose = getOption("datatable.verbose"))   # default: FALSE
 }
 \arguments{
 \item{x}{ Any type of vector, including \code{data.table} which is a \code{list} vector of column pointers. }
@@ -36,8 +36,8 @@ alloc.col(DT,
     truelength(DT)             # 100 column pointer slots allocated
     alloc.col(DT,200)
     length(DT)                 # 2 used
-    truelength(DT)             # 200 allocated
-    DT[,c:=7L]                 # add new column
+    truelength(DT)             # 200 allocated, 198 free
+    DT[,c:=7L]                 # add new column by assigning to spare slot
     truelength(DT)-length(DT)  # 197 slots spare
 }
 \keyword{ data }

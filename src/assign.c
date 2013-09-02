@@ -138,8 +138,7 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
     if (isNull(names)) error("dt passed to assign has no names");
     if (length(names)!=oldncol)
         error("Internal error in assign: length of names (%d) is not length of dt (%d)",length(names),oldncol);
-
-    if (oldncol<1) error("Cannot use := to add columns to an empty data.table, currently");
+    if (oldncol<1) error("Cannot use := to add columns to a null data.table (no columns), currently. You can use := to add (empty) columns to a 0-row data.table (1 or more empty columns), though.");
     nrow = length(VECTOR_ELT(dt,0));
     if (isNull(rows)) {
         targetlen = nrow;
@@ -201,9 +200,9 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
         vlen = length(thisvalue);
         if (coln+1 <= oldncol) colnam = STRING_ELT(names,coln);
         else colnam = STRING_ELT(newcolnames,coln-length(names));
+        if (coln+1 <= oldncol && isNull(thisvalue)) continue;  // delete existing column(s) afterwards, near end of this function
         if (vlen<1 && nrow>0) {
             if (coln+1 <= oldncol) {
-                if (isNull(thisvalue)) continue;  // delete existing column(s) afterwards, near end of this function
                 error("RHS of assignment to existing column '%s' is zero length but not NULL. If you intend to delete the column use NULL. Otherwise, the RHS must have length > 0; e.g., NA_integer_. If you are trying to change the column type to be an empty list column then, as with all column type changes, provide a full length RHS vector such as vector('list',nrow(DT)); i.e., 'plonk' in the new column.", CHAR(STRING_ELT(names,coln)));
             } else if (TYPEOF(thisvalue)!=VECSXP) {  // list() is ok for new columns
                 newcolnum = coln-length(names);
@@ -246,7 +245,7 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
         oldtncol = TRUELENGTH(dt);   // TO DO: oldtncol can be just called tl now, as we won't realloc here any more.
         
         if (oldtncol<oldncol) error("Internal error, please report (including result of sessionInfo()) to datatable-help: oldtncol (%d) < oldncol (%d) but tl of class is marked.", oldtncol, oldncol);
-        if (oldtncol>oldncol+1000) warning("tl (%d) is greater than 1000 items over-allocated (ncol = %d). If you didn't set the datatable.alloccol option very large, please report this to datatable-help including the result of sessionInfo().",oldtncol, oldncol); 
+        if (oldtncol>oldncol+1000L) warning("truelength (%d) is greater than 1000 items over-allocated (length = %d). See ?truelength. If you didn't set the datatable.alloccol option very large, please report this to datatable-help including the result of sessionInfo().",oldtncol, oldncol); 
         
         if (oldtncol < oldncol+LENGTH(newcolnames))
             error("Internal logical error. DT passed to assign has not been allocated enough column slots. l=%d, tl=%d, adding %d", oldncol, oldtncol, LENGTH(newcolnames));
@@ -276,26 +275,24 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
         if (length(rows)==0 && targetlen==vlen) {
             if (  NAMED(thisvalue)==2 ||  // NAMED is already 1 from the 'value' local variable at R level passed to Cassign.
                  (TYPEOF(values)==VECSXP && i>LENGTH(values)-1)) { // recycled RHS would have columns pointing to others, #2298.
-                PROTECT(thisvalue = duplicate(thisvalue));
-                protecti++;
+                thisvalue = duplicate(thisvalue);   // PROTECT not needed as assigned as element to protected list below.
                 if (verbose) Rprintf("RHS for item %d has been duplicated. Either NAMED vector or recycled list RHS.\n",i+1);
             } else {
                 if (verbose) Rprintf("Direct plonk of unnamed RHS, no copy.\n");  // e.g. DT[,a:=as.character(a)] as tested by 754.3
             }
+            SET_VECTOR_ELT(dt,coln,thisvalue);
             setAttrib(thisvalue, R_NamesSymbol, R_NilValue);     // clear names such as  DT[,a:=mapvector[a]]
             setAttrib(thisvalue, R_DimSymbol, R_NilValue);       // so that matrix is treated as vector
             setAttrib(thisvalue, R_DimNamesSymbol, R_NilValue);  // the 3rd of the 3 attribs not copied by copyMostAttrib, for consistency.
-            SET_VECTOR_ELT(dt,coln,thisvalue);
             // plonk new column in as it's already the correct length
             // if column exists, 'replace' it (one way to change a column's type i.e. less easy, as it should be, for speed, correctness and to get the user thinking about their intent)        
             continue;
         }
         if (coln+1 > oldncol) {  // new column
-            PROTECT(newcol = allocNAVector(TYPEOF(thisvalue),nrow));
-            protecti++;
+            newcol = allocNAVector(TYPEOF(thisvalue),nrow);  // PROTECT not needed as assigned as element to protected list on next line
+            SET_VECTOR_ELT(dt,coln,newcol);
             if (isVectorAtomic(thisvalue)) copyMostAttrib(thisvalue,newcol);  // class etc but not names
             // else for lists (such as data.frame and data.table) treat them as raw lists and drop attribs
-            SET_VECTOR_ELT(dt,coln,newcol);
             if (vlen<1) continue;   // e.g. DT[,newcol:=integer()] (adding new empty column)
             targetcol = newcol;
             RHS = thisvalue;

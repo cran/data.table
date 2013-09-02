@@ -27,15 +27,18 @@
 \usage{
 data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
 
-\method{[}{data.table}(x, i, j, by, keyby, with=TRUE,
-  nomatch = getOption("datatable.nomatch"),   # default: NA_integer_
+\method{[}{data.table}(x, i, j, by, keyby, with = TRUE,
+  nomatch = getOption("datatable.nomatch"),                   # default: NA_integer_
   mult = "all",
-  roll = FALSE, rollends = if (roll=="nearest") c(TRUE,TRUE) else { if (roll>=0) c(FALSE,TRUE) else c(TRUE,FALSE) },
+  roll = FALSE,
+  rollends = if (roll=="nearest") c(TRUE,TRUE)
+             else if (roll>=0) c(FALSE,TRUE)
+             else c(TRUE,FALSE),
   which = FALSE,
   .SDcols,
-  verbose=getOption("datatable.verbose"),     # default: FALSE
-  allow.cartesian=getOption("datatable.allow.cartesian"),   # default: FALSE
-  drop=NULL,
+  verbose = getOption("datatable.verbose"),                   # default: FALSE
+  allow.cartesian = getOption("datatable.allow.cartesian"),   # default: FALSE
+  drop = NULL,
   rolltolast = FALSE   # deprecated
   )
 }
@@ -72,12 +75,12 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
   Advanced: When \code{i} is a single variable name, it is not considered an expression of column names and is instead evaluated in calling scope.
 
 }
-  \item{j}{ A single column name, single expresson of column names, \code{list()} of expressions of column names, an expression or function call that evaluates to \code{list} (including \code{data.frame} and \code{data.table} which are \code{list}s, too), or (when \code{with=FALSE}) same as \code{j} in \code{[.data.frame}.
+  \item{j}{ A single column name, single expresson of column names, \code{list()} of expressions of column names, an expression or function call that evaluates to \code{list} (including \code{data.frame} and \code{data.table} which are \code{list}s, too), or (when \code{with=FALSE}) a vector of names or positions to select.
 
   \code{j} is evaluated within the frame of the \code{data.table}; i.e., it sees column names as if they are variables. Use \code{j=list(...)} to return multiple columns and/or expressions of columns. A single column or single expression returns that type, usually a vector. See the examples.
 
 }
-  \item{by}{ A single unquoted column name, a \code{list()} of expressions of column names, a single character string containing comma separated column names, or a character vector of column names.
+  \item{by}{ A single unquoted column name, a \code{list()} of expressions of column names, a single character string containing comma separated column names (where spaces are significant since column names may contain spaces even at the start or end), or a character vector of column names.
 
   The \code{list()} of expressions is evaluated within the frame of the \code{data.table} (i.e. it sees column names as if they are variables). The \code{data.table} is then grouped by the \code{by} and \code{j} is evaluated within each group. The order of the rows within each group is preserved, as is the order of the groups. \code{j=list(...)} may be omitted when there is just one expression, for convenience, typically a single expression such as \code{sum(colB)}; e.g., \code{DT[,sum(colB),by=colA]}.
 
@@ -87,7 +90,7 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
 
   Advanced: When grouping by \code{by} or by \code{i}, symbols \code{.SD}, \code{.BY}, \code{.N}, \code{.I} and \code{.GRP} may be used in the \code{j} expression, defined as follows.
   
-  \code{.SD} is a \code{data.table} containing the \bold{S}ubset of \code{x}'s \bold{D}ata for each group, excluding the group column(s).
+  \code{.SD} is a \code{data.table} containing the \bold{S}ubset of \code{x}'s \bold{D}ata for each group, excluding any columns used in \code{by} (or \code{keyby}).
   
   \code{.BY} is a \code{list} containing a length 1 vector for each item in \code{by}. This can be useful when \code{by} is not known in advance. The \code{by} variables are also available to \code{j} directly by name; useful for example for titles of graphs if \code{j} is a plot command, or to branch with \code{if()} depending on the value of a group variable.
   
@@ -105,7 +108,7 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
   \item{keyby}{ An \emph{ad hoc by} just as \code{by} but with an additional \code{setkey()} on the \code{by} columns of the result, for convenience. Not to be confused with a \emph{keyed by} as defined above.
   
 }
-  \item{with}{ By default \code{with=TRUE} and \code{j} is evaluated within the frame of \code{x}. The column names can be used as variables. When \code{with=FALSE}, \code{j} works as it does in \code{[.data.frame}.
+  \item{with}{ By default \code{with=TRUE} and \code{j} is evaluated within the frame of \code{x}. The column names can be used as variables. When \code{with=FALSE}, \code{j} is a vector of names or positions to select.
 
 }
   \item{nomatch}{ Same as \code{nomatch} in \code{\link{match}}. When a row in \code{i} has no match to \code{x}'s key, \code{nomatch=NA} (default) means \code{NA} is returned for \code{x}'s non-join columns for that row of \code{i}. \code{0} means no rows will be returned for that row of \code{i}. The default value (used when \code{nomatch} is not supplied) can be changed from \code{NA} to \code{0} using \code{options(datatable.nomatch=0)}.
