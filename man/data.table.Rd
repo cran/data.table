@@ -1,4 +1,6 @@
-\name{data.table}
+\name{data.table-package}
+\alias{data.table-package}
+\docType{package}
 \alias{data.table}
 \alias{as.data.table}
 \alias{is.data.table}
@@ -16,13 +18,6 @@
    Please check the \href{http://datatable.r-forge.r-project.org/}{homepage} for up to the minute \href{http://r-forge.r-project.org/scm/viewvc.php/pkg/NEWS?view=markup&root=datatable}{news}.
    
    Tip: one of the quickest ways to learn the features is to type \code{example(data.table)} and study the output at the prompt.
-   
-   *NEW* : \itemize{
-\item help page for \code{\link{:=}}
-\item \code{keyby} argument
-\item \code{character} and \code{numeric} now allowed as key column types
-\item \code{\link{:=}} by group
-}
 }
 \usage{
 data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
@@ -52,7 +47,7 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
   \item{check.names}{ Just as \code{check.names} in \code{\link{data.frame}}.
 
 }
-  \item{key}{ Character vector of one or more column names which is passed to \code{\link{setkey}}. It may be a single comma separated string such as \code{key="x,y,z"}, or a vector of names such as \code{key=c("x","y","z")}. 
+  \item{key}{ Character vector of one or more column names which is passed to \code{\link{setkey}}. It may be a single comma separated string such as \code{key="x,y,z"}, or a vector of names such as \code{key=c("x","y","z")}.
 
 }
   \item{x}{ A \code{data.table}.
@@ -303,7 +298,7 @@ vignette("datatable-intro")
 vignette("datatable-faq")
 vignette("datatable-timings")
 
-test.data.table()          # over 700 low level tests
+test.data.table()          # over 1,200 low level tests
 
 update.packages()          # keep up to date
 }}

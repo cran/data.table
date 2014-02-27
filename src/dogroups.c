@@ -4,8 +4,9 @@
 #include <Rdefines.h>
 //#include <sys/mman.h>
 #include <fcntl.h>
+#include <time.h>
 
-int sizes[100];  // max appears to be FUNSXP = 99, see Rinternals.h
+size_t sizes[100];  // max appears to be FUNSXP = 99, see Rinternals.h
 SEXP SelfRefSymbol;
 
 SEXP keepattr(SEXP to, SEXP from);
@@ -30,30 +31,51 @@ void setSizes() {
 }
 #define SIZEOF(x) sizes[TYPEOF(x)]
 
+extern void memrecycle(SEXP target, SEXP where, int r, int len, SEXP source);
 
-SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEXP grporder, SEXP order, SEXP starts, SEXP lens, SEXP jexp, SEXP env, SEXP lhs, SEXP newnames, SEXP verbose)
+SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEXP xjiscols, SEXP grporder, SEXP order, SEXP starts, SEXP lens, SEXP jexp, SEXP env, SEXP lhs, SEXP newnames, SEXP verbose)
 {
-    R_len_t i, j, k, rownum, ngrp, njval=0, ngrpcols, ansloc=0, maxn, estn=-1, r, thisansloc, grpn, thislen, igrp, size, vlen;
+    R_len_t i, j, k, rownum, ngrp, njval=0, ngrpcols, ansloc=0, maxn, estn=-1, r, thisansloc, grpn, thislen, igrp, vlen, origIlen=0, origSDnrow=0;
     int protecti=0;
-    SEXP names, names2, bynames, dtnames, ans=NULL, jval, thiscol, SD, BY, N, I, GRP, iSD, rownames, s, targetcol, RHS, listwrap, target;
-    SEXP *nameSyms;
-    Rboolean wasvector, firstalloc=FALSE, NullWarnDone=FALSE;
-    
+    SEXP names, names2, xknames, bynames, dtnames, ans=NULL, jval, thiscol, SD, BY, N, I, GRP, iSD, xSD, rownames, s, RHS, listwrap, target, source;
+    SEXP *nameSyms, *xknameSyms;
+    Rboolean wasvector, firstalloc=FALSE, NullWarnDone=FALSE, recycleWarn=TRUE;
+    size_t size; // must be size_t, otherwise bug #5305 (integer overflow in memcpy)
+    clock_t tstart=0, tblock[10]={0}; int nblock[10]={0};
+
     if (TYPEOF(order) != INTSXP) error("Internal error: order not integer");
     //if (TYPEOF(starts) != INTSXP) error("Internal error: starts not integer");
     //if (TYPEOF(lens) != INTSXP) error("Internal error: lens not integer");
     // starts can now be NA (<0): if (INTEGER(starts)[0]<0 || INTEGER(lens)[0]<0) error("starts[1]<0 or lens[1]<0");
     if (!isNull(jiscols) && length(order)) error("Internal error: jiscols not NULL but o__ has length");
+    if (!isNull(xjiscols) && length(order)) error("Internal error: xjiscols not NULL but o__ has length");
     if(!isEnvironment(env)) error("’env’ should be an environment");
     ngrp = length(starts);  // the number of groups  (nrow(groups) will be larger when by)
     ngrpcols = length(grpcols);
     SD = findVar(install(".SD"), env);
-    BY = findVar(install(".BY"), env);
+    
+    defineVar(install(".BY"), BY = allocVector(VECSXP, ngrpcols), env);
+    bynames = PROTECT(allocVector(STRSXP, ngrpcols));  protecti++;   // TO DO: do we really need bynames, can we assign names afterwards in one step?
+    for (i=0; i<ngrpcols; i++) {
+        j = INTEGER(grpcols)[i]-1;
+        SET_VECTOR_ELT(BY, i, allocVector(TYPEOF(VECTOR_ELT(groups, j)),
+            LENGTH(VECTOR_ELT(groups,0)) ? 1 : 0));    // This might be able to be 1 always; 0 when 'groups' are integer(0) seem sensible. #2440 was involved in the past.
+        SET_STRING_ELT(bynames, i, STRING_ELT(getAttrib(groups,R_NamesSymbol), j));
+        defineVar(install(CHAR(STRING_ELT(bynames,i))), VECTOR_ELT(BY,i), env);      // by vars can be used by name in j as well as via .BY
+        if (SIZEOF(VECTOR_ELT(BY,i))==0)
+            error("Unsupported type '%s' in column %d of 'by'", type2char(TYPEOF(VECTOR_ELT(BY, i))), i+1);
+    }
+    R_LockBinding(install(".BY"), env);
+    if (isNull(jiscols) && (length(bynames)!=length(groups) || length(bynames)!=length(grpcols))) error("!length(bynames)[%d]==length(groups)[%d]==length(grpcols)[%d]",length(bynames),length(groups),length(grpcols));
+    // TO DO: check this check above.
+    
     N = findVar(install(".N"), env);
     GRP = findVar(install(".GRP"), env);
     iSD = findVar(install(".iSD"), env);  // 1-row and possibly no cols (if no i variables are used via JIS)
+    xSD = findVar(install(".xSD"), env);
     I = findVar(install(".I"), env);
     
+    dtnames = getAttrib(dt, R_NamesSymbol); // added here to fix #4990 - `:=` did not issue recycling warning during "by"
     // fetch rownames of .SD.  rownames[1] is set to -thislen for each group, in case .SD is passed to
     // non data.table aware package that uses rownames
     for (s = ATTRIB(SD); s != R_NilValue && TAG(s)!=R_RowNamesSymbol; s = CDR(s));
@@ -72,22 +94,25 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
         if (SIZEOF(VECTOR_ELT(SD, i))==0)
             error("Type %d in .SD column %d", TYPEOF(VECTOR_ELT(SD, i)), i);
         nameSyms[i] = install(CHAR(STRING_ELT(names, i)));
+        setAttrib(VECTOR_ELT(SD,i), R_ClassSymbol, getAttrib(VECTOR_ELT(dt,INTEGER(dtcols)[i]-1), R_ClassSymbol)); // fixes http://stackoverflow.com/questions/14753411/why-does-data-table-lose-class-definition-in-sd-after-group-by
+    }
+    
+    origIlen = length(I);  // test 762 has length(I)==1 but nrow(SD)==0
+    if (length(SD)) origSDnrow = length(VECTOR_ELT(SD, 0));
+
+    xknames = getAttrib(xSD, R_NamesSymbol);
+    if (length(xknames) != length(xSD)) error("length(xknames)!=length(xSD)");
+    xknameSyms = Calloc(length(xknames), SEXP);
+    if (!xknameSyms) error("Calloc failed to allocate %d xknameSyms in dogroups",length(xknames));
+    for(i = 0; i < length(xSD); i++) {
+        if (SIZEOF(VECTOR_ELT(xSD, i))==0)
+            error("Type %d in .xSD column %d", TYPEOF(VECTOR_ELT(xSD, i)), i);
+        xknameSyms[i] = install(CHAR(STRING_ELT(xknames, i)));
     }
 
     if (length(iSD)!=length(jiscols)) error("length(iSD)[%d] != length(jiscols)[%d]",length(iSD),length(jiscols));
+    if (length(xSD)!=length(xjiscols)) error("length(xSD)[%d] != length(xjiscols)[%d]",length(xSD),length(xjiscols));
     
-    bynames = getAttrib(BY, R_NamesSymbol);
-    if (isNull(jiscols) && (length(bynames)!=length(groups) || length(bynames)!=length(grpcols))) error("!length(bynames)[%d]==length(groups)[%d]==length(grpcols)[%d]",length(bynames),length(groups),length(grpcols));
-    // TO DO: check above.
-    
-    for(i = 0; i < length(BY); i++) {
-        // by vars can be used by name or via .BY
-        defineVar(install(CHAR(STRING_ELT(bynames,i))),VECTOR_ELT(BY,i),env);
-        if (TYPEOF(VECTOR_ELT(BY,i)) != TYPEOF(VECTOR_ELT(groups,INTEGER(grpcols)[i]-1)))
-            error("Type mismatch between .BY and groups, column %d",i);
-        if (SIZEOF(VECTOR_ELT(BY,i))==0)
-            error("Unsupported type '%s' in by column %d", type2char(TYPEOF(VECTOR_ELT(BY, i))), i);
-    }
     
     PROTECT(listwrap = allocVector(VECSXP, 1));
     protecti++;
@@ -107,14 +132,14 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
         
         for (j=0; j<length(iSD); j++) {   // either this or the next for() will run, not both
             size = SIZEOF(VECTOR_ELT(iSD,j));
-            memcpy((char *)DATAPTR(VECTOR_ELT(iSD,j)),
+            memcpy((char *)DATAPTR(VECTOR_ELT(iSD,j)),  // ok use of memcpy. Loop'd through columns not rows
                    (char *)DATAPTR(VECTOR_ELT(groups,INTEGER(jiscols)[j]-1))+i*size,
-                   size);
+                   size);  
         }
         igrp = length(grporder) ? INTEGER(grporder)[INTEGER(starts)[i]-1]-1 : (isNull(jiscols) ? INTEGER(starts)[i]-1 : i);
-        for (j=0; j<length(BY); j++) {
+        if (igrp >= 0) for (j=0; j<length(BY); j++) {    // igrp can be -1 so 'if' is important, otherwise memcpy crash
             size = SIZEOF(VECTOR_ELT(BY,j));
-            memcpy((char *)DATAPTR(VECTOR_ELT(BY,j)),
+            memcpy((char *)DATAPTR(VECTOR_ELT(BY,j)),  // ok use of memcpy size 1. Loop'd through columns not rows
                    (char *)DATAPTR(VECTOR_ELT(groups,INTEGER(grpcols)[j]-1))+igrp*size,
                    size);
         }
@@ -139,29 +164,64 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
             }
             grpn = 1;  // TO DO: it is anyway?
             INTEGER(I)[0] = 0;
+            for (j=0; j<length(xSD); j++) {
+                switch (TYPEOF(VECTOR_ELT(xSD, j))) {
+                case LGLSXP :
+                    LOGICAL(VECTOR_ELT(xSD,j))[0] = NA_LOGICAL;
+                    break;
+                case INTSXP :
+                    INTEGER(VECTOR_ELT(xSD,j))[0] = NA_INTEGER;
+                    break;
+                case REALSXP :
+                    REAL(VECTOR_ELT(xSD,j))[0] = NA_REAL;
+                    break;
+                case STRSXP :
+                    SET_STRING_ELT(VECTOR_ELT(xSD,j),0,NA_STRING);
+                    break;
+                default:
+                    error("Logical error. Type of column should have been checked by now");
+                }
+            }
         } else {
             if (length(order)==0) {
                 rownum = INTEGER(starts)[i]-1;
                 for (j=0; j<length(SD); j++) {
                     size = SIZEOF(VECTOR_ELT(SD,j));
-                    memcpy((char *)DATAPTR(VECTOR_ELT(SD,j)),
+                    memcpy((char *)DATAPTR(VECTOR_ELT(SD,j)),  // direct memcpy best here, for usually large size groups. by= each row is slow and not recommended anyway, so we don't mind there's no switch here for grpn==1
                        (char *)DATAPTR(VECTOR_ELT(dt,INTEGER(dtcols)[j]-1))+rownum*size,
                        grpn*size);
+                    // SD is our own alloc'd memory, and the source (DT) is protected throughout, so no need for SET_* overhead
                 }
                 for (j=0; j<grpn; j++) INTEGER(I)[j] = rownum+j+1;
-            } else {
-                for (k=0; k<grpn; k++) {
-                    rownum = INTEGER(order)[ INTEGER(starts)[i]-1 + k ] -1;
-                    for (j=0; j<length(SD); j++) {
-                        size = SIZEOF(VECTOR_ELT(SD,j));
-                        memcpy((char *)DATAPTR(VECTOR_ELT(SD,j)) + k*size,
-                           (char *)DATAPTR(VECTOR_ELT(dt,INTEGER(dtcols)[j]-1)) + rownum*size,
-                           size);
-                    }
-                    INTEGER(I)[k] = rownum+1;
+                for (j=0; j<length(xSD); j++) {
+                    size = SIZEOF(VECTOR_ELT(xSD,j));
+                    memcpy((char *)DATAPTR(VECTOR_ELT(xSD,j)),  // ok use of memcpy. Loop'd through columns not rows
+                       (char *)DATAPTR(VECTOR_ELT(dt,INTEGER(xjiscols)[j]-1))+rownum*size,
+                       size);  
                 }
+            } else {
+                if (LOGICAL(verbose)[0]) tstart = clock();
+                // Fairly happy with this block. No need for SET_* here. See comment above. 
+                for (k=0; k<grpn; k++) INTEGER(I)[k] = INTEGER(order)[ INTEGER(starts)[i]-1 + k ];
+                for (j=0; j<length(SD); j++) {
+                    size = SIZEOF(VECTOR_ELT(SD,j));
+                    target = VECTOR_ELT(SD,j);
+                    source = VECTOR_ELT(dt,INTEGER(dtcols)[j]-1);
+                    if (size==4) {
+                        for (k=0; k<grpn; k++) {
+                            rownum = INTEGER(I)[k]-1;
+                            INTEGER(target)[k] = INTEGER(source)[rownum]; // on 32bit, copies pointers too
+                        }
+                    } else {  // size 8 
+                        for (k=0; k<grpn; k++) {
+                            rownum = INTEGER(I)[k]-1;
+                            REAL(target)[k] = REAL(source)[rownum];       // on 64bit, copies pointers too
+                        }
+                    }
+                }
+                if (LOGICAL(verbose)[0]) { tblock[0] += clock()-tstart; nblock[0]++; }
             }
-        }        
+        }
         INTEGER(rownames)[1] = -grpn;  // the .set_row_names() of .SD. Not .N when nomatch=NA and this is a nomatch
         for (j=0; j<length(SD); j++) {
             SETLENGTH(VECTOR_ELT(SD,j), grpn);
@@ -169,8 +229,15 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
             // In case user's j assigns to the columns names (env is static) (tests 387 and 388)
             // nameSyms pre-stored to save repeated install() for efficiency.
         }
+        for (j=0; j<length(xSD); j++) {
+            defineVar(xknameSyms[j], VECTOR_ELT(xSD, j), env);
+        }
         SETLENGTH(I, grpn);
+        
+        if (LOGICAL(verbose)[0]) tstart = clock();  // call to clock() is more expensive than an 'if'
         PROTECT(jval = eval(jexp, env));
+        if (LOGICAL(verbose)[0]) { tblock[1] += clock()-tstart; nblock[1]++; }
+        
         if (isNull(jval))  {
             // j may be a plot or other side-effect only
             UNPROTECT(1);
@@ -197,76 +264,32 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
         if (!isNull(lhs)) {
             R_len_t origncol = LENGTH(dt);
             for (j=0; j<length(lhs); j++) {
-                targetcol = VECTOR_ELT(dt,INTEGER(lhs)[j]-1);
+                target = VECTOR_ELT(dt,INTEGER(lhs)[j]-1);
                 RHS = VECTOR_ELT(jval,j%LENGTH(jval));
-                if (isNull(targetcol)) {
+                if (isNull(target)) {
                     // first time adding to new column
                     if (isNull(RHS)) error("RHS is NULL when grouping :=. Makes no sense to delete a column by group. Perhaps use an empty vector instead.");
                     if (TRUELENGTH(dt) < INTEGER(lhs)[j]) error("Internal error: Trying to add new column by reference but tl is full; alloc.col should have run first at R level before getting to this point in dogroups");
-                    SET_VECTOR_ELT(dt,INTEGER(lhs)[j]-1,allocNAVector(TYPEOF(RHS), LENGTH(VECTOR_ELT(dt,0))));
-                    dtnames = getAttrib(dt, R_NamesSymbol);
-                    SET_STRING_ELT(dtnames, INTEGER(lhs)[j]-1, STRING_ELT(newnames, INTEGER(lhs)[j]-origncol-1));
                     SETLENGTH(dtnames, LENGTH(dtnames)+1);
                     SETLENGTH(dt, LENGTH(dt)+1);
-                    targetcol = VECTOR_ELT(dt,INTEGER(lhs)[j]-1);
+                    SET_VECTOR_ELT(dt, INTEGER(lhs)[j]-1, allocNAVector(TYPEOF(RHS), LENGTH(VECTOR_ELT(dt,0))));
+                    // Even if we could know reliably to switch from allocNAVector to allocVector for slight speedup, user code could still contain a switched halt, and in that case we'd want the groups not yet done to have NA rather than uninitialized or 0.
+                    // dtnames = getAttrib(dt, R_NamesSymbol); // commented this here and added it on the beginning to fix #4990
+                    SET_STRING_ELT(dtnames, INTEGER(lhs)[j]-1, STRING_ELT(newnames, INTEGER(lhs)[j]-origncol-1));
+                    target = VECTOR_ELT(dt,INTEGER(lhs)[j]-1);
                 }
-                if (TYPEOF(targetcol)!=TYPEOF(RHS)) error("Type of RHS ('%s') must match LHS ('%s'). To check and coerce would impact performance too much for the fastest cases. Either change the type of the target column, or coerce the RHS of := yourself (e.g. by using 1L instead of 1)", type2char(TYPEOF(RHS)), type2char(TYPEOF(targetcol)));
-                size = SIZEOF(targetcol);
+                if (TYPEOF(target)!=TYPEOF(RHS)) error("Type of RHS ('%s') must match LHS ('%s'). To check and coerce would impact performance too much for the fastest cases. Either change the type of the target column, or coerce the RHS of := yourself (e.g. by using 1L instead of 1)", type2char(TYPEOF(RHS)), type2char(TYPEOF(target)));
+                size = SIZEOF(target);
                 vlen = length(RHS);
                 if (vlen==0) continue;
                 if (vlen>grpn && j<LENGTH(jval)) warning("RHS %d is length %d (greater than the size (%d) of group %d). The last %d element(s) will be discarded.", j+1, vlen, grpn, i+1, vlen-grpn);
-                if (length(order)==0) {
-                    rownum = INTEGER(starts)[i]-1;
-                    switch (TYPEOF(targetcol)) {
-                    case STRSXP :
-                        for (r=0; r<grpn; r++)
-                            SET_STRING_ELT(targetcol, rownum+r, STRING_ELT(RHS, r%vlen));
-                        break;
-                    case VECSXP :
-                        for (r=0; r<grpn; r++)
-                            SET_VECTOR_ELT(targetcol, rownum+r, STRING_ELT(RHS, r%vlen));
-                        break;
-                    default :
-                        for (r=0; r<(grpn/vlen); r++) {
-                            memcpy((char *)DATAPTR(targetcol) + (rownum+r*vlen)*size,
-                                   (char *)DATAPTR(RHS),
-                                   vlen * size);
-                        }
-                        memcpy((char *)DATAPTR(targetcol) + (rownum+r*vlen)*size,
-                               (char *)DATAPTR(RHS),
-                               (grpn%vlen) * size);
-                    }
-                } else {
-                    switch (TYPEOF(targetcol)) {
-                    case STRSXP :
-                        for (k=0; k<grpn; k++) {
-                            rownum = INTEGER(order)[ INTEGER(starts)[i]-1 + k ] -1;
-                            SET_STRING_ELT(targetcol, rownum, STRING_ELT(RHS, k%vlen));
-                        }
-                        break;
-                    case VECSXP :
-                        for (k=0; k<grpn; k++) {
-                            rownum = INTEGER(order)[ INTEGER(starts)[i]-1 + k ] -1;
-                            SET_VECTOR_ELT(targetcol, rownum, VECTOR_ELT(RHS, k%vlen));
-                        }
-                        break;
-                    case INTSXP :
-                    case LGLSXP :
-                        for (k=0; k<grpn; k++) {
-                            rownum = INTEGER(order)[ INTEGER(starts)[i]-1 + k ] -1;
-                            INTEGER(targetcol)[rownum] = INTEGER(RHS)[k%vlen];
-                        }
-                        break;
-                    case REALSXP :
-                        for (k=0; k<grpn; k++) {
-                            rownum = INTEGER(order)[ INTEGER(starts)[i]-1 + k ] -1;
-                            REAL(targetcol)[rownum] = REAL(RHS)[k%vlen];
-                        }
-                        break;
-                    default :
-                        error("Unsupported type");
-                    }
-                }
+                // fix for #4990 - `:=` did not issue recycling warning during "by" operation.
+                if (vlen<grpn && vlen>0 && grpn%vlen != 0) 
+                    warning("Supplied %d items to be assigned to group %d of size %d in column '%s' (recycled leaving remainder of %d items).",vlen,i+1,grpn,CHAR(STRING_ELT(dtnames,INTEGER(lhs)[j]-1)),grpn%vlen);
+                memrecycle(target, order, INTEGER(starts)[i]-1, grpn, RHS);
+                if (!isFactor(RHS)) setAttrib(target, R_ClassSymbol, getAttrib(RHS, R_ClassSymbol));
+                // fixes bug #2531. Got to set the class back.
+                // added !isFactor(RHS) to fix #5104 (side-effect of fixing #2531)
             }
             UNPROTECT(1);
             continue;
@@ -333,22 +356,24 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
             } else {
                 estn = ((double)ngrp/i)*1.1*(ansloc+maxn);
                 if (LOGICAL(verbose)[0]) Rprintf("dogroups: growing from %d to %d rows\n", length(VECTOR_ELT(ans,0)), estn);
-                for (j=0; j<ngrpcols; j++) SET_VECTOR_ELT(ans, j, growVector(VECTOR_ELT(ans,j), estn));
-                for (j=0; j<njval; j++) SET_VECTOR_ELT(ans, j+ngrpcols, growVector(VECTOR_ELT(ans,j+ngrpcols), estn));
+                if (length(ans) != ngrpcols + njval) error("dogroups: length(ans)[%d]!=ngrpcols[%d]+njval[%d]",length(ans),ngrpcols,njval);
+                for (j=0; j<length(ans); j++) SET_VECTOR_ELT(ans, j, growVector(VECTOR_ELT(ans,j), estn));
             }
         }
         // Now copy jval into ans ...
         for (j=0; j<ngrpcols; j++) {
-            size = SIZEOF(VECTOR_ELT(groups, INTEGER(grpcols)[j]-1));
-            for (r=0; r<maxn; r++) {
-                memcpy((char *)DATAPTR(VECTOR_ELT(ans,j)) + (ansloc+r)*size,  // TO DO: a switched assign here?
-                    (char *)DATAPTR(VECTOR_ELT(groups,INTEGER(grpcols)[j]-1)) + igrp*size,   // generations a concern but this one ok I think
-                    1 * size);
-            }
+            target = VECTOR_ELT(ans,j);
+            source = VECTOR_ELT(groups, INTEGER(grpcols)[j]-1);  // target and source the same type by construction above
+            if (SIZEOF(target)==4) for (r=0; r<maxn; r++)
+                INTEGER(target)[ansloc+r] = INTEGER(source)[igrp];
+            else for (r=0; r<maxn; r++)
+                REAL(target)[ansloc+r] = REAL(source)[igrp];
+            // Shouldn't need SET_* to age objects here sice groups, TO DO revisit.
         }
         for (j=0; j<njval; j++) {
             thisansloc = ansloc;
-            thislen = length(VECTOR_ELT(jval,j));
+            source = VECTOR_ELT(jval,j);
+            thislen = length(source);
             target = VECTOR_ELT(ans, j+ngrpcols);
             if (thislen == 0) {
                 // including NULL and typed empty vectors, fill with NA
@@ -373,37 +398,13 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
                 }
                 continue;
             }
-            // TO DO: remove this restriction and add extra memcpy for last chunk later below ...
-            if (maxn%thislen != 0) error("maxn (%d) is not exact multiple of this j column's length (%d)",maxn,thislen);
-            if (TYPEOF(VECTOR_ELT(jval, j)) != TYPEOF(VECTOR_ELT(ans, j+ngrpcols)))
-                error("columns of j don't evaluate to consistent types for each group: result for group %d has column %d type '%s' but expecting type '%s'", i+1, j+1, type2char(TYPEOF(VECTOR_ELT(jval, j))), type2char(TYPEOF(VECTOR_ELT(ans, j+ngrpcols))));
-            // TO DO : a switch would be neater here ...
-            if (TYPEOF(VECTOR_ELT(jval,j))==STRSXP) {
-                for (r=0; r<maxn; r++) {
-                    SET_STRING_ELT(VECTOR_ELT(ans,j+ngrpcols), thisansloc, STRING_ELT(VECTOR_ELT(jval,j),r%thislen));
-                    thisansloc++;
-                }
-                continue;
-                // TO DO: Replace SET_STRING_ELT and SET_VECTOR_ELT with direct CHK and CHECK_OLD_TO_NEW calls,
-                // once per item in jval, then the rest can be memcpy'd after?. But, it seems we do need to
-                // ensure objects are aged.
+            if (TYPEOF(source) != TYPEOF(target))
+                error("Column %d of result for group %d is type '%s' but expecting type '%s'. Column types must be consistent for each group.", j+1, i+1, type2char(TYPEOF(source)), type2char(TYPEOF(target)));
+            if (recycleWarn && maxn%thislen != 0) {
+                warning("Column %d of result for group %d is length %d but the longest column in this result is %d. Recycled leaving remainder of %d items. This warning is once only for the first group with this issue.",j+1,i+1,thislen,maxn,maxn%thislen);
+                recycleWarn = FALSE;
             }
-            if (TYPEOF(VECTOR_ELT(jval,j))==VECSXP) {
-                for (r=0; r<maxn; r++) {
-                    SET_VECTOR_ELT(VECTOR_ELT(ans,j+ngrpcols), thisansloc, VECTOR_ELT(VECTOR_ELT(jval,j),r%thislen));
-                    thisansloc++;
-                }
-                continue;
-            }
-            // else integer or real
-            size = SIZEOF(VECTOR_ELT(jval,j));
-            for (r=0; r<(maxn/thislen); r++) {
-                memcpy((char *)DATAPTR(VECTOR_ELT(ans,j+ngrpcols)) + thisansloc*size,
-                   (char *)DATAPTR(VECTOR_ELT(jval,j)),
-                   thislen * size);
-                thisansloc += thislen;
-            }
-            // TO DO : extra memcpy needed on this line if we allow non exact multiples
+            memrecycle(target, R_NilValue, thisansloc, maxn, source);
         }
         ansloc += maxn;
         if (firstalloc) {
@@ -416,12 +417,21 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
     if (isNull(lhs) && ans!=NULL) {
         if (ansloc < LENGTH(VECTOR_ELT(ans,0))) {
             if (LOGICAL(verbose)[0]) Rprintf("Wrote less rows (%d) than allocated (%d).\n",ansloc,LENGTH(VECTOR_ELT(ans,0)));
-            for (j=0; j<length(ans); j++) SETLENGTH(VECTOR_ELT(ans,j),ansloc);
-            // TO DO: set truelength here (uninitialized by R) to save growing next time on insert() 
+            for (j=0; j<length(ans); j++) SET_VECTOR_ELT(ans, j, growVector(VECTOR_ELT(ans,j), ansloc));
+            // shrinks (misuse of word 'grow') back to the rows written, otherwise leak until ...
+            // ... TO DO: set truelength to LENGTH(VECTOR_ELT(ans,0)), length to ansloc and enhance finalizer to handle over-allocated rows.
         }
     } else ans = R_NilValue;
+    // Now reset length of .SD columns and .I to length of largest group, otherwise leak if the last group is smaller (often is).
+    for (j=0; j<length(SD); j++) SETLENGTH(VECTOR_ELT(SD,j), origSDnrow);
+    SETLENGTH(I, origIlen);
+    if (LOGICAL(verbose)[0]) {
+        Rprintf("\n  collecting ad hoc groups took %.3fs for %d calls\n", 1.0*tblock[0]/CLOCKS_PER_SEC, nblock[0]);
+        Rprintf("  eval(j) took %.3fs for %d calls\n", 1.0*tblock[1]/CLOCKS_PER_SEC, nblock[1]);
+    }
     UNPROTECT(protecti);
     Free(nameSyms);
+    Free(xknameSyms);
     return(ans);
 }
 
@@ -443,19 +453,22 @@ SEXP growVector(SEXP x, R_len_t newlen)
     // * much shorter and faster
     SEXP newx;
     R_len_t i, len = length(x);
+    if (isNull(x)) error("growVector passed NULL");
     PROTECT(newx = allocVector(TYPEOF(x), newlen));   // TO DO: R_realloc(?) here?
+    if (newlen < len) len=newlen;   // i.e. shrink
     switch (TYPEOF(x)) {
     case STRSXP :
         for (i=0; i<len; i++)
             SET_STRING_ELT(newx, i, STRING_ELT(x, i));
-            // Using SET_ to ensure objects are aged, rather than memcpy. Perhaps theres a bulk/fast way to age CHECK_OLD_TO_NEW
+        // TO DO. Using SET_ to ensure objects are aged, rather than memcpy. Perhaps theres a bulk/fast way to age CHECK_OLD_TO_NEW
         break;
     case VECSXP :
         for (i=0; i<len; i++)
             SET_VECTOR_ELT(newx, i, VECTOR_ELT(x, i));
+        // TO DO: Again, is there bulk op to avoid this loop, which still respects older generations    
         break;
     default :
-        memcpy((char *)DATAPTR(newx), (char *)DATAPTR(x), len*SIZEOF(x));
+        memcpy((char *)DATAPTR(newx), (char *)DATAPTR(x), len*SIZEOF(x));   // SIZEOF() returns size_t (just as sizeof()) so * shouldn't overflow 
     }
     // if (verbose) Rprintf("Growing vector from %d to %d items of type '%s'\n", len, newlen, type2char(TYPEOF(x)));
     // Would print for every column if here. Now just up in dogroups (one msg for each table grow).

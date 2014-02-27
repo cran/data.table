@@ -10,7 +10,12 @@
 
 SEXP setattrib(SEXP x, SEXP name, SEXP value)
 {
-    setAttrib(x,name,value);
+    if (TYPEOF(name) != STRSXP) error("Attribute name must be of type character");
+    setAttrib(x, name,
+        NAMED(value) ? duplicate(value) : value);
+        // duplicate is temp fix to restore R behaviour prior to R-devel change on 10 Jan 2014 (r64724).
+        // TO DO: revisit. Enough to reproduce is: DT=data.table(a=1:3); DT[2]; DT[,b:=2]
+        // ... Error: selfrefnames is ok but tl names [1] != tl [100]
     return(R_NilValue);
 }               
 

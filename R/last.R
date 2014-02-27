@@ -5,9 +5,13 @@
 # If xts is loaded higher than data.table, xts::last will work but slower.
 last = function(x, ...) {
     if (nargs()==1L) {
-        if (is.vector(x)) return(x[[length(x)]])  # [[ for list which is vector too
+        if (is.vector(x)) {
+            if (!length(x)) return(x) else return(x[[length(x)]])  # [[ for list which is vector too
+        }
         if (is.data.frame(x)) return(x[NROW(x),])
     }
+    if (!"package:xts" %in% search())
+        stop("data.table::last is trying to defer to xts::last because either x is not a vector, list, data.frame or data.table, or parameters such as 'n' or 'keep' have been provided as well. But xts hasn't been loaded.")
     xts::last(x,...)   # UseMethod("last") doesn't find xts's methods, not sure what I did wrong.
 }
 

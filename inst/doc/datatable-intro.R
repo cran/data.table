@@ -120,8 +120,8 @@ dim(ans1)
 ###################################################
 ### code chunk number 17: datatable-intro.Rnw:180-182
 ###################################################
-DT = data.table(DF)
-setkey(DT,x,y)
+DT = as.data.table(DF)       # but normally use fread() or data.table() directly, originally 
+system.time(setkey(DT,x,y))  # one-off cost, usually
 
 
 ###################################################

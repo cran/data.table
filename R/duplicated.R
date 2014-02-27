@@ -1,7 +1,5 @@
 
-duplicated.data.table <- function(x, incomparables=FALSE,
-                                  tolerance=.Machine$double.eps ^ 0.5,
-                                  by=key(x), ...) {
+duplicated.data.table <- function(x, incomparables=FALSE, by=key(x), ...) {
     if (!cedta()) return(NextMethod("duplicated"))
     if (!identical(incomparables, FALSE)) {
         .NotYetUsed("incomparables != FALSE")
@@ -9,26 +7,21 @@ duplicated.data.table <- function(x, incomparables=FALSE,
 
     query <- .duplicated.helper(x, by)
     res <- rep.int(TRUE, nrow(x))
-
+    
     if (query$use.keyprefix) {
-        res[duplist(x[, query$by, with=FALSE], tolerance=tolerance)] = FALSE
+        f = uniqlist(x[, query$by, with=FALSE])
     } else {
-        xx <- x[, query$by, with=FALSE]
-        o = fastorder(xx)
-        f = o[duplist(xx, o, tolerance=tolerance)]
-        f = f[sort.list(f, na.last=FALSE, decreasing=FALSE)]
-        # TO DO: remove sort.list call by replacing fastorder with fastgroup
-        res[f] = FALSE
+        o = forder(x, by=query$by, sort=FALSE, retGrp=TRUE)
+        f = attr(o,"starts")
+        if (length(o)) f=o[f]
     }
-
+    res[f] = FALSE
     res
 }
 
-unique.data.table <- function(x, incomparables=FALSE,
-                              tolerance=.Machine$double.eps ^ 0.5,
-                              by=key(x), ...) {
+unique.data.table <- function(x, incomparables=FALSE, by=key(x), ...) {
     if (!cedta()) return(NextMethod("unique"))
-    dups <- duplicated.data.table(x, incomparables, tolerance, by, ...)
+    dups <- duplicated.data.table(x, incomparables, by, ...)
     x[!dups]
 }
 
@@ -71,3 +64,5 @@ unique.data.table <- function(x, incomparables=FALSE,
 
     list(use.keyprefix=use.keyprefix, by=by)
 }
+
+
