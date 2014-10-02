@@ -1,6 +1,5 @@
-#include <R.h>
-#define USE_RINTERNALS
-#include <Rinternals.h>
+#include "data.table.h"
+
 /*
 Implements binary search (a.k.a. divide and conquer).
 http://en.wikipedia.org/wiki/Binary_search
@@ -20,18 +19,15 @@ Differences over standard binary search (e.g. bsearch in stdlib.h) :
 #define ENC_KNOWN(x) (LEVELS(x) & 12)
 // 12 = LATIN1_MASK (1<<2) | UTF8_MASK (1<<3)  // Would use these definitions from Defn.h, but that appears to be private to R. Hence 12.
 
-extern SEXP forder();
-extern int StrCmp(SEXP x, SEXP y);  // in forder.c
-extern unsigned long long twiddle(void *);
-
 static SEXP i, x;
-static int ncol, *icols, *xcols, *o, *retFirst, *retLength, *allLen1, *rollends;
+static int ncol, *icols, *xcols, *o, *xo, *retFirst, *retLength, *allLen1, *rollends;
 static double roll, rollabs;
 static Rboolean nearest=FALSE, enc_warn=TRUE;
+#define XIND(i) (xo ? xo[(i)]-1 : i)
 
 void bmerge_r(int xlow, int xupp, int ilow, int iupp, int col, int lowmax, int uppmax);
 
-SEXP bmerge(SEXP iArg, SEXP xArg, SEXP icolsArg, SEXP xcolsArg, SEXP isorted, SEXP rollarg, SEXP rollendsArg, SEXP nomatch, SEXP retFirstArg, SEXP retLengthArg, SEXP allLen1Arg)
+SEXP bmerge(SEXP iArg, SEXP xArg, SEXP icolsArg, SEXP xcolsArg, SEXP isorted, SEXP xoArg, SEXP rollarg, SEXP rollendsArg, SEXP nomatch, SEXP retFirstArg, SEXP retLengthArg, SEXP allLen1Arg)
 {
     int xN, iN, protecti=0;
     roll = 0.0;
@@ -85,9 +81,15 @@ SEXP bmerge(SEXP iArg, SEXP xArg, SEXP icolsArg, SEXP xcolsArg, SEXP isorted, SE
     
     o = NULL;
     if (!LOGICAL(isorted)[0]) {
-        SEXP oSxp = PROTECT(forder(i, icolsArg, ScalarLogical(FALSE), ScalarLogical(TRUE)));
-        protecti++;
+        SEXP order = PROTECT(vec_init(length(icolsArg), ScalarInteger(1))); // rep(1, length(icolsArg))
+        SEXP oSxp = PROTECT(forder(i, icolsArg, ScalarLogical(FALSE), ScalarLogical(TRUE), order, ScalarLogical(FALSE)));
+        protecti += 2;
         if (!LENGTH(oSxp)) o = NULL; else o = INTEGER(oSxp);
+    }
+    xo = NULL;
+    if (length(xoArg)) {
+        if (!isInteger(xoArg)) error("Internal error: xoArg is not an integer vector");
+        xo = INTEGER(xoArg);
     }
     
     if (iN) bmerge_r(-1,xN,-1,iN,0,1,1);
@@ -104,14 +106,14 @@ static union {
 } ival, xval;
 
 static int mid, tmplow, tmpupp;  // global to save them being added to recursive stack. Maybe optimizer would do this anyway.
-static SEXP ic, xc;
+static SEXP ic, xc, class;
 
 void bmerge_r(int xlowIn, int xuppIn, int ilowIn, int iuppIn, int col, int lowmax, int uppmax)
 // col is >0 and <=ncol-1 if this range of [xlow,xupp] and [ilow,iupp] match up to but not including that column
 // lowmax=1 if xlowIn is the lower bound of this group (needed for roll)
 // uppmax=1 if xuppIn is the upper bound of this group (needed for roll)
 {
-    int xlow=xlowIn, xupp=xuppIn, ilow=ilowIn, iupp=iuppIn, j, k, ir, lir, tmp; 
+    int xlow=xlowIn, xupp=xuppIn, ilow=ilowIn, iupp=iuppIn, j, k, ir, lir, tmp;
     ir = lir = ilow + (iupp-ilow)/2;           // lir = logical i row.
     if (o) ir = o[lir]-1;                      // ir = the actual i row if i were ordered
 
@@ -124,7 +126,7 @@ void bmerge_r(int xlowIn, int xuppIn, int ilowIn, int iuppIn, int col, int lowma
         ival.i = INTEGER(ic)[ir];
         while(xlow < xupp-1) {
             mid = xlow + (xupp-xlow)/2;   // Same as (xlow+xupp)/2 but without risk of overflow
-            xval.i = INTEGER(xc)[mid];
+            xval.i = INTEGER(xc)[XIND(mid)];
             if (xval.i<ival.i) {          // relies on NA_INTEGER == INT_MIN, tested in init.c
                 xlow=mid;
             } else if (xval.i>ival.i) {   // TO DO: is *(&xlow, &xupp)[0|1]=mid more efficient than branch?
@@ -136,12 +138,12 @@ void bmerge_r(int xlowIn, int xuppIn, int ilowIn, int iuppIn, int col, int lowma
                 tmpupp = mid;
                 while(tmplow<xupp-1) {
                     mid = tmplow + (xupp-tmplow)/2;
-                    xval.i = INTEGER(xc)[mid];
+                    xval.i = INTEGER(xc)[XIND(mid)];
                     if (xval.i == ival.i) tmplow=mid; else xupp=mid;
                 }
                 while(xlow<tmpupp-1) {
                     mid = xlow + (tmpupp-xlow)/2;
-                    xval.i = INTEGER(xc)[mid];
+                    xval.i = INTEGER(xc)[XIND(mid)];
                     if (xval.i == ival.i) tmpupp=mid; else xlow=mid;
                 }
                 // xlow and xupp now surround the group in xc, we only need this range for the next column
@@ -166,7 +168,7 @@ void bmerge_r(int xlowIn, int xuppIn, int ilowIn, int iuppIn, int col, int lowma
         ival.s = STRING_ELT(ic,ir);
         while(xlow < xupp-1) {
             mid = xlow + (xupp-xlow)/2;
-            xval.s = STRING_ELT(xc,mid);
+            xval.s = STRING_ELT(xc, XIND(mid));
             if (enc_warn && (ENC_KNOWN(ival.s) || ENC_KNOWN(xval.s))) {
                 // The || is only done here to avoid the warning message being repeating in this code.
                 warning("A known encoding (latin1 or UTF-8) was detected in a join column. data.table compares the bytes currently, so doesn't support *mixed* encodings well; i.e., using both latin1 and UTF-8, or if any unknown encodings are non-ascii and some of those are marked known and others not. But if either latin1 or UTF-8 is used exclusively, and all unknown encodings are ascii, then the result should be ok. In future we will check for you and avoid this warning if everything is ok. The tricky part is doing this without impacting performance for ascii-only cases.");
@@ -181,12 +183,12 @@ void bmerge_r(int xlowIn, int xuppIn, int ilowIn, int iuppIn, int col, int lowma
                 tmpupp = mid;
                 while(tmplow<xupp-1) {
                     mid = tmplow + (xupp-tmplow)/2;
-                    xval.s = STRING_ELT(xc,mid);
+                    xval.s = STRING_ELT(xc, XIND(mid));
                     if (ival.s == xval.s) tmplow=mid; else xupp=mid;  // the == here assumes (within this column) no mixing of latin1 and UTF-8, and no unknown non-ascii
                 }                                                     // TO DO: add checks to forder, see above.
                 while(xlow<tmpupp-1) {
                     mid = xlow + (tmpupp-xlow)/2;
-                    xval.s = STRING_ELT(xc,mid);
+                    xval.s = STRING_ELT(xc, XIND(mid));
                     if (ival.s == xval.s) tmpupp=mid; else xlow=mid;  // see above re ==
                 }
                 break;
@@ -210,10 +212,12 @@ void bmerge_r(int xlowIn, int xuppIn, int ilowIn, int iuppIn, int col, int lowma
         }
         break;
     case REALSXP :
-        ival.ll = twiddle(&REAL(ic)[ir]);
+        class = getAttrib(xc, R_ClassSymbol);
+        twiddle = (isString(class) && STRING_ELT(class, 0)==char_integer64) ? &i64twiddle : &dtwiddle;
+        ival.ll = twiddle(DATAPTR(ic), ir, 1);
         while(xlow < xupp-1) {
             mid = xlow + (xupp-xlow)/2;
-            xval.ll = twiddle(&REAL(xc)[mid]);
+            xval.ll = twiddle(DATAPTR(xc), XIND(mid), 1);
             if (xval.ll<ival.ll) {
                 xlow=mid;
             } else if (xval.ll>ival.ll) {
@@ -223,12 +227,12 @@ void bmerge_r(int xlowIn, int xuppIn, int ilowIn, int iuppIn, int col, int lowma
                 tmpupp = mid;
                 while(tmplow<xupp-1) {
                     mid = tmplow + (xupp-tmplow)/2;
-                    xval.ll = twiddle(&REAL(xc)[mid]);
+                    xval.ll = twiddle(DATAPTR(xc), XIND(mid), 1);
                     if (xval.ll == ival.ll) tmplow=mid; else xupp=mid;
                 }
                 while(xlow<tmpupp-1) {
                     mid = xlow + (tmpupp-xlow)/2;
-                    xval.ll = twiddle(&REAL(xc)[mid]);
+                    xval.ll = twiddle(DATAPTR(xc), XIND(mid), 1);
                     if (xval.ll == ival.ll) tmpupp=mid; else xlow=mid;
                 }
                 break;
@@ -238,12 +242,12 @@ void bmerge_r(int xlowIn, int xuppIn, int ilowIn, int iuppIn, int col, int lowma
         tmpupp = lir;
         while(tmplow<iupp-1) {
             mid = tmplow + (iupp-tmplow)/2;
-            xval.ll = twiddle(&REAL(ic)[ o ? o[mid]-1 : mid ]);
+            xval.ll = twiddle(DATAPTR(ic), o ? o[mid]-1 : mid, 1 );
             if (xval.ll == ival.ll) tmplow=mid; else iupp=mid;
         }
         while(ilow<tmpupp-1) {
             mid = ilow + (tmpupp-ilow)/2;
-            xval.ll = twiddle(&REAL(ic)[ o ? o[mid]-1 : mid ]);
+            xval.ll = twiddle(DATAPTR(ic), o ? o[mid]-1 : mid, 1 );
             if (xval.ll == ival.ll) tmpupp=mid; else ilow=mid;
         }
         break;
@@ -257,7 +261,7 @@ void bmerge_r(int xlowIn, int xuppIn, int ilowIn, int iuppIn, int col, int lowma
             int len = xupp-xlow-1;
             if (len>1) allLen1[0] = FALSE;
             for (j=ilow+1; j<iupp; j++) {   // usually iterates once only for j=ir
-                if (o) k=o[j]-1; else k=j;
+                k = o ? o[j]-1 : j;
                 retFirst[k] = xlow+2;       // extra +1 for 1-based indexing at R level
                 retLength[k]= len; 
             }
@@ -268,8 +272,8 @@ void bmerge_r(int xlowIn, int xuppIn, int ilowIn, int iuppIn, int col, int lowma
         if (xlow != xupp-1 || xlow<xlowIn || xupp>xuppIn) error("Internal error: xlow!=xupp-1 || xlow<xlowIn || xupp>xuppIn");
         if (nearest) {   // value of roll ignored currently when nearest
             if ( (!lowmax || xlow>xlowIn) && (!uppmax || xupp<xuppIn) ) {
-                if (  ( TYPEOF(ic)==REALSXP && REAL(ic)[ir]-REAL(xc)[xlow] <= REAL(xc)[xupp]-REAL(ic)[ir] )
-                   || ( TYPEOF(ic)<=INTSXP && INTEGER(ic)[ir]-INTEGER(xc)[xlow] <= INTEGER(xc)[xupp]-INTEGER(ic)[ir] )) {
+                if (  ( TYPEOF(ic)==REALSXP && REAL(ic)[ir]-REAL(xc)[XIND(xlow)] <= REAL(xc)[XIND(xupp)]-REAL(ic)[ir] )
+                   || ( TYPEOF(ic)<=INTSXP && INTEGER(ic)[ir]-INTEGER(xc)[XIND(xlow)] <= INTEGER(xc)[XIND(xupp)]-INTEGER(ic)[ir] )) {
                     retFirst[ir] = xlow+1;
                     retLength[ir] = 1;
                 } else {
@@ -286,16 +290,16 @@ void bmerge_r(int xlowIn, int xuppIn, int ilowIn, int iuppIn, int col, int lowma
         } else {
             if ( (   (roll>0.0 && (!lowmax || xlow>xlowIn) && (xupp<xuppIn || !uppmax || rollends[1]))
                   || (roll<0.0 && xupp==xuppIn && uppmax && rollends[1]) )
-              && (   (TYPEOF(ic)==REALSXP && REAL(ic)[ir]-REAL(xc)[xlow]-rollabs<1e-6)
-                  || (TYPEOF(ic)<=INTSXP && (double)(INTEGER(ic)[ir]-INTEGER(xc)[xlow])-rollabs<1e-6 ) 
+              && (   (TYPEOF(ic)==REALSXP && REAL(ic)[ir]-REAL(xc)[XIND(xlow)]-rollabs<1e-6)
+                  || (TYPEOF(ic)<=INTSXP && (double)(INTEGER(ic)[ir]-INTEGER(xc)[XIND(xlow)])-rollabs<1e-6 ) 
                   || (TYPEOF(ic)==STRSXP)   )) {
                 retFirst[ir] = xlow+1;
                 retLength[ir] = 1;
             } else if
                (  (  (roll<0.0 && (!uppmax || xupp<xuppIn) && (xlow>xlowIn || !lowmax || rollends[0]))
                   || (roll>0.0 && xlow==xlowIn && lowmax && rollends[0]) )
-              && (   (TYPEOF(ic)==REALSXP && REAL(xc)[xupp]-REAL(ic)[ir]-rollabs<1e-6)
-                  || (TYPEOF(ic)<=INTSXP && (double)(INTEGER(xc)[xupp]-INTEGER(ic)[ir])-rollabs<1e-6 )
+              && (   (TYPEOF(ic)==REALSXP && REAL(xc)[XIND(xupp)]-REAL(ic)[ir]-rollabs<1e-6)
+                  || (TYPEOF(ic)<=INTSXP && (double)(INTEGER(xc)[XIND(xupp)]-INTEGER(ic)[ir])-rollabs<1e-6 )
                   || (TYPEOF(ic)==STRSXP)   )) {
                 retFirst[ir] = xupp+1;   // == xlow+2
                 retLength[ir] = 1;
@@ -305,7 +309,7 @@ void bmerge_r(int xlowIn, int xuppIn, int ilowIn, int iuppIn, int col, int lowma
             for (j=ilow+1; j<iupp; j++) {                 // will rewrite retFirst[ir] to itself, but that's ok
                 if (o) k=o[j]-1; else k=j;
                 retFirst[k] = retFirst[ir];
-                retLength[k]= 1; 
+                retLength[k]= retLength[ir]; 
             }
         }
     }

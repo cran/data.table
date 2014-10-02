@@ -1,22 +1,7 @@
-#include <R.h>
-#define USE_RINTERNALS
-#include <Rinternals.h>
+#include "data.table.h"
 #include <Rdefines.h>
 // #include <signal.h> // the debugging machinery + breakpoint aidee
 // raise(SIGINT);
-
-extern size_t sizes[100];
-#define SIZEOF(x) sizes[TYPEOF(x)]
-
-extern SEXP chmatch(SEXP x, SEXP table, R_len_t nomatch, Rboolean in);
-extern SEXP uniqlist(SEXP l, SEXP order);
-extern SEXP allocNAVector(SEXPTYPE type, R_len_t n);
-extern SEXP seq_int(int n, int start);
-extern SEXP set_diff(SEXP x, int n);
-extern SEXP which(SEXP x);
-extern SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEXP xjiscols, SEXP grporder, SEXP order, SEXP starts, SEXP lens, SEXP jexp, SEXP env, SEXP lhs, SEXP newnames, SEXP verbose);
-extern SEXP alloccol(SEXP dt, R_len_t n, Rboolean verbose);
-extern SEXP bmerge(SEXP left, SEXP right, SEXP leftcols, SEXP rightcols, SEXP isorted, SEXP rollarg, SEXP rollends, SEXP nomatch, SEXP retFirst, SEXP retLength, SEXP allLen1);
 
 // Note: all these functions below are internal functions and are designed specific to fcast.
 SEXP zero_init(R_len_t n) {
@@ -58,82 +43,214 @@ SEXP vec_init(R_len_t n, SEXP val) {
 }
 
 SEXP cast_order(SEXP v, SEXP env) {
+    R_len_t len;
     SEXP call, ans;
-    if (TYPEOF(v) != VECSXP) error("Argument 'v' to 'cast_order' must be a list");
     if (TYPEOF(env) != ENVSXP) error("Argument 'env' to (data.table internals) 'cast_order' must be an environment");
-    PROTECT(call = lang2(install("forder"), v));   // [Matt] TO DO?: just call forder directly at C level
+    if (TYPEOF(v) == VECSXP) len = length(VECTOR_ELT(v, 0)); 
+    else len = length(v);
+    PROTECT(call = lang2(install("forder"), v)); // TODO: save the 'eval' by calling directly the C-function.
     ans = PROTECT(eval(call, env));
-    if (length(ans) == 0) { // newly implemented fastorder/forder returns integer(0) if it's already sorted
+    if (length(ans) == 0) { // forder returns integer(0) if already sorted
         UNPROTECT(1); // ans
-        ans = PROTECT(seq_int(length(VECTOR_ELT(v, 0)), 1)); // [Matt] TO DO?: leave it as integer(0) and save reorder in caller
+        ans = PROTECT(seq_int(len, 1));
     }
     UNPROTECT(2);
     return(ans);
 }
 
-SEXP cross_join(SEXP s) {
+SEXP cross_join(SEXP s, SEXP env) {
     // Calling CJ is faster and don't have to worry about sorting or setting key.
     SEXP call, r;
     if (!isNewList(s) || isNull(s)) error("Argument 's' to 'cross_join' must be a list of length > 0");
-    PROTECT(call = lang3(install("do.call"), mkString("CJ"), s));
-    r = eval(call, R_GlobalEnv);
+    PROTECT(call = lang3(install("do.call"), install("CJ"), s));
+    r = eval(call, env);
     UNPROTECT(1);
     return(r);
 }
 
-SEXP max_val(SEXP x) {
-    
-    R_len_t i;
-    SEXP ans;
-    if (TYPEOF(x) != INTSXP || length(x) < 1) error("Argument 'x' to 'max_val' must be an integer vector of length > 0");
-    if (length(x) == 1) return(x);
-    ans = PROTECT(allocVector(INTSXP, 1));
-    INTEGER(ans)[0] = INTEGER(x)[0];
-    for (i=1; i<length(x); i++)
-        INTEGER(ans)[0] = INTEGER(ans)[0] > INTEGER(x)[i] ? INTEGER(ans)[0] : INTEGER(x)[i];
-    UNPROTECT(1); // ans
-    return(ans);
-}
-
-SEXP subset(SEXP x, SEXP idx) { // idx is 1-based
-    
-    SEXP ans;
-    R_len_t i;
-    if (TYPEOF(idx) != INTSXP || length(idx) < 1) error("Argument 'idx' to (data.table internals) 'subset' must be an integer vector of length >= 1");
-    if (INTEGER(max_val(idx))[0] > length(x)) error("'max(idx)' > length(x)");
-    ans = PROTECT(allocVector(TYPEOF(x), length(idx)));
+static SEXP subsetVectorRaw(SEXP x, SEXP idx, int l, int tl)
+// Only for use by subsetDT() or subsetVector() below, hence static
+// l is the count of non-zero (including NAs) in idx i.e. the length of the result
+// tl is the amount to be allocated,  tl>=l
+// TO DO: if no 0 or NA detected up front in subsetDT() below, could switch to a faster subsetVectorRawNo0orNA()
+{
+    int i, this, ansi=0, max=length(x);
+    if (tl<l) error("Internal error: tl<n passed to subsetVectorRaw");
+    SEXP ans = PROTECT(allocVector(TYPEOF(x), tl));
+    SETLENGTH(ans, l);
+    SET_TRUELENGTH(ans, tl);
     switch(TYPEOF(x)) {
-        case INTSXP :
-        for (i=0; i<length(idx); i++)
-            INTEGER(ans)[i] = INTEGER(x)[INTEGER(idx)[i]-1];
+    case INTSXP :
+        for (i=0; i<LENGTH(idx); i++) {
+            this = INTEGER(idx)[i];
+            if (this==0) continue;
+            INTEGER(ans)[ansi++] = (this==NA_INTEGER || this>max) ? NA_INTEGER : INTEGER(x)[this-1];
+        }
         break;
-        case REALSXP : 
-        for (i=0; i<length(idx); i++)
-            REAL(ans)[i] = REAL(x)[INTEGER(idx)[i]-1];
+    case REALSXP :
+        for (i=0; i<LENGTH(idx); i++) {
+            this = INTEGER(idx)[i];
+            if (this==0) continue;
+            REAL(ans)[ansi++] = (this==NA_INTEGER || this>max) ? NA_REAL : REAL(x)[this-1];
+        }
         break;
-        case LGLSXP :
-        for (i=0; i<length(idx); i++)
-            LOGICAL(ans)[i] = LOGICAL(x)[INTEGER(idx)[i]-1];
+    case LGLSXP :
+        for (i=0; i<LENGTH(idx); i++) {
+            this = INTEGER(idx)[i];
+            if (this==0) continue;
+            LOGICAL(ans)[ansi++] = (this==NA_INTEGER || this>max) ? NA_LOGICAL : LOGICAL(x)[this-1];
+        }
         break;
-        case STRSXP :
-        for (i=0; i<length(idx); i++)
-            SET_STRING_ELT(ans, i, STRING_ELT(x, INTEGER(idx)[i]-1));
+    case STRSXP :
+        for (i=0; i<LENGTH(idx); i++) {
+            this = INTEGER(idx)[i];
+            if (this==0) continue;
+            SET_STRING_ELT(ans, ansi++, (this==NA_INTEGER || this>max) ? NA_STRING : STRING_ELT(x, this-1));
+        }
         break;
-        case VECSXP :
-        for (i=0; i<length(idx); i++)
-            SET_VECTOR_ELT(ans, i, VECTOR_ELT(x, INTEGER(idx)[i]-1));
+    case VECSXP :
+        for (i=0; i<LENGTH(idx); i++) {
+            this = INTEGER(idx)[i];
+            if (this==0) continue;
+            SET_VECTOR_ELT(ans, ansi++, (this==NA_INTEGER || this>max) ? R_NilValue : VECTOR_ELT(x, this-1));
+        }
         break;
-        default :
+    default :
         error("Unknown column type '%s'", type2char(TYPEOF(x)));
     }
-    if (isFactor(x)) {                                                // TODO: should we set attributes back for Date class and the like as well?
-        setAttrib(ans, R_ClassSymbol, getAttrib(x, R_ClassSymbol));
-        setAttrib(ans, R_LevelsSymbol, getAttrib(x, R_LevelsSymbol));
-    }
-    setAttrib(ans, R_ClassSymbol, getAttrib(x, R_ClassSymbol));
+    if (ansi != l) error("Internal error: ansi [%d] != l [%d] at the end of subsetVector", ansi, l);
+    copyMostAttrib(x, ans);
     UNPROTECT(1);
     return(ans);
 }
+
+static int check_idx(SEXP idx, int n)
+{
+    int i, this, ans=0;
+    if (!isInteger(idx)) error("Internal error. 'idx' is type '%s' not 'integer'", type2char(TYPEOF(idx)));
+    for (i=0; i<LENGTH(idx); i++) {  // check idx once up front and count the non-0 so we know how long the answer will be
+        this = INTEGER(idx)[i];
+        if (this==0) continue;
+        if (this!=NA_INTEGER && this<0) error("Internal error: item %d of idx is %d. Negatives should have been dealt with earlier.", i+1, this);
+        // this>n is treated as NA for consistency with [.data.frame and things like cbind(DT[w],DT[w+1])
+        ans++;
+    }
+    return ans;
+}
+
+SEXP convertNegativeIdx(SEXP idx, SEXP maxArg)
+{
+    int this;
+    // + more precise and helpful error messages telling user exactly where the problem is (saving user debugging time)
+    // + a little more efficient than negativeSubscript in src/main/subscript.c (it's private to R so we can't call it anyway)
+    
+    if (!isInteger(idx)) error("Internal error. 'idx' is type '%s' not 'integer'", type2char(TYPEOF(idx)));
+    if (!isInteger(maxArg) || length(maxArg)!=1) error("Internal error. 'maxArg' is type '%s' and length %d, should be an integer singleton", type2char(TYPEOF(maxArg)), length(maxArg));
+    int max = INTEGER(maxArg)[0];
+    if (max<0) error("Internal error. max is %d, must be >= 0.", max);  // NA also an error which'll print as INT_MIN
+    int firstNegative = 0, firstPositive = 0, firstNA = 0, num0 = 0;
+    int i=0;
+    for (i=0; i<LENGTH(idx); i++) {
+        this = INTEGER(idx)[i];
+        if (this==NA_INTEGER) { if (firstNA==0) firstNA = i+1;  continue; }
+        if (this==0)          { num0++;  continue; }
+        if (this>0)           { if (firstPositive==0) firstPositive=i+1; continue; }
+        if (firstNegative==0) firstNegative=i+1;
+    }
+    if (firstNegative==0) return(idx);  // 0's and NA can be mixed with positives, there are no negatives present, so we're done
+    if (firstPositive) error("Item %d of i is %d and item %d is %d. Cannot mix positives and negatives.",
+                             firstNegative, INTEGER(idx)[firstNegative-1], firstPositive, INTEGER(idx)[firstPositive-1]);
+    if (firstNA)       error("Item %d of i is %d and item %d is NA. Cannot mix negatives and NA.",
+                             firstNegative, INTEGER(idx)[firstNegative-1], firstNA);
+    
+    // idx is all negative without any NA but perhaps 0 present (num0) ...
+    
+    char *tmp = Calloc(max, char);    // 4 times less memory that INTSXP in src/main/subscript.c
+    int firstDup = 0, numDup = 0, firstBeyond = 0, numBeyond = 0;
+    for (i=0; i<LENGTH(idx); i++) {
+        this = -INTEGER(idx)[i];
+        if (this==0) continue;
+        if (this>max) {
+            numBeyond++;
+            if (firstBeyond==0) firstBeyond=i+1;
+            continue;
+        }
+        if (tmp[this-1]==1) {
+            numDup++;
+            if (firstDup==0) firstDup=i+1;
+        } else tmp[this-1] = 1;
+    }
+    if (numBeyond)
+        warning("Item %d of i is %d but there are only %d rows. Ignoring this and %d more like it out of %d.", firstBeyond, INTEGER(idx)[firstBeyond-1], max, numBeyond-1, LENGTH(idx));
+    if (numDup)
+        warning("Item %d of i is %d which has occurred before. Ignoring this and %d other duplicates out of %d.", firstDup, INTEGER(idx)[firstDup-1], numDup-1, LENGTH(idx));
+    
+    SEXP ans = PROTECT(allocVector(INTSXP, max-LENGTH(idx)+num0+numDup+numBeyond));
+    int ansi = 0;
+    for (i=0; i<max; i++) {
+        if (tmp[i]==0) INTEGER(ans)[ansi++] = i+1;
+    }
+    Free(tmp);
+    UNPROTECT(1);
+    if (ansi != max-LENGTH(idx)+num0+numDup+numBeyond) error("Internal error: ansi[%d] != max[%d]-LENGTH(idx)[%d]+num0[%d]+numDup[%d]+numBeyond[%d] in convertNegativeIdx",ansi,max,LENGTH(idx),num0,numDup,numBeyond);
+    return(ans);
+}
+
+SEXP subsetDT(SEXP x, SEXP rows, SEXP cols) { // rows and cols are 1-based passed from R level
+
+// Originally for subsetting vectors in fcast and now the beginnings of [.data.table ported to C
+// Immediate need is for R 3.1 as lglVec[1] now returns R's global TRUE and we don't want := to change that global [think 1 row data.tables]
+// Could do it other ways but may as well go to C now as we were going to do that anyway
+    
+    SEXP ans, tmp;
+    R_len_t i, j, ansn=0;
+    int this;
+    if (!isNewList(x)) error("Internal error. Argument 'x' to CsubsetDT is type '%s' not 'list'", type2char(TYPEOF(rows)));
+    if (!length(x)) return(x);  // return empty list
+    ansn = check_idx(rows, length(VECTOR_ELT(x,0)));  // check once up front before looping calls to subsetVectorRaw below
+    if (!isInteger(cols)) error("Internal error. Argument 'cols' to Csubset is type '%s' not 'integer'", type2char(TYPEOF(cols)));
+    for (i=0; i<LENGTH(cols); i++) {
+        this = INTEGER(cols)[i];
+        if (this<1 || this>LENGTH(x)) error("Item %d of 'cols' is %d which is outside 1-based range [1,ncol(x)=%d]", i+1, this, LENGTH(x));
+    }
+    ans = PROTECT(allocVector(VECSXP, LENGTH(cols)+64));  // just do alloc.col directly, eventually alloc.col can be deprecated.
+    copyMostAttrib(x, ans);  // other than R_NamesSymbol, R_DimSymbol and R_DimNamesSymbol  
+                             // so includes row.names (oddly, given other dims aren't) and "sorted", dealt with below
+    SET_TRUELENGTH(ans, LENGTH(ans));
+    SETLENGTH(ans, LENGTH(cols));
+    for (i=0; i<LENGTH(cols); i++) {
+        SET_VECTOR_ELT(ans, i, subsetVectorRaw(VECTOR_ELT(x, INTEGER(cols)[i]-1), rows, ansn, ansn));  // column vectors aren't over allocated yet
+    }
+    setAttrib(ans, R_NamesSymbol, subsetVectorRaw( getAttrib(x, R_NamesSymbol), cols, LENGTH(cols), LENGTH(cols)+64 ));
+    tmp = PROTECT(allocVector(INTSXP, 2));
+    INTEGER(tmp)[0] = NA_INTEGER;
+    INTEGER(tmp)[1] = -ansn;
+    setAttrib(ans, R_RowNamesSymbol, tmp);  // The contents of tmp must be set before being passed to setAttrib(). setAttrib looks at tmp value and copies it in the case of R_RowNamesSymbol. Caused hard to track bug around 28 Sep 2014.
+    // maintain key if ordered subset ...
+    SEXP key = getAttrib(x, install("sorted"));
+    if (length(key)) {
+        SEXP in = PROTECT(chmatch(key,getAttrib(ans,R_NamesSymbol), 0, TRUE)); // (nomatch ignored when in=TRUE)
+        i = 0;  while(i<LENGTH(key) && LOGICAL(in)[i]) i++;
+        UNPROTECT(1);
+        // i is now the keylen that can be kept. 2 lines above much easier in C than R
+        if (i==0) {
+            setAttrib(ans, install("sorted"), R_NilValue);
+            // clear key that was copied over by copyMostAttrib() above
+        } else if (isOrderedSubset(rows, ScalarInteger(length(VECTOR_ELT(x,0))))) {
+            setAttrib(ans, install("sorted"), tmp=allocVector(STRSXP, i));
+            for (j=0; j<i; j++) SET_STRING_ELT(tmp, j, STRING_ELT(key, j));
+        }
+    }
+    setselfref(ans);
+    UNPROTECT(2);
+    return ans;
+}
+
+SEXP subsetVector(SEXP x, SEXP idx) { // idx is 1-based passed from R level
+    int n = check_idx(idx, length(x));
+    return subsetVectorRaw(x, idx, n, n);
+}
+
 
 SEXP diff_int(SEXP x, R_len_t n) {
     
@@ -184,98 +301,6 @@ SEXP coerce_to_char(SEXP s, SEXP env)
     return coerceVector(s, STRSXP);
 }
 
-SEXP castgroups(SEXP groups, SEXP val, SEXP f__, SEXP value_var, SEXP jsub, SEXP env) {
-    
-    R_len_t i, len=length(VECTOR_ELT(groups, 0));
-    int protecti=0;
-    SEXP tmp, cpy, SDnames, SDclass, ans;
-    SEXP x, xcols, grpcols, grporder, o__, len__, jiscols = R_NilValue, xjiscols=R_NilValue;
-    SEXP BY_, GRP_, I_, N_, SD_, iSD_ = R_NilValue, xSD_ = R_NilValue;
-    SEXP cols = R_NilValue, newnames = R_NilValue, verbose;
-        
-    xcols = PROTECT(allocVector(INTSXP, 1)); protecti++;
-    INTEGER(xcols)[0] = length(groups) + 1;
-    x = PROTECT(allocVector(VECSXP, length(groups)+1)); protecti++;
-    for (i=0; i<length(groups); i++) {
-        SET_VECTOR_ELT(x, i, VECTOR_ELT(groups, i));
-    }
-    SET_VECTOR_ELT(x, length(groups), val);
-    grpcols = PROTECT(seq_int(length(groups), 1)); protecti++;
-    grporder = PROTECT(allocVector(INTSXP, 0)); protecti++;
-    o__ = PROTECT(allocVector(INTSXP, 0)); protecti++;
-    len__ = PROTECT(diff_int(f__, len)); protecti++;
-    
-    BY_ = PROTECT(allocVector(VECSXP, length(groups))); protecti++;
-    for (i=0; i<length(groups); i++) {
-        cpy = VECTOR_ELT(groups, i);
-        SET_VECTOR_ELT(BY_, i, tmp = allocVector(TYPEOF(cpy), 1));  // protects by virtue of being a member of BY_
-        switch (TYPEOF(cpy)) {
-            case REALSXP : 
-            case INTSXP :
-            case LGLSXP :
-            case STRSXP : 
-            memcpy((char *)DATAPTR(tmp), (char *)DATAPTR(cpy), SIZEOF(tmp)); break; // SIZEOF is size_t - no integer overflow issues
-            default : error("Unknown column type '%s'", type2char(TYPEOF(cpy)));
-        }
-    }    
-    setAttrib(BY_, R_NamesSymbol, getAttrib(groups, R_NamesSymbol));
-    
-    GRP_ = PROTECT(allocVector(INTSXP, 1)); protecti++;
-    INTEGER(GRP_)[0] = 1;
-    I_ = PROTECT(seq_int(INTEGER(max_val(len__))[0], 1)); protecti++;
-    N_ = PROTECT(zero_init(1)); protecti++;
-    SD_ = PROTECT(allocVector(VECSXP, 1)); protecti++;
-    tmp = PROTECT(allocVector(TYPEOF(val), length(I_)));
-    switch(TYPEOF(val)) {
-        case REALSXP :
-        case INTSXP :
-        case LGLSXP :
-        case STRSXP : 
-        memcpy((char *)DATAPTR(tmp), (char *)DATAPTR(val), length(I_) * SIZEOF(tmp)); break;
-        case VECSXP :
-        for (i=0; i<length(I_); i++)
-            SET_VECTOR_ELT(tmp, i, VECTOR_ELT(val, i));
-        break;
-        default : error("Unknown column type '%s'", type2char(TYPEOF(val)));
-    }
-    UNPROTECT(1); // tmp
-    SET_VECTOR_ELT(SD_, 0, tmp);
-    // colnames
-    setAttrib(SD_, R_NamesSymbol, value_var);
-    // class
-    SDclass = PROTECT(allocVector(STRSXP, 2));
-    SET_STRING_ELT(SDclass, 0, mkChar("data.table"));
-    SET_STRING_ELT(SDclass, 1, mkChar("data.frame"));
-    setAttrib(SD_, R_ClassSymbol, SDclass);
-    UNPROTECT(1); // SDclass
-    // rownames
-    SDnames = PROTECT(allocVector(INTSXP, 2));
-    INTEGER(SDnames)[0] = NA_INTEGER;
-    INTEGER(SDnames)[1] = -1 * (length(I_));
-    UNPROTECT(1); // SDnames
-    setAttrib(SD_, R_RowNamesSymbol, SDnames);
-    SETLENGTH(SD_, length(SD_));
-    SET_TRUELENGTH(SD_, length(SD_));
-    // shallow copy
-    SD_ = PROTECT(alloccol(SD_, 100, FALSE)); protecti++; // .SD will always be 1 column. So truelength is always 100
-    
-    verbose = PROTECT(allocVector(LGLSXP, 1)); protecti++;
-    LOGICAL(verbose)[0] = 0;
-    
-    // install them on to env
-    defineVar(install(".BY"), BY_, env);
-    defineVar(install(".N"), N_, env);
-    defineVar(install(".I"), I_, env);
-    defineVar(install(".GRP"), GRP_, env);
-    defineVar(install(".iSD"), iSD_, env);
-    defineVar(install(".SD"), SD_, env);
-    defineVar(install(".xSD"), xSD_, env);
-    
-    ans = dogroups(x, xcols, groups, grpcols, jiscols, xjiscols, grporder, o__, f__, len__, jsub, env, cols, newnames, verbose);
-    UNPROTECT(protecti);
-    return(ans);
-}
-
 // to do: margins
 // SEXP margins(...) {
 // }
@@ -283,19 +308,16 @@ SEXP castgroups(SEXP groups, SEXP val, SEXP f__, SEXP value_var, SEXP jsub, SEXP
 // TO DO: for sorted case - when forder is integer(0), just "duplicate" instead of using "subset" - will gain speed (as that'll use memcpy)
 // TO DO: can we just move "subsetting" to R-side? Will simplify things a lot here and I'm not sure if there's any advantage of having it here
 // TO DO: Remove "sorted" and implement that as well with "setkey" just on c(ff_, value.var) at R side?
-SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, SEXP sorted, SEXP jsub, SEXP fill_d, SEXP drop, SEXP subsetting) {
+SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP fill_d, SEXP is_agg, SEXP env, SEXP drop) {
     
     int protecti = 0;
-    SEXP dtnames, lrnames, ldt, rdt, vdt, lrdt, lidx, ridx, vidx, lo, ro, lro, lrdup, ldup=R_NilValue, rdup=R_NilValue, rdupl;
-    SEXP tmp, cpy, thiscol, subpos=R_NilValue, subtmp;
-    SEXP colnames, llen__;
-    SEXP haskey, rollends, f__, len__, allLen1, roll;
-    SEXP xx, cj, cjtmp, ans, outnamevec, ansnames;
-    SEXP dtmp,lcj=R_NilValue, rcj=R_NilValue, ddup, dorder;
     R_len_t i, j, nrows, ncols, ilen = length(inames), mlen = length(mnames), lanscols, ranscols;
-    Rboolean isagg = FALSE, isfill = TRUE;
-    char buffer[128], uscore[] = "_";
+    SEXP dtnames, lrnames, ldt, rdt, vdt, lrdt, lidx, ridx, vidx, lo, ro, lro, lrdup, ldup=R_NilValue, rdup=R_NilValue;
+    SEXP tmp, cpy, thiscol, colnames, llen__, haskey, rollends, f__, len__, allLen1, roll;
+    SEXP xx, cj, cjtmp, ans, outnamevec, ansnames, dtmp, lcj=R_NilValue, rcj=R_NilValue, ddup, dorder;
     SEXP lvls; // to get levels for drop=FALSE in case of factor column - #5379
+    Rboolean isfill = TRUE;
+    char buffer[128], uscore[] = "_";
 
     // check for arguments - some of these are not necessary as the intention is NOT to call directly, but thro' fcast.R (dcast), but alright
     if (TYPEOF(DT) != VECSXP) error("'data' should be a data.table or data.frame");
@@ -303,7 +325,6 @@ SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, 
     if (TYPEOF(mnames) != STRSXP) error("RHS of parsed formula did not result in character vector, possibly invalid formula");
     if (TYPEOF(vnames) != STRSXP || length(vnames) != 1) error("'value.var' must be a character vector of length 1");
     if (!isEnvironment(env)) error("'.CASTenv' must be an environment");
-    if (!isLogical(sorted) || length(sorted) != 1) error("'sorted' must be a logical vector of length 1");
     if (!isLogical(drop) || length(drop) != 1) error("'drop' must be a logical vector of length 1");
     
     nrows = length(VECTOR_ELT(DT, 0));
@@ -319,102 +340,31 @@ SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, 
     ridx = PROTECT(chmatch(mnames, dtnames, 0, FALSE)); protecti++;
     vidx = PROTECT(chmatch(vnames, dtnames, 0, FALSE)); protecti++;
 
-    // if 'subset' arg is present, we'll have to get indices and update 'nrows'
-    if (!isNull(subsetting)) {
-        subpos = PROTECT(eval(subsetting, env)); protecti++;
-        switch(TYPEOF(subpos)) {
-            case INTSXP :
-            break;
-            case LGLSXP :
-            subpos = PROTECT(which(subpos)); protecti++;
-            break;
-            default : error("Argument 'subset' should evaluate to either integer or logical vector");
-        }
-        // update nrows!
-        nrows = length(subpos);
-        if (nrows < 1) error("'subset(data)' resulted in nrow=0. Cannot 'cast' on an empty data.table."); // TODO: should give warning + return empty DT instead?
-    }
-
     // get lrdt and value
     lrdt = PROTECT(allocVector(VECSXP, ilen+mlen)); protecti++;
-    for (i=0; i<ilen; i++) {
-        tmp = PROTECT(VECTOR_ELT(DT, INTEGER(lidx)[i]-1));
-        if (!isNull(subsetting)) {
-            subtmp = subset(tmp, subpos);
-            SET_VECTOR_ELT(lrdt, i, subtmp);
-        } else 
-            SET_VECTOR_ELT(lrdt, i, tmp);
-        UNPROTECT(1); // tmp
-    }
-    for (i=0; i<mlen; i++) {
-        tmp = PROTECT(VECTOR_ELT(DT, INTEGER(ridx)[i]-1));
-        if (!isNull(subsetting)) {
-            subtmp = subset(tmp, subpos);
-            SET_VECTOR_ELT(lrdt, i+ilen, subtmp);
-        } else 
-            SET_VECTOR_ELT(lrdt, i+ilen, tmp);
-        UNPROTECT(1); // tmp
-    }
-
+    for (i=0; i<ilen; i++) SET_VECTOR_ELT(lrdt, i, VECTOR_ELT(DT, INTEGER(lidx)[i]-1));
+    for (i=0; i<mlen; i++) SET_VECTOR_ELT(lrdt, i+ilen, VECTOR_ELT(DT, INTEGER(ridx)[i]-1));
     // value column
-    tmp = isFactor(VECTOR_ELT(DT, INTEGER(vidx)[0]-1)) ? PROTECT(asCharacterFactor(VECTOR_ELT(DT, INTEGER(vidx)[0]-1))) : PROTECT(VECTOR_ELT(DT, INTEGER(vidx)[0]-1));
-    protecti++; // can't unprotect while passing to subset
-    if (!isNull(subsetting)) {
-        vdt = PROTECT(subset(tmp, subpos)); protecti++;
-    } else {
-        vdt = PROTECT(tmp); protecti++;
-    }
+    vdt = isFactor(VECTOR_ELT(DT, INTEGER(vidx)[0]-1)) ? PROTECT(asCharacterFactor(VECTOR_ELT(DT, INTEGER(vidx)[0]-1))) : PROTECT(VECTOR_ELT(DT, INTEGER(vidx)[0]-1));
+    protecti++;
     
     // get names
     lrnames = PROTECT(allocVector(STRSXP, ilen+mlen)); protecti++;
     for (i=0; i<ilen; i++) SET_STRING_ELT(lrnames, i, STRING_ELT(inames, i));
     for (i=0; i<mlen; i++) SET_STRING_ELT(lrnames, i+ilen, STRING_ELT(mnames, i));
     setAttrib(lrdt, R_NamesSymbol, lrnames);
-    
-    // sort lrdt and vnames if unsorted.   [Matt] TO DO?: should be if (length(o = forder(...))) ...
-    if (!LOGICAL(sorted)[0]) {
-        lro = PROTECT(cast_order(lrdt, env));
-        protecti++; // lro
-        for (i=0; i<length(lrdt); i++) {
-            cpy = PROTECT(VECTOR_ELT(lrdt, i));  // [Matt] TO DO?: use Creorder here
-            tmp = PROTECT(subset(cpy, lro));
-            UNPROTECT(2); // cpy, tmp;
-            SET_VECTOR_ELT(lrdt, i, tmp);
-        }
-        setAttrib(lrdt, R_NamesSymbol, lrnames);
-        vdt = PROTECT(subset(vdt, lro)); protecti++;
-    }
+
     lro = PROTECT(seq_int(1, -1)); protecti++;
     lrdup = PROTECT(uniqlist(lrdt, lro)); protecti++;
     
-    // TODO: look for ways to simplify getting fun.aggregate in a better way
-    isagg = isNull(jsub) ? TRUE : FALSE;
-    if (isNull(jsub) && length(lrdup) < nrows) {
-        isagg = FALSE;
-        Rprintf("Aggregate function missing, defaulting to 'length'\n");
-        jsub = PROTECT(lang2(install("length"), install(CHAR(STRING_ELT(vnames, 0))))); protecti++;
-        if (isNull(fill_d)) { 
-            fill_d = PROTECT(zero_init(1)); protecti++;
-        }
-    }
     if (isNull(fill)) {
         isfill = FALSE;
-        fill = isagg ? PROTECT(allocNAVector(TYPEOF(vdt), 1)) : PROTECT(fill_d);
+        fill = LOGICAL(is_agg)[0] == TRUE ? PROTECT(allocNAVector(TYPEOF(vdt), 1)) : PROTECT(fill_d);
         protecti++;
     }
     if (isfill && ((isNull(fill_d) && TYPEOF(fill) != TYPEOF(vdt)) || (!isNull(fill_d) && TYPEOF(fill) != TYPEOF(fill_d)))) {
         Rprintf("class(fill) != class(%s), coercing 'fill' to %s\n", CHAR(STRING_ELT(vnames, 0)), type2char(TYPEOF(vdt)));
         fill = PROTECT(coerceVector(fill, TYPEOF(vdt))); protecti++;
-    }
-    if (!isNull(jsub)) {
-        tmp = castgroups(lrdt, vdt, lrdup, vnames, jsub, env);
-        vdt = PROTECT(VECTOR_ELT(tmp, length(tmp)-1)); protecti++;
-        lrdt = PROTECT(allocVector(VECSXP, ilen+mlen)); protecti++;
-        for (i=0; i<length(tmp)-1; i++)
-            SET_VECTOR_ELT(lrdt, i, VECTOR_ELT(tmp, i));
-        // Set names again... Also nrows -> important. Moved these two lines inside the if-statement.
-        setAttrib(lrdt, R_NamesSymbol, lrnames);
-        nrows = length(VECTOR_ELT(lrdt, 0));         // TODO: do we have to check if nrows < 1 and return error (or) warning + return DT?
     }
 
     // get ldt and rdt
@@ -439,13 +389,13 @@ SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, 
             } else {
                 dorder = PROTECT(cast_order(cpy, env));
                 ddup = PROTECT(uniqlist(cpy, dorder));
-                ddup = PROTECT(subset(dorder, ddup));
-                dtmp = PROTECT(subset(VECTOR_ELT(cpy, 0), ddup));
+                ddup = PROTECT(subsetVector(dorder, ddup));
+                dtmp = PROTECT(subsetVector(VECTOR_ELT(cpy, 0), ddup));
                 UNPROTECT(5); // dtmp, cpy, dorder, ddup
             }
             SET_VECTOR_ELT(lcj, i, dtmp);
         }
-        lcj = PROTECT(cross_join(lcj)); protecti++;
+        lcj = PROTECT(cross_join(lcj, env)); protecti++;
         
         rcj = PROTECT(allocVector(VECSXP, mlen)); protecti++;
         for (i=0; i<mlen; i++) {
@@ -453,12 +403,12 @@ SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, 
             SET_VECTOR_ELT(cpy, 0, VECTOR_ELT(rdt, i));
             dorder = PROTECT(cast_order(cpy, env));
             ddup = PROTECT(uniqlist(cpy, dorder));
-            ddup = PROTECT(subset(dorder, ddup));
-            dtmp = PROTECT(subset(VECTOR_ELT(cpy, 0), ddup));
+            ddup = PROTECT(subsetVector(dorder, ddup));
+            dtmp = PROTECT(subsetVector(VECTOR_ELT(cpy, 0), ddup));
             UNPROTECT(5);
             SET_VECTOR_ELT(rcj, i, dtmp);
         }
-        rcj = PROTECT(cross_join(rcj)); protecti++;
+        rcj = PROTECT(cross_join(rcj, env)); protecti++;
         
         outnamevec = PROTECT(allocVector(VECSXP, length(rcj))); protecti++;
         for (i=0; i<length(outnamevec); i++)
@@ -472,7 +422,7 @@ SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, 
         rollends = PROTECT(allocVector(LGLSXP, 2)); LOGICAL(rollends)[0] = 0; LOGICAL(rollends)[1] = 1;
         allLen1 = PROTECT(allocVector(LGLSXP, 1)); LOGICAL(allLen1)[0] = 1;
         roll = PROTECT(allocVector(REALSXP, 1)); REAL(roll)[0] = 0.0;
-        bmerge(ldt, lcj, PROTECT(seq_int(ilen, 1)), PROTECT(seq_int(ilen, 1)), haskey, roll, rollends, PROTECT(zero_init(1)), f__, len__, allLen1);
+        bmerge(ldt, lcj, PROTECT(seq_int(ilen, 1)), PROTECT(seq_int(ilen, 1)), haskey, R_NilValue, roll, rollends, PROTECT(zero_init(1)), f__, len__, allLen1);
         UNPROTECT(9);
         SET_VECTOR_ELT(xx, 0, f__);
         
@@ -483,7 +433,7 @@ SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, 
         rollends = PROTECT(allocVector(LGLSXP, 2)); LOGICAL(rollends)[0] = 0; LOGICAL(rollends)[1] = 1;
         allLen1 = PROTECT(allocVector(LGLSXP, 1)); LOGICAL(allLen1)[0] = 1;
         roll = PROTECT(allocVector(REALSXP, 1)); REAL(roll)[0] = 0.0;
-        bmerge(rdt, rcj, PROTECT(seq_int(mlen, 1)), PROTECT(seq_int(mlen, 1)), haskey, roll, rollends, PROTECT(zero_init(1)), f__, len__, allLen1);
+        bmerge(rdt, rcj, PROTECT(seq_int(mlen, 1)), PROTECT(seq_int(mlen, 1)), haskey, R_NilValue, roll, rollends, PROTECT(zero_init(1)), f__, len__, allLen1);
         UNPROTECT(9);
         SET_VECTOR_ELT(xx, 1, f__);
                 
@@ -491,7 +441,7 @@ SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, 
         SET_VECTOR_ELT(cjtmp, 0, PROTECT(seq_int(length(VECTOR_ELT(lcj, 0)), 1)));
         SET_VECTOR_ELT(cjtmp, 1, PROTECT(seq_int(length(VECTOR_ELT(rcj, 0)), 1)));
         UNPROTECT(3); // cjtmp
-        cj = PROTECT(cross_join(cjtmp)); protecti++;
+        cj = PROTECT(cross_join(cjtmp, env)); protecti++;
     } else {
         // we could do a bit faster
         lo = PROTECT(seq_int(nrows, 1)); protecti++; // no need for cast_order of "lo", already sorted
@@ -501,11 +451,11 @@ SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, 
 
         llen__ = PROTECT(diff_int(ldup, nrows)); protecti++;
 
-        rdup = PROTECT(subset(ro, rdup)); protecti++;
+        rdup = PROTECT(subsetVector(ro, rdup)); protecti++;
         tmp = PROTECT(allocVector(VECSXP, mlen+1)); protecti++;
         for (i=0; i<mlen; i++) {
             cpy = PROTECT(VECTOR_ELT(rdt, i));
-            thiscol = PROTECT(subset(cpy, rdup));
+            thiscol = PROTECT(subsetVector(cpy, rdup));
             UNPROTECT(2); // cpy, thiscol
             SET_VECTOR_ELT(tmp, i, thiscol);
         }
@@ -514,20 +464,18 @@ SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, 
         for (i=0; i<length(outnamevec); i++) {
             SET_VECTOR_ELT(outnamevec, i, coerce_to_char(VECTOR_ELT(tmp, i), R_GlobalEnv));
         }
-        rdupl = PROTECT(allocVector(VECSXP, 1));
-        SET_VECTOR_ELT(rdupl, 0, rdup);
-        ro = PROTECT(cast_order(rdupl, env));
-        rdup = PROTECT(subset(rdup, ro));
-        UNPROTECT(3); // ro, rdup, rdupl
+        ro = PROTECT(cast_order(rdup, env));
+        rdup = PROTECT(subsetVector(rdup, ro));
+        UNPROTECT(2); // ro, rdup
         SET_VECTOR_ELT(tmp, mlen, rdup);
-    
+
         colnames = PROTECT(allocVector(STRSXP, length(tmp)));
         for (i=0; i<length(tmp)-1; i++) 
             SET_STRING_ELT(colnames, i, STRING_ELT(mnames, i));
         SET_STRING_ELT(colnames, length(tmp)-1, mkChar("id"));
         UNPROTECT(1); //colnames
         setAttrib(tmp, R_NamesSymbol, colnames);
-        
+
         // tmp[rdt] - binary search
         f__ = PROTECT(zero_init(length(lrdup))); protecti++;
         len__ = PROTECT(zero_init(length(f__)));
@@ -535,13 +483,13 @@ SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, 
         rollends = PROTECT(allocVector(LGLSXP, 2)); LOGICAL(rollends)[0] = 0; LOGICAL(rollends)[1] = 1;
         allLen1 = PROTECT(allocVector(LGLSXP, 1)); LOGICAL(allLen1)[0] = 1;
         roll = PROTECT(allocVector(REALSXP, 1)); REAL(roll)[0] = 0.0;
-        bmerge(rdt, tmp, PROTECT(seq_int(length(rdt), 1)), PROTECT(seq_int(length(rdt),1)), haskey, roll, rollends, PROTECT(zero_init(1)), f__, len__, allLen1);
+        bmerge(rdt, tmp, PROTECT(seq_int(length(rdt), 1)), PROTECT(seq_int(length(rdt),1)), haskey, R_NilValue, roll, rollends, PROTECT(zero_init(1)), f__, len__, allLen1);
         UNPROTECT(8); // len__, haskey, rollends, allLen1, roll (except f__)
 
         xx = PROTECT(allocVector(VECSXP, 2)); protecti++;
         SET_VECTOR_ELT(xx, 0, intrep(ldup, llen__));
         rdup = PROTECT(VECTOR_ELT(tmp, mlen));
-        tmp = PROTECT(subset(rdup, f__));
+        tmp = PROTECT(subsetVector(rdup, f__));
         UNPROTECT(2); // rdup, tmp
         SET_VECTOR_ELT(xx, 1, tmp);
 
@@ -549,7 +497,7 @@ SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, 
         SET_VECTOR_ELT(cjtmp, 0, ldup);
         SET_VECTOR_ELT(cjtmp, 1, rdup);
         UNPROTECT(1); // cjtmp;
-        cj = PROTECT(cross_join(cjtmp)); protecti++;
+        cj = PROTECT(cross_join(cjtmp, env)); protecti++;
     }
     // to do: if we can check whether there are any missing combinations, we can skip this binary search and it should be faster (especially on bigger data).
     // xx[cj] binary search to get missing values
@@ -559,7 +507,7 @@ SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, 
     rollends = PROTECT(allocVector(LGLSXP, 2)); LOGICAL(rollends)[0] = 0; LOGICAL(rollends)[1] = 1;
     allLen1 = PROTECT(allocVector(LGLSXP, 1)); LOGICAL(allLen1)[0] = 1;
     roll = PROTECT(allocVector(REALSXP, 1)); REAL(roll)[0] = 0.0;
-    bmerge(cj, xx, PROTECT(seq_int(2, 1)), PROTECT(seq_int(2,1)), haskey, roll, rollends, PROTECT(zero_init(1)), f__, len__, allLen1);
+    bmerge(cj, xx, PROTECT(seq_int(2, 1)), PROTECT(seq_int(2,1)), haskey, R_NilValue, roll, rollends, PROTECT(zero_init(1)), f__, len__, allLen1);
     UNPROTECT(8); // len__, haskey, rollends, allLen1, roll (except f__)
     
     ranscols = !LOGICAL(drop)[0] ? length(VECTOR_ELT(rcj, 0)) : length(rdup);
@@ -571,7 +519,7 @@ SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, 
     } else {
         for (i=0; i<ilen; i++) {
             cpy = PROTECT(VECTOR_ELT(lrdt, i));
-            tmp = PROTECT(subset(cpy, ldup));
+            tmp = PROTECT(subsetVector(cpy, ldup));
             UNPROTECT(2); // tmp, cpy
             SET_VECTOR_ELT(ans, i, tmp);
         }
@@ -622,6 +570,7 @@ SEXP fcast(SEXP DT, SEXP inames, SEXP mnames, SEXP vnames, SEXP fill, SEXP env, 
             break;
             default : error("Unknown 'value' column type '%s'", type2char(TYPEOF(tmp)));
         }
+        copyMostAttrib(vdt, tmp);
         UNPROTECT(1); // tmp
         SET_VECTOR_ELT(ans, i+ilen, tmp);
     }

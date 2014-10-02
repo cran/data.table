@@ -1,23 +1,10 @@
-#include <R.h>
-#define USE_RINTERNALS
-#include <Rinternals.h>
+#include "data.table.h"
 #include <Rdefines.h>
 #include <Rmath.h> 
 #include <Rversion.h>
 
-// See dogroups.c for these shared variables.
-SEXP SelfRefSymbol; 
-extern size_t sizes[100];
-#define SIZEOF(x) sizes[TYPEOF(x)]
-//
-
-extern SEXP growVector(SEXP x, R_len_t newlen, Rboolean verbose);
-extern SEXP chmatch(SEXP x, SEXP table, R_len_t nomatch, Rboolean in);
-SEXP alloccol(SEXP dt, R_len_t n, Rboolean verbose);
-SEXP *saveds=NULL;
-R_len_t *savedtl=NULL, nalloc=0, nsaved=0;
-SEXP allocNAVector(SEXPTYPE type, R_len_t n);
-void savetl_init(), savetl(SEXP s), savetl_end();
+static SEXP *saveds=NULL;
+static R_len_t *savedtl=NULL, nalloc=0, nsaved=0;
 
 static void finalizer(SEXP p)
 {
@@ -41,7 +28,7 @@ static void finalizer(SEXP p)
     return;
 }
 
-static void setselfref(SEXP x) {   
+void setselfref(SEXP x) {   
     SEXP p;
     // Store pointer to itself so we can detect if the object has been copied. See
     // ?copy for why copies are not just inefficient but cause a problem for over-allocated data.tables.
@@ -274,13 +261,18 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
         if (!isInteger(rows))
             error("i is type '%s'. Must be integer, or numeric is coerced with warning. If i is a logical subset, simply wrap with which(), and take the which() outside the loop if possible for efficiency.", type2char(TYPEOF(rows)));
         targetlen = length(rows);
+        Rboolean anyToDo = FALSE;
         for (i=0;i<targetlen;i++) {
-            if (INTEGER(rows)[i]==NA_INTEGER) error("i[%d] is NA. Can't assign by reference to row 'NA'.",i+1);
-            if (INTEGER(rows)[i]<1 || INTEGER(rows)[i]>nrow) error("i[%d] is %d which is out of range [1,nrow=%d].",i+1,INTEGER(rows)[i],nrow);
+            if ((INTEGER(rows)[i]<0 && INTEGER(rows)[i]!=NA_INTEGER) || INTEGER(rows)[i]>nrow)
+                error("i[%d] is %d which is out of range [1,nrow=%d].",i+1,INTEGER(rows)[i],nrow);
+            if (INTEGER(rows)[i]>=1) anyToDo = TRUE;
         }
+        if (!anyToDo) return(dt);  // all items of rows either 0 or NA, nothing to do.  
     }
-    if (!length(cols))
-        error("Logical error in assign, no column positions passed to assign");
+    if (!length(cols)) {
+        warning("length(LHS) = 0, meaning no columns to delete or assign RHS to.");
+        return(dt);
+    }
     // FR #2077 - set able to add new cols by reference
     if (isString(cols)) {
         PROTECT(tmp = chmatch(cols, names, 0, FALSE));
@@ -411,6 +403,7 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
         else
             thisvalue = values;   // One vector applied to all columns, often NULL or NA for example
         if (TYPEOF(thisvalue)==NILSXP) {
+            if (!isNull(rows)) error("When deleting columns, i should not be provided");
             anytodelete = TRUE;
             continue;   // delete column(s) afterwards, below this loop
         }
@@ -456,7 +449,7 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
                 targetlevels = getAttrib(targetcol, R_LevelsSymbol);
                 if (isNull(targetlevels)) error("somehow this factor column has no levels");
                 if (isString(thisvalue)) {
-                    savetl_init();
+                    savetl_init();  // ** TO DO **: remove allocs that could fail between here and _end, or different way
                     for (j=0; j<length(thisvalue); j++) {
                         s = STRING_ELT(thisvalue,j);
                         if (TRUELENGTH(s)>0) {
@@ -483,7 +476,7 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
                                 PROTECT(addlevels = allocVector(STRSXP, 100));
                                 protecti++;
                             } else if (addi >= length(addlevels)) {
-                                PROTECT(addlevels = growVector(addlevels, length(addlevels)+1000, FALSE));
+                                PROTECT(addlevels = growVector(addlevels, length(addlevels)+1000));
                                 protecti++;
                             }
                             SET_STRING_ELT(addlevels,addi,thisv);
@@ -493,7 +486,7 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
                     }
                     if (addi > 0) {
                         R_len_t oldlen = length(targetlevels);
-                        PROTECT(targetlevels = growVector(targetlevels, oldlen+addi, FALSE));
+                        PROTECT(targetlevels = growVector(targetlevels, oldlen+addi));
                         protecti++;
                         for (j=0; j<addi; j++)
                             SET_STRING_ELT(targetlevels, oldlen+j, STRING_ELT(addlevels, j));
@@ -530,11 +523,12 @@ SEXP assign(SEXP dt, SEXP rows, SEXP cols, SEXP newcolnames, SEXP values, SEXP v
                         PROTECT(RHS = coerceVector(thisvalue,TYPEOF(targetcol)));
                         protecti++;
                         // FR #2551, added test for equality between RHS and thisvalue to not provide the warning when length(thisvalue) == 1
-                        if ( (isReal(thisvalue) && (TYPEOF(targetcol)==INTSXP && (length(thisvalue) > 1 || 
-                                   (length(thisvalue) == 1 && REAL(thisvalue)[0] != INTEGER(RHS)[0])))) || 
-                             (isReal(thisvalue) && isLogical(targetcol) && length(thisvalue) > 1) || 
-                             (TYPEOF(thisvalue)==INTSXP && isLogical(targetcol) && length(thisvalue) > 1) ||
-                             (isString(targetcol))) {
+                        if ( length(thisvalue) == 1 && TYPEOF(RHS) != VECSXP && TYPEOF(thisvalue) != VECSXP && (
+                             (isReal(thisvalue) && isInteger(targetcol) && REAL(thisvalue)[0] == INTEGER(RHS)[0]) || 
+                          (isLogical(thisvalue) && LOGICAL(thisvalue)[0] == NA_LOGICAL) || 
+                                   (isReal(RHS) && isInteger(thisvalue)) )) {
+                              ;
+                          } else {
                             s1 = (char *)type2char(TYPEOF(targetcol));
                             s2 = (char *)type2char(TYPEOF(thisvalue));
                             if (isReal(thisvalue)) s3="; may have truncated precision"; else s3="";
@@ -604,9 +598,9 @@ void memrecycle(SEXP target, SEXP where, int start, int len, SEXP source)
 // 'where' a 1-based INTEGER vector subset of target to assign to,  or NULL or integer()
 // assigns to target[start:start+len-1] or target[where[start:start+len-1]]  where start is 0-based
 {
-    int r = 0;
+    int r = 0, w;
     if (len<1) return;
-    int slen = length(source);
+    int slen = length(source) > len ? len : length(source); // fix for 5647. when length(source) > len, slen must be len.
     if (slen<1) return;
     if (TYPEOF(target) != TYPEOF(source)) error("Internal error: TYPEOF(target)['%s']!=TYPEOF(source)['%s']", type2char(TYPEOF(target)),type2char(TYPEOF(source)));
     size_t size = SIZEOF(target);
@@ -651,26 +645,36 @@ void memrecycle(SEXP target, SEXP where, int start, int len, SEXP source)
         case INTSXP : case REALSXP : case LGLSXP :
             break;
         case STRSXP :
-            for (; r<slen; r++)
-                SET_STRING_ELT(target, INTEGER(where)[start+r]-1, STRING_ELT(source, r));
+            for (; r<slen; r++) {
+                w = INTEGER(where)[start+r]; if (w<1) continue;  // 0 or NA
+                SET_STRING_ELT(target, w-1, STRING_ELT(source, r));
+            }
             break;
         case VECSXP :
-            for (; r<slen; r++)
-                SET_VECTOR_ELT(target, INTEGER(where)[start+r]-1, VECTOR_ELT(source, r));
+            for (; r<slen; r++) {
+                w = INTEGER(where)[start+r]; if (w<1) continue;
+                SET_VECTOR_ELT(target, w-1, VECTOR_ELT(source, r));
+            }
             break;
         default :
             error("Unsupported type '%s'", type2char(TYPEOF(target)));
         }    
         if (slen == 1) {
-            if (size==4) for (; r<len; r++)
-                INTEGER(target)[ INTEGER(where)[start+r]-1 ] = INTEGER(source)[0];
-            else for (; r<len; r++)
-                REAL(target)[ INTEGER(where)[start+r]-1 ] = REAL(source)[0];
+            if (size==4) for (; r<len; r++) {
+                w = INTEGER(where)[start+r]; if (w<1) continue;
+                INTEGER(target)[ w-1 ] = INTEGER(source)[0];
+            } else for (; r<len; r++) {
+                w = INTEGER(where)[start+r]; if (w<1) continue;
+                REAL(target)[ w-1 ] = REAL(source)[0];
+            }
         } else {
-            if (size==4) for (; r<len; r++)
-                INTEGER(target)[ INTEGER(where)[start+r]-1 ] = INTEGER(source)[r%slen];
-            else for (; r<len; r++)
-                REAL(target)[ INTEGER(where)[start+r]-1 ] = REAL(source)[r%slen];
+            if (size==4) for (; r<len; r++) {
+                w = INTEGER(where)[start+r]; if (w<1) continue;
+                INTEGER(target)[ w-1 ] = INTEGER(source)[r%slen];
+            } else for (; r<len; r++) {
+                w = INTEGER(where)[start+r]; if (w<1) continue;
+                REAL(target)[ w-1 ] = REAL(source)[r%slen];
+            }
         }
         // if slen>10 it may be worth memcpy, but we'd need to first know if 'where' was a contiguous subset
     }
@@ -711,16 +715,32 @@ void savetl_init() {
     if (nsaved || nalloc || saveds || savedtl) error("Internal error: savetl_init checks failed (%d %d %p %p). Please report to datatable-help.", nsaved, nalloc, saveds, savedtl);
     nsaved = 0;
     nalloc = 100;
-    saveds = Calloc(nalloc, SEXP);
-    savedtl = Calloc(nalloc, R_len_t);
+    saveds = (SEXP *)malloc(nalloc * sizeof(SEXP));
+    if (saveds == NULL) error("Couldn't allocate saveds in savetl_init");
+    savedtl = (R_len_t *)malloc(nalloc * sizeof(R_len_t));
+    if (savedtl == NULL) {
+        free(saveds);
+        error("Couldn't allocate saveds in savetl_init");
+    }
 }
 
 void savetl(SEXP s)
 {
     if (nsaved>=nalloc) {
         nalloc *= 2;
-        saveds = Realloc(saveds, nalloc, SEXP);
-        savedtl = Realloc(savedtl, nalloc, R_len_t);
+        char *tmp;
+        tmp = (char *)realloc(saveds, nalloc * sizeof(SEXP));
+        if (tmp == NULL) {
+            savetl_end();
+            error("Couldn't realloc saveds in savetl");
+        }
+        saveds = (SEXP *)tmp;
+        tmp = (char *)realloc(savedtl, nalloc * sizeof(R_len_t));
+        if (tmp == NULL) {
+            savetl_end();
+            error("Couldn't realloc savedtl in savetl");
+        }
+        savedtl = (R_len_t *)tmp;
     }
     saveds[nsaved] = s;
     savedtl[nsaved] = TRUELENGTH(s);
@@ -728,11 +748,11 @@ void savetl(SEXP s)
 }
 
 void savetl_end() {
-    int i;
-    if (nalloc==0 || nsaved>nalloc || saveds==NULL || savedtl==NULL) error("Internal error: savetl_end checks failed (%d %d %p %p). Please report to datatable-help.", nsaved, nalloc, saveds, savedtl);
-    for (i=0; i<nsaved; i++) SET_TRUELENGTH(saveds[i],savedtl[i]);
-    Free(saveds);
-    Free(savedtl);
+    // Can get called if nothing has been saved yet (nsaved==0), or even if _init() hasn't been called yet (pointers NULL). Such
+    // as to clear up before error. Also, it might be that nothing needed to be saved anyway.
+    for (int i=0; i<nsaved; i++) SET_TRUELENGTH(saveds[i],savedtl[i]);
+    free(saveds);  // does nothing on NULL input
+    free(savedtl);
     nsaved = nalloc = 0;
     saveds = NULL;
     savedtl = NULL;
@@ -770,6 +790,21 @@ SEXP setcolorder(SEXP x, SEXP o)
     // No need to change key (if any); sorted attribute is column names not positions
     Free(tmp);
     return(R_NilValue);
+}
+
+SEXP pointWrapper(SEXP to, SEXP to_idx, SEXP from, SEXP from_idx) {
+
+    R_len_t i, fidx, tidx, l_to=length(to), l_from=length(from), l_idx=length(from_idx);
+    if (!isNewList(to) || !isNewList(from)) error("'to' and 'from' must be of type list");
+    if (length(from_idx) != length(to_idx) || l_idx == 0) error("'from_idx' and 'to_idx' must be non-empty integer vectors of same length.");
+    for (i=0; i<l_idx; i++) {
+        fidx = INTEGER(from_idx)[i]-1; // 1-based to 0-based
+        tidx = INTEGER(to_idx)[i]-1;   // 1-based to 0-based
+        if (fidx < 0 || fidx > l_from-1) error("invalid from_idx[%d]=%d, falls outside 1 and length(from)=%d.", i+1, fidx, l_from);
+        if (tidx < 0 || tidx > l_to-1) error("invalid to_idx[%d]=%d, falls outside 1 and length(to)=%d.", i+1, tidx, l_to);
+        SET_VECTOR_ELT(to, tidx, VECTOR_ELT(from, fidx));
+    }
+    return(to);
 }
 
 /*

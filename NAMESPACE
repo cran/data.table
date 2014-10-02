@@ -6,13 +6,17 @@ exportClasses(data.table, IDate, ITime)
 ##
 
 export(data.table, tables, setkey, setkeyv, key, "key<-", haskey, CJ, SJ, copy)
+export(set2key, set2keyv, key2)
 export(as.data.table,is.data.table,test.data.table,last,like,"%like%",between,"%between%")
 export(timetaken)
 export(truelength, alloc.col, ":=")
-export(setattr, setnames, setcolorder, set, setDT)
+export(setattr, setnames, setcolorder, set, setDT, setDF)
+export(setorder, setorderv)
+export(setNumericRounding, getNumericRounding)
 export(chmatch, "%chin%", chorder, chgroup)
 export(rbindlist)
 export(fread)
+export(foverlaps)
 export(address)
 export(.SD,.N,.I,.GRP,.BY)
 
@@ -55,6 +59,8 @@ S3method(format, data.table)
 S3method(Ops, data.table)
 S3method(all.equal, data.table)
 
+S3method(anyDuplicated, data.table)
+
 importFrom(reshape2, melt)
 S3method(melt, data.table)
 export(dcast.data.table)
@@ -69,6 +75,7 @@ S3method(na.omit, data.table)
 export(as.IDate,as.ITime,IDateTime)
 export(hour,yday,wday,mday,week,month,quarter,year)
 
+importFrom(chron, chron, as.chron)
 export(as.chron.IDate,as.chron.ITime)
 
 S3method("[", ITime)

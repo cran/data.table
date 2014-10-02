@@ -1,17 +1,10 @@
-#include <R.h>
-#define USE_RINTERNALS
-#include <Rinternals.h>
+#include "data.table.h"
 #include <Rdefines.h>
 //#include <sys/mman.h>
+#include <Rversion.h>
 #include <fcntl.h>
 #include <time.h>
 
-size_t sizes[100];  // max appears to be FUNSXP = 99, see Rinternals.h
-SEXP SelfRefSymbol;
-
-SEXP keepattr(SEXP to, SEXP from);
-SEXP growVector(SEXP x, R_len_t newlen);
-SEXP allocNAVector(SEXPTYPE type, R_len_t n);
 
 void setSizes() {
     // called by init.c
@@ -29,9 +22,6 @@ void setSizes() {
     }
     SelfRefSymbol = install(".internal.selfref");
 }
-#define SIZEOF(x) sizes[TYPEOF(x)]
-
-extern void memrecycle(SEXP target, SEXP where, int r, int len, SEXP source);
 
 SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEXP xjiscols, SEXP grporder, SEXP order, SEXP starts, SEXP lens, SEXP jexp, SEXP env, SEXP lhs, SEXP newnames, SEXP verbose)
 {
@@ -40,15 +30,19 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
     SEXP names, names2, xknames, bynames, dtnames, ans=NULL, jval, thiscol, SD, BY, N, I, GRP, iSD, xSD, rownames, s, RHS, listwrap, target, source;
     SEXP *nameSyms, *xknameSyms;
     Rboolean wasvector, firstalloc=FALSE, NullWarnDone=FALSE, recycleWarn=TRUE;
+    #if defined(R_VERSION) && R_VERSION >= R_Version(3, 1, 0)
+        SEXP dupcol;
+        int named=0;
+    #endif
     size_t size; // must be size_t, otherwise bug #5305 (integer overflow in memcpy)
     clock_t tstart=0, tblock[10]={0}; int nblock[10]={0};
 
-    if (TYPEOF(order) != INTSXP) error("Internal error: order not integer");
+    if (!isInteger(order)) error("Internal error: order not integer vector");
     //if (TYPEOF(starts) != INTSXP) error("Internal error: starts not integer");
     //if (TYPEOF(lens) != INTSXP) error("Internal error: lens not integer");
     // starts can now be NA (<0): if (INTEGER(starts)[0]<0 || INTEGER(lens)[0]<0) error("starts[1]<0 or lens[1]<0");
-    if (!isNull(jiscols) && length(order)) error("Internal error: jiscols not NULL but o__ has length");
-    if (!isNull(xjiscols) && length(order)) error("Internal error: xjiscols not NULL but o__ has length");
+    if (!isNull(jiscols) && LENGTH(order)) error("Internal error: jiscols not NULL but o__ has length");
+    if (!isNull(xjiscols) && LENGTH(order)) error("Internal error: xjiscols not NULL but o__ has length");
     if(!isEnvironment(env)) error("’env’ should be an environment");
     ngrp = length(starts);  // the number of groups  (nrow(groups) will be larger when by)
     ngrpcols = length(grpcols);
@@ -60,11 +54,14 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
         j = INTEGER(grpcols)[i]-1;
         SET_VECTOR_ELT(BY, i, allocVector(TYPEOF(VECTOR_ELT(groups, j)),
             LENGTH(VECTOR_ELT(groups,0)) ? 1 : 0));    // This might be able to be 1 always; 0 when 'groups' are integer(0) seem sensible. #2440 was involved in the past.
+        // Fix for #5437, by cols with attributes when also used in `j` lost the attribute.
+        copyMostAttrib(VECTOR_ELT(groups, j), VECTOR_ELT(BY,i));  // not names, otherwise test 778 would fail
         SET_STRING_ELT(bynames, i, STRING_ELT(getAttrib(groups,R_NamesSymbol), j));
         defineVar(install(CHAR(STRING_ELT(bynames,i))), VECTOR_ELT(BY,i), env);      // by vars can be used by name in j as well as via .BY
         if (SIZEOF(VECTOR_ELT(BY,i))==0)
             error("Unsupported type '%s' in column %d of 'by'", type2char(TYPEOF(VECTOR_ELT(BY, i))), i+1);
     }
+    setAttrib(BY, R_NamesSymbol, bynames); // Fix for #5415 - BY doesn't retain names anymore
     R_LockBinding(install(".BY"), env);
     if (isNull(jiscols) && (length(bynames)!=length(groups) || length(bynames)!=length(grpcols))) error("!length(bynames)[%d]==length(groups)[%d]==length(grpcols)[%d]",length(bynames),length(groups),length(grpcols));
     // TO DO: check this check above.
@@ -94,7 +91,8 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
         if (SIZEOF(VECTOR_ELT(SD, i))==0)
             error("Type %d in .SD column %d", TYPEOF(VECTOR_ELT(SD, i)), i);
         nameSyms[i] = install(CHAR(STRING_ELT(names, i)));
-        setAttrib(VECTOR_ELT(SD,i), R_ClassSymbol, getAttrib(VECTOR_ELT(dt,INTEGER(dtcols)[i]-1), R_ClassSymbol)); // fixes http://stackoverflow.com/questions/14753411/why-does-data-table-lose-class-definition-in-sd-after-group-by
+        // fixes http://stackoverflow.com/questions/14753411/why-does-data-table-lose-class-definition-in-sd-after-group-by
+        copyMostAttrib(VECTOR_ELT(dt,INTEGER(dtcols)[i]-1), VECTOR_ELT(SD,i));  // not names, otherwise test 778 would fail
     }
     
     origIlen = length(I);  // test 762 has length(I)==1 but nrow(SD)==0
@@ -120,10 +118,10 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
     
     ansloc = 0;
     for(i=0; i<ngrp; i++) {   // even for an empty i table, ngroup is length 1 (starts is value 0), for consistency of empty cases
-        if (INTEGER(starts)[i] == 0 && (i>0 || !isNull(lhs))) continue;
+        if (INTEGER(starts)[i] == 0 && i>0) continue; // replaced (i>0 || !isNull(lhs)) with i>0 to fix #5376
         if (!isNull(lhs) &&
                (INTEGER(starts)[i] == NA_INTEGER ||
-                (length(order) && INTEGER(order)[ INTEGER(starts)[i]-1 ]==NA_INTEGER)))
+                (LENGTH(order) && INTEGER(order)[ INTEGER(starts)[i]-1 ]==NA_INTEGER)))
             continue;
         grpn = INTEGER(lens)[i];
         INTEGER(N)[0] = INTEGER(starts)[i] == NA_INTEGER ? 0 : grpn;
@@ -143,7 +141,7 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
                    (char *)DATAPTR(VECTOR_ELT(groups,INTEGER(grpcols)[j]-1))+igrp*size,
                    size);
         }
-        if (INTEGER(starts)[i] == NA_INTEGER || (length(order) && INTEGER(order)[ INTEGER(starts)[i]-1 ]==NA_INTEGER)) {
+        if (INTEGER(starts)[i] == NA_INTEGER || (LENGTH(order) && INTEGER(order)[ INTEGER(starts)[i]-1 ]==NA_INTEGER)) {
             for (j=0; j<length(SD); j++) {
                 switch (TYPEOF(VECTOR_ELT(SD, j))) {
                 case LGLSXP :
@@ -183,7 +181,8 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
                 }
             }
         } else {
-            if (length(order)==0) {
+            if (LOGICAL(verbose)[0]) tstart = clock();
+            if (LENGTH(order)==0) {
                 rownum = INTEGER(starts)[i]-1;
                 for (j=0; j<length(SD); j++) {
                     size = SIZEOF(VECTOR_ELT(SD,j));
@@ -199,8 +198,8 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
                        (char *)DATAPTR(VECTOR_ELT(dt,INTEGER(xjiscols)[j]-1))+rownum*size,
                        size);  
                 }
+                if (LOGICAL(verbose)[0]) { tblock[0] += clock()-tstart; nblock[0]++; }
             } else {
-                if (LOGICAL(verbose)[0]) tstart = clock();
                 // Fairly happy with this block. No need for SET_* here. See comment above. 
                 for (k=0; k<grpn; k++) INTEGER(I)[k] = INTEGER(order)[ INTEGER(starts)[i]-1 + k ];
                 for (j=0; j<length(SD); j++) {
@@ -219,7 +218,8 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
                         }
                     }
                 }
-                if (LOGICAL(verbose)[0]) { tblock[0] += clock()-tstart; nblock[0]++; }
+                if (LOGICAL(verbose)[0]) { tblock[1] += clock()-tstart; nblock[1]++; }
+                // The two blocks have separate timing statements to make sure which is running
             }
         }
         INTEGER(rownames)[1] = -grpn;  // the .set_row_names() of .SD. Not .N when nomatch=NA and this is a nomatch
@@ -236,7 +236,8 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
         
         if (LOGICAL(verbose)[0]) tstart = clock();  // call to clock() is more expensive than an 'if'
         PROTECT(jval = eval(jexp, env));
-        if (LOGICAL(verbose)[0]) { tblock[1] += clock()-tstart; nblock[1]++; }
+        
+        if (LOGICAL(verbose)[0]) { tblock[2] += clock()-tstart; nblock[2]++; }
         
         if (isNull(jval))  {
             // j may be a plot or other side-effect only
@@ -286,10 +287,38 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
                 // fix for #4990 - `:=` did not issue recycling warning during "by" operation.
                 if (vlen<grpn && vlen>0 && grpn%vlen != 0) 
                     warning("Supplied %d items to be assigned to group %d of size %d in column '%s' (recycled leaving remainder of %d items).",vlen,i+1,grpn,CHAR(STRING_ELT(dtnames,INTEGER(lhs)[j]-1)),grpn%vlen);
+                // fix for issues/481 for := case
+                // missed it in commit: https://github.com/Rdatatable/data.table/commit/86276f48798491d328caa72f6ebcce4d51649440
+                // see that link (or scroll down for the non := version) for comments
+                #if defined(R_VERSION) && R_VERSION >= R_Version(3, 1, 0)
+                named=0;
+                if (isNewList(RHS) && NAMED(RHS) != 2) {
+                    dupcol = VECTOR_ELT(RHS, 0);
+                    named  = NAMED(dupcol);
+                    while(isNewList(dupcol)) {
+                        if (named == 2) break;
+                        else {
+                            dupcol = VECTOR_ELT(dupcol, 0);
+                            named = NAMED(dupcol);
+                        }
+                    }
+                    if (named == 2) RHS = PROTECT(duplicate(RHS));
+                }
                 memrecycle(target, order, INTEGER(starts)[i]-1, grpn, RHS);
-                if (!isFactor(RHS)) setAttrib(target, R_ClassSymbol, getAttrib(RHS, R_ClassSymbol));
-                // fixes bug #2531. Got to set the class back.
-                // added !isFactor(RHS) to fix #5104 (side-effect of fixing #2531)
+                if (named == 2) UNPROTECT(1);
+                #else
+                memrecycle(target, order, INTEGER(starts)[i]-1, grpn, RHS);
+                #endif
+                
+                // fixes bug #2531. Got to set the class back. See comment below for explanation. This is the new fix. Works great!
+                // Also fix for #5437 (bug due to regression in 1.9.2+)
+                copyMostAttrib(RHS, target);  // not names, otherwise test 778 would fail
+                /* OLD FIX: commented now. The fix below resulted in segfault on factor columns because I dint set the "levels"
+                   Instead of fixing that, I just removed setting class if it's factor. Not appropriate fix.
+                   Correct fix of copying all attributes (except names) added above. Now, everything should be alright.
+                   Test 1144 (#5104) will provide the right output now. Modified accordingly.
+                OUTDATED: if (!isFactor(RHS)) setAttrib(target, R_ClassSymbol, getAttrib(RHS, R_ClassSymbol));
+                OUTDATED: // added !isFactor(RHS) to fix #5104 (side-effect of fixing #2531) */
             }
             UNPROTECT(1);
             continue;
@@ -404,7 +433,35 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
                 warning("Column %d of result for group %d is length %d but the longest column in this result is %d. Recycled leaving remainder of %d items. This warning is once only for the first group with this issue.",j+1,i+1,thislen,maxn,maxn%thislen);
                 recycleWarn = FALSE;
             }
+            // fix for issues/481
+            #if defined(R_VERSION) && R_VERSION >= R_Version(3, 1, 0)
+            // added version because, for ex: DT[, list(list(unique(y))), by=x] gets duplicated
+            // because unique(y) returns NAMED(2). So, do it only if v>= 3.1.0. If <3.1.0,
+            // it gets duplicated anyway, so avoid copying twice!
+            named=0;
+            if (isNewList(source) && NAMED(source) != 2) {
+                // NAMED(source) != 2 prevents DT[, list(y), by=x] where 'y' is already a list 
+                // or data.table and 99% of cases won't clear the if-statement above.
+                dupcol = VECTOR_ELT(source, 0);
+                named  = NAMED(dupcol);
+                while(isNewList(dupcol)) {
+                    // while loop basically peels each list() layer one by one until there's no 
+                    // list() wrapped anymore. Ex: consider DT[, list(list(list(sum(y)))), by=x] - 
+                    // here, we don't need to duplicate, but we won't know that until we reach 
+                    // 'sum(y)' and know that it's NAMED() != 2.
+                    if (named == 2) break;
+                    else {
+                        dupcol = VECTOR_ELT(dupcol, 0);
+                        named = NAMED(dupcol);
+                    }
+                }
+                if (named == 2) source = PROTECT(duplicate(source));
+            }
             memrecycle(target, R_NilValue, thisansloc, maxn, source);
+            if (named == 2) UNPROTECT(1);
+            #else
+            memrecycle(target, R_NilValue, thisansloc, maxn, source);
+            #endif
         }
         ansloc += maxn;
         if (firstalloc) {
@@ -426,8 +483,11 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
     for (j=0; j<length(SD); j++) SETLENGTH(VECTOR_ELT(SD,j), origSDnrow);
     SETLENGTH(I, origIlen);
     if (LOGICAL(verbose)[0]) {
-        Rprintf("\n  collecting ad hoc groups took %.3fs for %d calls\n", 1.0*tblock[0]/CLOCKS_PER_SEC, nblock[0]);
-        Rprintf("  eval(j) took %.3fs for %d calls\n", 1.0*tblock[1]/CLOCKS_PER_SEC, nblock[1]);
+        if (nblock[0] && nblock[1]) error("Internal error: block 0 [%d] and block 1 [%d] have both run", nblock[0], nblock[1]);
+        int w = nblock[1]>0;
+        Rprintf("\n  %s took %.3fs for %d groups\n", w ? "collecting discontiguous groups" : "memcpy contiguous groups",
+                                                    1.0*tblock[w]/CLOCKS_PER_SEC, nblock[w]);
+        Rprintf("  eval(j) took %.3fs for %d calls\n", 1.0*tblock[2]/CLOCKS_PER_SEC, nblock[2]);
     }
     UNPROTECT(protecti);
     Free(nameSyms);
@@ -477,4 +537,49 @@ SEXP growVector(SEXP x, R_len_t newlen)
     return newx;
 }
 
+
+// benchmark timings for #481 fix:
+// old code - no changes, R v3.0.3
+// > system.time(dt[, list(list(y)), by=x])
+//    user  system elapsed
+//  82.593   0.936  84.314
+// > system.time(dt[, list(list(y)), by=x])
+//    user  system elapsed
+//  34.558   0.628  35.658
+// > system.time(dt[, list(list(y)), by=x])
+//    user  system elapsed
+//  37.056   0.315  37.668
+//
+// All new changes in place, R v3.0.3
+// > system.time(dt[, list(list(y)), by=x])
+//    user  system elapsed
+//  82.852   0.952  84.575
+// > system.time(dt[, list(list(y)), by=x])
+//    user  system elapsed
+//  34.600   0.356  35.173
+// > system.time(dt[, list(list(y)), by=x])
+//    user  system elapsed
+//  36.865   0.514  37.901
+
+// old code - no changes, R v3.1.0 --- BUT RESULTS ARE WRONG!
+// > system.time(dt[, list(list(y)), by=x])
+//    user  system elapsed
+//  11.022   0.352  11.455
+// > system.time(dt[, list(list(y)), by=x])
+//    user  system elapsed
+//  10.397   0.119  10.600
+// > system.time(dt[, list(list(y)), by=x])
+//    user  system elapsed
+//  10.665   0.101  11.013
+
+// All new changes in place, R v3.1.0
+// > system.time(dt[, list(list(y)), by=x])
+//    user  system elapsed
+//  83.279   1.057  89.856
+// > system.time(dt[, list(list(y)), by=x])
+//    user  system elapsed
+//  30.569   0.633  31.452
+// > system.time(dt[, list(list(y)), by=x])
+//    user  system elapsed
+//  30.827   0.239  32.306
 

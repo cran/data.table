@@ -9,7 +9,7 @@ options(width=70)  # so lines wrap round
 
 
 ###################################################
-### code chunk number 2: datatable-faq.Rnw:97-104
+### code chunk number 2: datatable-faq.Rnw:95-102
 ###################################################
 DT = as.data.table(iris)
 setkey(DT,Species)
@@ -21,7 +21,7 @@ myfunction(DT,sum(Sepal.Width))
 
 
 ###################################################
-### code chunk number 3: datatable-faq.Rnw:149-155
+### code chunk number 3: datatable-faq.Rnw:145-152
 ###################################################
 X = data.table(grp=c("a","a","b","b","b","c","c"), foo=1:7)
 setkey(X,grp)
@@ -29,10 +29,11 @@ Y = data.table(c("b","c"), bar=c(4,2))
 X
 Y
 X[Y,sum(foo*bar)]
+X[Y,sum(foo*bar),by=.EACHI]
 
 
 ###################################################
-### code chunk number 4: datatable-faq.Rnw:179-182
+### code chunk number 4: datatable-faq.Rnw:180-183
 ###################################################
 DF = data.frame(x=1:3,y=4:6,z=7:9)
 DF
@@ -40,20 +41,20 @@ DF[,c("y","z")]
 
 
 ###################################################
-### code chunk number 5: datatable-faq.Rnw:185-187
+### code chunk number 5: datatable-faq.Rnw:186-188
 ###################################################
 DT = data.table(DF)
 DT[,c(y,z)]
 
 
 ###################################################
-### code chunk number 6: datatable-faq.Rnw:190-191
+### code chunk number 6: datatable-faq.Rnw:191-192
 ###################################################
-DT[,list(y,z)]
+DT[,.(y,z)]
 
 
 ###################################################
-### code chunk number 7: datatable-faq.Rnw:200-206
+### code chunk number 7: datatable-faq.Rnw:201-207
 ###################################################
 data.table(NULL)
 data.frame(NULL)
@@ -64,7 +65,7 @@ is.null(data.frame(NULL))
 
 
 ###################################################
-### code chunk number 8: datatable-faq.Rnw:210-213
+### code chunk number 8: datatable-faq.Rnw:211-214
 ###################################################
 DT = data.table(a=1:3,b=c(4,5,6),d=c(7L,8L,9L))
 DT[0]
@@ -72,7 +73,7 @@ sapply(DT[0],class)
 
 
 ###################################################
-### code chunk number 9: datatable-faq.Rnw:235-238
+### code chunk number 9: datatable-faq.Rnw:236-239
 ###################################################
 DT = data.table(x=rep(c("a","b"),c(2,3)),y=1:5)
 DT
@@ -80,7 +81,7 @@ DT[,{z=sum(y);z+3},by=x]
 
 
 ###################################################
-### code chunk number 10: datatable-faq.Rnw:244-249
+### code chunk number 10: datatable-faq.Rnw:245-250
 ###################################################
 DT[,{
   cat("Objects:",paste(objects(),collapse=","),"\n")
@@ -92,8 +93,8 @@ DT[,{
 ###################################################
 ### code chunk number 11: datatable-faq.Rnw:256-258
 ###################################################
-DT[,list(g=1,h=2,i=3,j=4,repeatgroupname=x,sum(y)),by=x]     
-DT[,list(g=1,h=2,i=3,j=4,repeatgroupname=x[1],sum(y)),by=x]
+DT[,.(g=1,h=2,i=3,j=4,repeatgroupname=x,sum(y)),by=x]
+DT[,.(g=1,h=2,i=3,j=4,repeatgroupname=x[1],sum(y)),by=x]
 
 
 ###################################################
@@ -145,13 +146,13 @@ cat(try(A[B],silent=TRUE))
 
 
 ###################################################
-### code chunk number 18: datatable-faq.Rnw:394-395
+### code chunk number 18: datatable-faq.Rnw:393-394
 ###################################################
 base::cbind.data.frame
 
 
 ###################################################
-### code chunk number 19: datatable-faq.Rnw:402-405
+### code chunk number 19: datatable-faq.Rnw:401-404
 ###################################################
 foo = data.frame(a=1:3)
 cbind.data.frame = function(...)cat("Not printed\n")
@@ -159,13 +160,13 @@ cbind(foo)
 
 
 ###################################################
-### code chunk number 20: datatable-faq.Rnw:407-408
+### code chunk number 20: datatable-faq.Rnw:406-407
 ###################################################
 rm("cbind.data.frame")
 
 
 ###################################################
-### code chunk number 21: datatable-faq.Rnw:463-469
+### code chunk number 21: datatable-faq.Rnw:461-467
 ###################################################
 DT = data.table(a=rep(1:3,1:3),b=1:6,c=7:12)
 DT
@@ -176,7 +177,7 @@ DT[,{ mySD = copy(.SD)
 
 
 ###################################################
-### code chunk number 22: datatable-faq.Rnw:475-481
+### code chunk number 22: datatable-faq.Rnw:473-479
 ###################################################
 DT = data.table(a=c(1,1,2,2,2),b=c(1,2,2,2,1))
 DT
@@ -187,15 +188,18 @@ cat(try(
 
 
 ###################################################
-### code chunk number 23: datatable-faq.Rnw:485-488
+### code chunk number 23: datatable-faq.Rnw:483-489
 ###################################################
 if (packageVersion("data.table") >= "1.8.1") {
     DT[,.N,by=list(a,b)][,unique(N),by=a]
 }
+if (packageVersion("data.table") >= "1.9.3") {
+    DT[,.N,by=.(a,b)][,unique(N),by=a]   # same
+}
 
 
 ###################################################
-### code chunk number 24: datatable-faq.Rnw:506-514
+### code chunk number 24: datatable-faq.Rnw:507-515
 ###################################################
 DT = data.table(a=1:5,b=1:5)
 suppressWarnings(

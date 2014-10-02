@@ -11,20 +11,27 @@ guess <- function(x) {
 dcast.data.table <- function(data, formula, fun.aggregate = NULL, ..., margins = NULL, 
     subset = NULL, fill = NULL, drop = TRUE, value.var = guess(data), verbose = getOption("datatable.verbose")) {
     if (!is.data.table(data)) stop("'data' must be a data.table.")
+    if (anyDuplicated(names(data))) stop('data.table to cast must have unique column names')
     is.formula <- function(x) class(x) == "formula"
     strip <- function(x) gsub("[[:space:]]*", "", x)
-    if (is.formula(formula)) {
-        formula <- deparse(formula, 500)
-    }
+    if (is.formula(formula)) formula <- deparse(formula, 500)
     if (is.character(formula)) {
         ff <- strsplit(strip(formula), "~", fixed=TRUE)[[1]]
         if (length(ff) > 2)
-            stop("Cast formula of length > 2 detected. Data.table has at most two output dimensions.")
+            stop("Cast formula length is > 2, must be = 2.")
         ff <- strsplit(ff, "+", fixed=TRUE)
         setattr(ff, 'names', c("ll", "rr"))
         ff <- lapply(ff, function(x) x[x != "."])
         ff_ <- unlist(ff, use.names=FALSE)
-        ff <- lapply(ff, function(x) if (any(x == "...")) c(x[x != "..."], setdiff(names(data), c(value.var, ff_))) else x)
+        replace_dots <- function(x) {
+            if (!is.list(x)) x = as.list(x)
+            for (i in seq_along(x)) {
+                if (x[[i]] == "...") 
+                    x[[i]] = setdiff(names(data), c(value.var, ff_))
+            }
+            unlist(x)
+        }
+        ff <- lapply(ff, replace_dots)
     } else stop("Invalid formula.")
     ff_ <- unlist(ff, use.names=FALSE)
     if (length(is_wrong <- which(is.na(chmatch(ff_, names(data))))) > 0) stop("Column '", ff_[is_wrong[1]], "' not found.")
@@ -35,53 +42,86 @@ dcast.data.table <- function(data, formula, fun.aggregate = NULL, ..., margins =
         stop("Only 'value.var' column maybe of type 'list'. This may change in the future.")
     drop <- as.logical(drop[1])
     if (is.na(drop)) stop("'drop' must be TRUE/FALSE")
-    
-    is_sorted = length(key(data)) && length(ff_)<=length(key(data)) && all(key(data) == ff_[1:length(key(data))]) 
-    # is_sorted means by_key really. Not calling is.sorted() here, as that's done by forder at C level inside Cfcast
-    
-    # TO DO: better way... not sure how else to get an expression from function (in fun.aggregate)
+
+    # subset
     m <- as.list(match.call()[-1])
     subset <- m$subset[[2]]
-    if (!is.null(subset))
-        vars <- intersect(names(data), all.vars(subset))
-    else vars <- NULL
+    if (!is.null(subset)) {
+        if (is.name(subset)) subset = as.call(list(quote(`(`), subset))
+        data = data[eval(subset, data, parent.frame()), unique(c(ff_, value.var)), with=FALSE]
+    }
+    if (nrow(data) == 0L || ncol(data) == 0L) stop("Can't 'cast' on an empty data.table")
+
+    # set 'fun.aggregate = length' if max group size > 1
+    fun.null=FALSE
+    if (is.null(fun.aggregate)) {
+        fun.null=TRUE
+        oo = forderv(data, by=ff_, retGrp=TRUE)
+        if (attr(oo, 'maxgrpn') > 1L) {
+            message("Aggregate function missing, defaulting to 'length'")
+            fun.aggregate <- length
+            m[["fun.aggregate"]] = quote(length)
+        }
+    }
     fill.default <- NULL
-    if (!is.null(fun.aggregate)) {
+    if (!is.null(fun.aggregate)) { # construct the 'call'
         fill.default = fun.aggregate(data[[value.var]][0], ...)
+        if (!length(fill.default) && (is.null(fill) || !length(fill)))
+            stop("Aggregating function provided to argument 'fun.aggregate' should always return a length 1 vector, but returns 0-length value for fun.aggregate(", typeof(data[[value.var]]), "(0)).", " This value will have to be used to fill missing combinations, if any, and therefore can not be of length 0. Either override by setting the 'fill' argument explicitly or modify your function to handle this case appropriately.")
         args <- c("data", "formula", "margins", "subset", "fill", "value.var", "verbose", "drop")
         m <- m[setdiff(names(m), args)]
-        if (getOption("datatable.optimize") > 0L && m[[1]] == "mean") {
-            fun.aggregate <- as.call(c(as.name(".External"), as.name("Cfastmean"), as.name(value.var), 
-                                  if(!is.null(m[["na.rm"]])) list(m[["na.rm"]]) else list(FALSE)))
-        } else {
-            fun.aggregate <- as.call(c(m[1], as.name(value.var), m[-1]))
-        }
-        # make sure list columns on aggregation gives back a list column - have to do this because grouping returns a list only with list(list(.))
-        if (is.list(data[[value.var]]) || is.list(fill.default)) fun.aggregate <- as.call(c(as.name("list"), list(fun.aggregate)))
+        .CASTcall = as.call(c(m[1], as.name(value.var), m[-1])) # issues/713
+        .CASTcall = as.call(c(as.name("list"), setattr(list(.CASTcall), 'names', value.var)))
+        # workaround until #5191 (issues/497) is fixed
+        if (length(intersect(value.var, ff_))) 
+            .CASTcall = as.call(list(as.name("{"), as.name(".SD"), .CASTcall))
     }
+    # special case
     if (length(ff$rr) == 0) {
-        # probably simple formula - should be okay to deal in R
-        agg = data[, .N, keyby=c(ff$ll)] # if any N > 1, then default to length, else return data
-        if (all(agg$N == 1L)) {
+        if (is.null(fun.aggregate))
             ans = data[, c(ff$ll, value.var), with=FALSE]
-            if (!identical(key(ans), ff$ll)) setkeyv(ans, ff$ll)
-            return(ans)
+        else {
+            # workaround until #5191 (issues/497) is fixed
+            if (length(intersect(value.var, ff_))) ans = data[, eval(.CASTcall), by=c(ff$ll), .SDcols=value.var]
+            else ans = data[, eval(.CASTcall), by=c(ff$ll)]
         }
-        if (is.null(fun.aggregate)) {
-            message("Aggregate function missing, defaulting to 'length'")
-            return(agg)
-        } else return(data[, eval(fun.aggregate), keyby=c(ff$ll)])
+        if (anyDuplicated(names(ans))) {
+            message("Duplicate column names found in cast data.table. Setting unique names using 'make.unique'")   
+            setnames(ans, make.unique(names(ans)))
+        }
+        if (!identical(key(ans), ff$ll)) setkeyv(ans, names(ans)[seq_along(ff$ll)])
+        return(ans)
+    }
+    # aggregation moved to R now that 'adhoc-by' is crazy fast!
+    if (!is.null(fun.aggregate)) {
+        if (length(intersect(value.var, ff_))) {
+            data = data[, eval(.CASTcall), by=c(ff_), .SDcols=value.var]
+            value.var = tail(make.unique(names(data)), 1L)
+            setnames(data, ncol(data), value.var)
+        }
+        else data = data[, eval(.CASTcall), by=c(ff_)]
+        setkeyv(data, ff_)
+        # issues/693
+        fun_agg_chk <- function(x) {
+            # sorted now, 'forderv' should be as fast as uniqlist+uniqlengths
+            oo = forderv(data, by=key(data), retGrp=TRUE)
+            attr(oo, 'maxgrpn') > 1L
+        }
+        if (!fun.null && fun_agg_chk(data))
+            stop("Aggregating function provided to argument 'fun.aggregate' should always return a length 1 vector for each group, but returns length != 1 for atleast one group. Please have a look at the DETAILS section of ?dcast.data.table ")
+    } else {
+        if (is.null(subset))
+            data = data[, unique(c(ff_, value.var)), with=FALSE] # data is untouched so far. subset only required columns
+        if (length(oo)) .Call(Creorder, data, oo)
+        setattr(data, 'sorted', ff_)
     }
     .CASTenv = new.env(parent=parent.frame())
-    assign("forder", forder, .CASTenv)
-    assign("print", function(x,...){base::print(x,...);NULL}, .CASTenv)
-    assign("Cfastmean", Cfastmean, .CASTenv)
-    assign("mean", base::mean.default, .CASTenv)
-    if (!is.null(vars)) for (i in vars) assign(i, data[[i]], .CASTenv) # assign subset vars directly in env
-    ans <- .Call("Cfcast", data, ff$ll, ff$rr, value.var, fill, .CASTenv, is_sorted, fun.aggregate, fill.default, drop, subset)
+    assign("forder", forderv, .CASTenv)
+    assign("CJ", CJ, .CASTenv)
+    ans <- .Call("Cfcast", data, ff$ll, ff$rr, value.var, fill, fill.default, is.null(fun.aggregate), .CASTenv, drop)
     setDT(ans)
-    if (any(duplicated(names(ans)))) {
-        message("Duplicate column names found in cast data.table. Setting unique names using 'make.names'")   
+    if (anyDuplicated(names(ans))) {
+        message("Duplicate column names found in cast data.table. Setting unique names using 'make.unique'")
         setnames(ans, make.unique(names(ans)))
     }
     setattr(ans, 'sorted', names(ans)[seq_along(ff$ll)])

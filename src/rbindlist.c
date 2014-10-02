@@ -1,14 +1,11 @@
-#include <R.h>
-#define USE_RINTERNALS
-#include <Rinternals.h>
+#include "data.table.h"
 #include <Rdefines.h>
 #include <Rversion.h>
 #include <stdint.h>
 // #include <signal.h> // the debugging machinery + breakpoint aidee
 // raise(SIGINT);
 
-extern size_t sizes[100];
-#define SIZEOF(x) sizes[TYPEOF(x)]
+/* Eddi's hash setup for combining factor levels appropriately - untouched from previous state (except made combineFactorLevels static) */
 
 // Fixes #5150
 // a simple check for R version to decide if the type should be R_len_t or R_xlen_t
@@ -18,8 +15,6 @@ extern size_t sizes[100];
 #else
   typedef R_len_t RLEN;
 #endif
-
-extern int StrCmp(SEXP x, SEXP y);    // in forder.c
 
 // a simple linked list, will use this when finding global order for ordered factors
 // will keep two ints
@@ -162,7 +157,7 @@ static void CleanHashTable(HashData *d)
 
 // factorType is 1 for factor and 2 for ordered
 // will simply unique normal factors and attempt to find global order for ordered ones
-SEXP combineFactorLevels(SEXP factorLevels, int * factorType, Rboolean * isRowOrdered) {
+static SEXP combineFactorLevels(SEXP factorLevels, int * factorType, Rboolean * isRowOrdered) {
     // find total length
     RLEN size = 0;
     R_len_t len = LENGTH(factorLevels), n, i, j;
@@ -333,104 +328,343 @@ SEXP combineFactorLevels(SEXP factorLevels, int * factorType, Rboolean * isRowOr
 }
 
 
-SEXP rbindlist(SEXP l)
-{
-    R_len_t i,j,jj,r, nrow=0, first=-1, ansloc, ncol=0, thislen, lcount=0, resi;
-    SEXP ans, li, lf=R_NilValue, thiscol, target, levels;
-    Rboolean coerced=FALSE;
-    SEXPTYPE * maxtype = NULL;
-    int * isColFactor = NULL;      // for each column this is 0 if not a factor, 1 if a factor, and 2 if an ordered factor
-    Rboolean * isRowOrdered = NULL;
-    SEXPTYPE type;
-    SEXP factorLevels = R_NilValue, finalFactorLevels;
+/* Arun's addition and changes to incorporate 'usenames=T/F' and 'fill=T/F' arguments to rbindlist */
 
-    if (length(l)) ncol = length(VECTOR_ELT(l, 0)); // to take care of all empty data.tables
-    for (i=0;i<length(l);i++) {
-        li = VECTOR_ELT(l,i);
+/*
+    l               = input list of data.tables/lists/data.frames
+    n               = length(l)
+    ans             = rbind'd result
+    i               = an index over length of l
+    use.names       = whether binding should check for names and bind them accordingly
+    fill            = whether missing columns should be filled with NAs
+
+    ans_ptr         = final_names - column names for 'ans' (list item 1)
+    ans_ptr         = match_indices - when use.names=TRUE, for each element in l, what's the destination col index (in 'ans') for each of the cols (list item 2)
+    n_rows          = total number of rows in 'ans'
+    n_cols          = total number of cols in 'ans'
+    max_type        = for each col in 'ans', what's the final SEXPTYPE? (for coercion if necessary)
+    is_factor       = for each col in 'ans' mark which one's a factor (to convert to factor at the end)
+    is_ofactor      = for each col in 'ans' mark which one's an ordered factor (to convert to ordered factor at the end)
+    fn_rows         = the length of first column (rows) for each item in l.
+    mincol          = get the minimum number of columns in an item from l. Used to check if 'fill=TRUE' is really necessary, even if set.
+*/
+
+struct preprocessData {
+    SEXP ans_ptr;
+    SEXP colname;
+    size_t n_rows;
+    size_t n_cols;
+    int *fn_rows;
+    SEXPTYPE *max_type;
+    int *is_factor;
+    int first;
+    int lcount;
+    int mincol;
+    int protecti;
+};
+
+static SEXP unlist2(SEXP v) {
+    
+    RLEN i, j, k=0, ni, n=0;
+    SEXP ans, vi, lnames, groups, runids;
+
+    for (i=0; i<length(v); i++) n += length(VECTOR_ELT(v, i));
+    ans    = PROTECT(allocVector(VECSXP, 3));
+    lnames = PROTECT(allocVector(STRSXP, n));
+    groups = PROTECT(allocVector(INTSXP, n));
+    runids = PROTECT(allocVector(INTSXP, n));
+    for (i=0; i<length(v); i++) {
+        vi = VECTOR_ELT(v, i);
+        ni = length(vi);
+        for (j=0; j<ni; j++) {
+            SET_STRING_ELT(lnames, k + j, STRING_ELT(vi, j));
+            INTEGER(groups)[k + j] = i+1;
+            INTEGER(runids)[k + j] = j;
+        }
+        k+=j;
+    }
+    SET_VECTOR_ELT(ans, 0, lnames);
+    SET_VECTOR_ELT(ans, 1, groups);
+    SET_VECTOR_ELT(ans, 2, runids);
+    UNPROTECT(4);
+    return(ans);
+}
+
+// Don't use elsewhere. No checks are made on byArg and handleSorted
+// if handleSorted is 0, then it'll return integer(0) as such when 
+// input is already sorted, like forder. if not, seq_len(nrow(dt)).
+static SEXP fast_order(SEXP dt, R_len_t byArg, R_len_t handleSorted) {
+
+    R_len_t i, protecti=0;
+    SEXP ans, by=R_NilValue, retGrp, sortStr, order, na, starts;
+
+    retGrp  = PROTECT(allocVector(LGLSXP, 1)); LOGICAL(retGrp)[0]  = TRUE;
+    sortStr = PROTECT(allocVector(LGLSXP, 1)); LOGICAL(sortStr)[0] = FALSE;
+    na      = PROTECT(allocVector(LGLSXP, 1)); LOGICAL(na)[0] = FALSE;
+
+    if (byArg) {
+        by    = PROTECT(allocVector(INTSXP, byArg));
+        order = PROTECT(allocVector(INTSXP, byArg));
+        for (i=0; i<byArg; i++) {
+            INTEGER(by)[i] = i+1;
+            INTEGER(order)[i] = 1;
+        }
+        UNPROTECT(5);
+    } else {
+        order = PROTECT(allocVector(INTSXP, 1)); INTEGER(order)[0] = 1;
+        UNPROTECT(4);
+    }    
+    ans = PROTECT(forder(dt, by, retGrp, sortStr, order, na)); protecti++;
+    if (!length(ans) && handleSorted != 0) {
+        starts = PROTECT(getAttrib(ans, mkString("starts"))); protecti++;
+        // if cols are already sorted, 'forder' gives integer(0), got to replace it with 1:.N
+        ans = PROTECT(allocVector(INTSXP, length(VECTOR_ELT(dt, 0)))); protecti++;
+        for (i=0; i<length(ans); i++) INTEGER(ans)[i] = i+1;
+        setAttrib(ans, install("starts"), starts);
+    }
+    UNPROTECT(protecti); // ans
+    return(ans);
+}
+
+static SEXP uniq_lengths(SEXP v, R_len_t n) {
+    
+    R_len_t i, nv=length(v);
+    SEXP ans = PROTECT(allocVector(INTSXP, nv));
+    for (i=1; i<nv; i++) {
+        INTEGER(ans)[i-1] = INTEGER(v)[i] - INTEGER(v)[i-1];
+    }
+    // last value
+    INTEGER(ans)[nv-1] = n - INTEGER(v)[nv-1] + 1;
+    UNPROTECT(1);
+    return(ans);
+}
+
+static SEXP match_names(SEXP v) {
+    
+    R_len_t i, j, idx, ncols, protecti=0;
+    SEXP ans, dt, lnames, ti;
+    SEXP uorder, starts, ulens, index, firstofeachgroup, origorder;
+    SEXP fnames, findices, runid, grpid;
+    
+    ans    = PROTECT(allocVector(VECSXP, 2));
+    dt     = PROTECT(unlist2(v)); protecti++;
+    lnames = VECTOR_ELT(dt, 0);
+    grpid  = PROTECT(duplicate(VECTOR_ELT(dt, 1))); protecti++; // dt[1] will be reused, so backup
+    runid  = VECTOR_ELT(dt, 2);
+    
+    uorder = PROTECT(fast_order(dt, 2, 1));  protecti++; // byArg alone is set, everything else is set inside fast_order
+    starts = PROTECT(getAttrib(uorder, mkString("starts"))); protecti++;
+    ulens  = PROTECT(uniq_lengths(starts, length(lnames))); protecti++;
+    
+    // seq_len(.N) for each group
+    index = PROTECT(VECTOR_ELT(dt, 1)); protecti++; // reuse dt[1] (in 0-index coordinate), value already backed up above.
+    for (i=0; i<length(ulens); i++) {
+        for (j=0; j<INTEGER(ulens)[i]; j++)
+            INTEGER(index)[INTEGER(uorder)[INTEGER(starts)[i]-1+j]-1] = j;
+    }
+    // order again
+    uorder = PROTECT(fast_order(dt, 2, 1));  protecti++; // byArg alone is set, everything else is set inside fast_order
+    starts = PROTECT(getAttrib(uorder, mkString("starts"))); protecti++;
+    ulens  = PROTECT(uniq_lengths(starts, length(lnames))); protecti++;    
+    ncols  = length(starts);
+    // check if order has to be changed (bysameorder = FALSE here by default - in `[.data.table` parlance)
+    firstofeachgroup = PROTECT(allocVector(INTSXP, length(starts)));
+    for (i=0; i<ncols; i++) INTEGER(firstofeachgroup)[i] = INTEGER(uorder)[INTEGER(starts)[i]-1];
+    origorder = PROTECT(fast_order(firstofeachgroup, 0, 0));
+    if (length(origorder)) {
+        reorder(starts, origorder);
+        reorder(ulens, origorder);
+    }
+    UNPROTECT(2);
+    // get fnames and findices
+    fnames   = PROTECT(allocVector(STRSXP, ncols)); protecti++;
+    findices = PROTECT(allocVector(VECSXP, ncols)); protecti++;
+    for (i=0; i<ncols; i++) {
+        idx = INTEGER(uorder)[INTEGER(starts)[i]-1]-1;
+        SET_STRING_ELT(fnames, i, STRING_ELT(lnames, idx));
+        ti = PROTECT(allocVector(INTSXP, length(v)));
+        for (j=0;j<length(v);j++) INTEGER(ti)[j]=-1; // TODO: can we eliminate this?
+        for (j=0; j<INTEGER(ulens)[i]; j++) {
+            idx = INTEGER(uorder)[INTEGER(starts)[i]-1+j]-1;
+            INTEGER(ti)[INTEGER(grpid)[idx]-1] = INTEGER(runid)[idx];
+        }
+        UNPROTECT(1);
+        SET_VECTOR_ELT(findices, i, ti);
+    }
+    UNPROTECT(protecti);
+    SET_VECTOR_ELT(ans, 0, fnames);
+    SET_VECTOR_ELT(ans, 1, findices);
+    UNPROTECT(1); // ans
+    return(ans);
+}
+
+static void preprocess(SEXP l, Rboolean usenames, Rboolean fill, struct preprocessData *data) {
+    
+    R_len_t i, j, idx;
+    SEXP li, lnames=R_NilValue, fnames, findices=R_NilValue, f_ind=R_NilValue, thiscol, col_name=R_NilValue;
+    SEXPTYPE type;
+    
+    data->first = -1; data->lcount = 0; data->n_rows = 0; data->n_cols = 0; data->protecti = 0;
+    data->max_type = NULL; data->is_factor = NULL; data->ans_ptr = R_NilValue; data->mincol=0;
+    data->fn_rows = Calloc(length(l), int); data->colname = R_NilValue;
+
+    // get first non null name, 'rbind' was doing a 'match.names' for each item.. which is a bit more time consuming.
+    // And warning that it'll be matched by names is not necessary, I think, as that's the default for 'rbind'. We 
+    // should instead document it.
+    for (i=0; i<length(l); i++) { // length(l) = 0 is handled in rbindlist already.
+        li = VECTOR_ELT(l, i);
         if (isNull(li)) continue;
         if (TYPEOF(li) != VECSXP) error("Item %d of list input is not a data.frame, data.table or list",i+1);
-        if (!LENGTH(li) || !length(VECTOR_ELT(li,0))) continue;
-        lcount++; // to get the count of non-empty data.tables
-        // we'll skip empty data.tables entirely. The case where all are empty is taken care of underneath this loop.
-        // so we don't need 'first == -2' here. ncol is set before the loop to take care of all empty data.tables
-        if (first == -1) {
-            first = i;   // First non-empty list/data.frame/data.table
-            lf = li;
-            ncol = length(lf);
-
-            // initialize the max types - will possibly increment later
-            maxtype = Calloc(ncol, SEXPTYPE);
-            isColFactor = Calloc(ncol, int);
-            for (j = 0; j < ncol; ++j) {
-                thiscol = VECTOR_ELT(li, j);
-                if (isFactor(thiscol)) {
-                    if (isOrdered(thiscol)) {
-                        isColFactor[j] = 2;
-                    } else {
-                        isColFactor[j] = 1;
-                    }
-                    maxtype[j] = STRSXP;   // if any column is a factor everything will be converted to strings and factorized at the end
-                } else {
-                    isColFactor[j] = 0;
-                    maxtype[j] = TYPEOF(VECTOR_ELT(lf, j));
-                }
+        if (!LENGTH(li)) continue;
+        col_name = getAttrib(li, R_NamesSymbol);
+        if (!isNull(col_name)) break;
+    }
+    if (!isNull(col_name)) { data->colname = PROTECT(col_name); data->protecti++; }
+    if (usenames) { lnames = PROTECT(allocVector(VECSXP, length(l))); data->protecti++;}
+    for (i=0; i<length(l); i++) {
+        li = VECTOR_ELT(l, i);
+        if (isNull(li)) continue;
+        if (TYPEOF(li) != VECSXP) error("Item %d of list input is not a data.frame, data.table or list",i+1);
+        if (!LENGTH(li)) continue;
+        col_name = getAttrib(li, R_NamesSymbol);
+        if (fill && isNull(col_name))
+            error("fill=TRUE, but names of input list at position %d is NULL. All items of input list must have names set when fill=TRUE.", i+1);
+        data->lcount++;
+        data->fn_rows[i] = length(VECTOR_ELT(li, 0));
+        if (data->first == -1) {
+            data->first = i;
+            data->n_cols = length(li);
+            data->mincol = length(li);
+            if (!usenames) {
+                data->ans_ptr = PROTECT(allocVector(VECSXP, 2)); data->protecti++;
+                if (isNull(col_name)) SET_VECTOR_ELT(data->ans_ptr, 0, data->colname);
+                else SET_VECTOR_ELT(data->ans_ptr, 0, col_name);
+            } else {
+                if (isNull(col_name)) SET_VECTOR_ELT(lnames, i, data->colname);
+                else SET_VECTOR_ELT(lnames, i, col_name);
             }
-            nrow += LENGTH(VECTOR_ELT(li,0));
+            data->n_rows += LENGTH(VECTOR_ELT(li,0));
             continue;
         } else {
-            if (length(li) != ncol) error("Item %d has %d columns, inconsistent with item %d which has %d columns",i+1,length(li),first+1,ncol);
+            if (!fill && length(li) != data->n_cols)
+                if (length(li) != data->n_cols) error("Item %d has %d columns, inconsistent with item %d which has %d columns. If instead you need to fill missing columns, use set argument 'fill' to TRUE.",i+1, length(li), data->first+1, data->n_cols);
         }
-        nrow += LENGTH(VECTOR_ELT(li,0));
-
-        for (j = 0; j < ncol; ++j) {
-            if (isColFactor[j] == 2) continue;
-
-            thiscol = VECTOR_ELT(li, j);
+        if (data->mincol > length(li)) data->mincol = length(li);
+        data->n_rows += length(VECTOR_ELT(li, 0));
+        if (usenames) {
+            if (isNull(col_name)) SET_VECTOR_ELT(lnames, i, data->colname);
+            else SET_VECTOR_ELT(lnames, i, col_name);
+        }
+    }
+    if (usenames) {
+        data->ans_ptr = PROTECT(match_names(lnames)); data->protecti++;
+        fnames = VECTOR_ELT(data->ans_ptr, 0);
+        findices = VECTOR_ELT(data->ans_ptr, 1);
+        if (isNull(data->colname) && data->n_cols > 0)
+            error("use.names=TRUE but no item of input list has any names.\n");
+        if (!fill && length(fnames) != data->mincol) {
+            error("Answer requires %d columns whereas one or more item(s) in the input list has only %d columns. This could be because the items in the list may not all have identical column names or some of the items may have duplicate names. In either case, if you're aware of this and would like to fill those missing columns, set the argument 'fill=TRUE'.", length(fnames), data->mincol);
+        } else data->n_cols = length(fnames);
+    }
+    
+    // decide type of each column
+    // initialize the max types - will possibly increment later
+    data->max_type  = Calloc(data->n_cols, SEXPTYPE);
+    data->is_factor = Calloc(data->n_cols, int);
+    for (i = 0; i< data->n_cols; i++) {
+        if (usenames) f_ind = VECTOR_ELT(findices, i);
+        for (j=data->first; j<length(l); j++) {
+            if (data->is_factor[i] == 2) break;
+            idx = (usenames) ? INTEGER(f_ind)[j] : i;
+            li = VECTOR_ELT(l, j);
+            if (isNull(li) || !LENGTH(li) || idx < 0) continue;
+            thiscol = VECTOR_ELT(li, idx);
             if (isFactor(thiscol)) {
-                if (isOrdered(thiscol)) {
-                    isColFactor[j] = 2;
-                } else {
-                    isColFactor[j] = 1;
-                }
-                maxtype[j] = STRSXP;   // if any column is a factor everything will be converted to strings and factorized at the end
+                data->is_factor[i] = (isOrdered(thiscol)) ? 2 : 1;
+                data->max_type[i]  = STRSXP;
             } else {
                 type = TYPEOF(thiscol);
-                if (type > maxtype[j]) maxtype[j] = type;
+                if (type > data->max_type[i]) data->max_type[i] = type;
             }
         }
     }
-    if (nrow == 0) {
-        // fixes bug #5117 - all data.tables are empty case.
-        if (ncol == 0) return(R_NilValue); 
-        return (duplicate(VECTOR_ELT(l, 0))); // ELSE case. 'duplicate' so as to not return the same pointer.
-        // TO DO: to verify that base:::rbind gives the same outout (ex: on factor levels)
+}
+
+SEXP rbindlist(SEXP l, SEXP sexp_usenames, SEXP sexp_fill) {
+    
+    R_len_t jj, ansloc, resi, i,j,r, idx, thislen;
+    struct preprocessData data; 
+    Rboolean usenames, fill, to_copy = FALSE, coerced=FALSE;
+    SEXP fnames = R_NilValue, findices = R_NilValue, f_ind = R_NilValue, ans, lf, li, target, thiscol, levels;
+    SEXP factorLevels = R_NilValue, finalFactorLevels;
+    Rboolean *isRowOrdered = NULL;
+    R_len_t protecti;
+    
+    // first level of error checks
+    if (!isLogical(sexp_usenames) || LENGTH(sexp_usenames)!=1 || LOGICAL(sexp_usenames)[0]==NA_LOGICAL)
+        error("use.names should be TRUE or FALSE");
+    if (!isLogical(sexp_fill) || LENGTH(sexp_fill) != 1 || LOGICAL(sexp_fill)[0] == NA_LOGICAL)
+        error("fill should be TRUE or FALSE");
+    if (isNull(l) || !length(l)) return(l);
+    if (TYPEOF(l) != VECSXP) error("Input to rbindlist must be a list of data.tables");
+    
+    usenames = LOGICAL(sexp_usenames)[0];
+    fill = LOGICAL(sexp_fill)[0];
+    if (fill && !usenames) { 
+        // override default
+        warning("Resetting 'use.names' to TRUE. 'use.names' can not be FALSE when 'fill=TRUE'.\n");
+        usenames=TRUE;
     }
+    // check for factor, get max types, and when usenames=TRUE get the answer 'names' and column indices for proper reordering.
+    preprocess(l, usenames, fill, &data);
+    fnames   = VECTOR_ELT(data.ans_ptr, 0);
+    findices = VECTOR_ELT(data.ans_ptr, 1);
+    protecti = data.protecti;
+    if (data.n_rows == 0 && data.n_cols == 0) return(R_NilValue);
 
-    // initialize factorLevels - will keep factor levels for factors and the entire column for everything else
-    // these two statements are moved here from the above for-loop. Because 'lcount' will be known only after the for-loop above.
-    // http://stackoverflow.com/questions/21591433/merging-really-not-that-large-data-tables-immediately-results-in-r-being-killed
-    factorLevels = PROTECT(allocVector(VECSXP, lcount));
-    isRowOrdered = Calloc(lcount, Rboolean);
-
-    PROTECT(ans = allocVector(VECSXP, ncol));
-    setAttrib(ans, R_NamesSymbol, getAttrib(lf, R_NamesSymbol));
-    for(j=0; j<ncol; j++) {
-        thiscol = VECTOR_ELT(lf,j);
-        target = allocVector(maxtype[j], nrow);
-        if (!isFactor(thiscol))
-          copyMostAttrib(thiscol, target);  // all but names,dim and dimnames. And if so, we want a copy here, not keepattr's SET_ATTRIB.
-
+    factorLevels = PROTECT(allocVector(VECSXP, data.lcount));
+    isRowOrdered = Calloc(data.lcount, Rboolean);
+    
+    ans = PROTECT(allocVector(VECSXP, data.n_cols)); protecti++;
+    setAttrib(ans, R_NamesSymbol, fnames);
+    lf = VECTOR_ELT(l, data.first);
+    for(j=0; j<data.n_cols; j++) {
+        if (fill) target = allocNAVector(data.max_type[j], data.n_rows);
+        else target = allocVector(data.max_type[j], data.n_rows);
         SET_VECTOR_ELT(ans, j, target);
-        ansloc = 0; 
-        jj=0; // to increment factorLevels
+        
+        if (usenames) {
+            to_copy = TRUE;
+            f_ind   = VECTOR_ELT(findices, j);
+        } else {
+            thiscol = VECTOR_ELT(lf, j);
+            if (!isFactor(thiscol)) copyMostAttrib(thiscol, target); // all but names,dim and dimnames. And if so, we want a copy here, not keepattr's SET_ATTRIB.
+        }
+        ansloc = 0;
+        jj = 0; // to increment factorLevels
         resi = -1; 
-        for (i=first; i<length(l); i++) {
+        for (i=data.first; i<length(l); i++) {
             li = VECTOR_ELT(l,i);
             if (!length(li)) continue;  // majority of time though, each item of l is populated
-            thislen = length(VECTOR_ELT(li,0));  // type of li was checked to be VECSXP already above
-            if (!thislen) continue;
-            thiscol = VECTOR_ELT(li,j);
-            if (thislen != length(thiscol)) error("Column %d of item %d is length %d, inconsistent with first column of that item which is length %d. rbindlist doesn't recycle as it already expects each item to be a uniform list, data.frame or data.table", j+1, i+1, length(thiscol), thislen);
+            thislen = data.fn_rows[i];
+            idx = (usenames) ? INTEGER(f_ind)[i] : j;
+            if (idx < 0) {
+                ansloc += thislen;
+                resi++;
+                if (data.is_factor[j]) {
+                    isRowOrdered[resi] = FALSE;
+                    SET_VECTOR_ELT(factorLevels, jj, allocNAVector(data.max_type[j], 1)); // the only level here is NA.
+                    jj++;
+                }
+                continue;
+            }
+            thiscol = VECTOR_ELT(li, idx);
+            // couldn't figure out a way to this outside this loop when fill = TRUE.
+            if (to_copy && !isFactor(thiscol)) {
+                copyMostAttrib(thiscol, target);
+                to_copy = FALSE;
+            }
+            if (thislen != length(thiscol)) error("Column %d of item %d is length %d, inconsistent with first column of that item which is length %d. rbind/rbindlist doesn't recycle as it already expects each item to be a uniform list, data.frame or data.table", j+1, i+1, length(thiscol), thislen);
             resi++;  // after the first, there might be NULL or empty which are skipped, resi increments up until lcount
             if (TYPEOF(thiscol) != TYPEOF(target) && !isFactor(thiscol)) {
                 thiscol = PROTECT(coerceVector(thiscol, TYPEOF(target)));
@@ -448,7 +682,7 @@ SEXP rbindlist(SEXP l)
                             SET_STRING_ELT(target, ansloc+r, NA_STRING);
                         else
                             SET_STRING_ELT(target, ansloc+r, STRING_ELT(levels,INTEGER(thiscol)[r]-1));
-
+    
                     // add levels to factorLevels
                     // changed "i" to "jj" and increment 'jj' after so as to fill only non-empty tables with levels
                     SET_VECTOR_ELT(factorLevels, jj, levels); jj++;
@@ -456,10 +690,10 @@ SEXP rbindlist(SEXP l)
                 } else {
                     if (TYPEOF(thiscol) != STRSXP) error("Internal logical error in rbindlist.c (not STRSXP), please report to datatable-help.");
                     for (r=0; r<thislen; r++) SET_STRING_ELT(target, ansloc+r, STRING_ELT(thiscol,r));
-
+    
                     // if this column is going to be a factor, add column to factorLevels
                     // changed "i" to "jj" and increment 'jj' after so as to fill only non-empty tables with levels
-                    if (isColFactor[j]) {
+                    if (data.is_factor[j]) {
                         SET_VECTOR_ELT(factorLevels, jj, thiscol);
                         jj++;
                     }
@@ -475,7 +709,7 @@ SEXP rbindlist(SEXP l)
             case REALSXP:
             case INTSXP:
             case LGLSXP:
-                if (TYPEOF(thiscol) != TYPEOF(target)) error("Internal logical error in rbindlist.c (thiscol's type should have been coerced to target), please report to datatable-help.");
+                if (TYPEOF(thiscol) != TYPEOF(target)) error("Internal logical error in rbindlist.c, type of 'thiscol' should have already been coerced to 'target'. Please report to datatable-help.");
                 memcpy((char *)DATAPTR(target) + ansloc * SIZEOF(thiscol),
                        (char *)DATAPTR(thiscol),
                        thislen * SIZEOF(thiscol));
@@ -489,23 +723,196 @@ SEXP rbindlist(SEXP l)
                 coerced = FALSE;
             }
         }
-        if (isColFactor[j]) {
-            finalFactorLevels = combineFactorLevels(factorLevels, &isColFactor[j], isRowOrdered);
-
-            SEXP factorLangSxp = PROTECT(lang3(install(isColFactor[j] == 1 ? "factor" : "ordered"),
+        if (data.is_factor[j]) {
+            finalFactorLevels = combineFactorLevels(factorLevels, &(data.is_factor[j]), isRowOrdered);
+            SEXP factorLangSxp = PROTECT(lang3(install(data.is_factor[j] == 1 ? "factor" : "ordered"),
                                                target, finalFactorLevels));
             SET_VECTOR_ELT(ans, j, eval(factorLangSxp, R_GlobalEnv));
             UNPROTECT(2);  // finalFactorLevels, factorLangSxp
         }
     }
     if (factorLevels != R_NilValue) UNPROTECT_PTR(factorLevels);
-    UNPROTECT(1);  // ans
 
-    Free(maxtype);
-    Free(isColFactor);
+    Free(data.max_type);
+    Free(data.is_factor);
+    Free(data.fn_rows);
     Free(isRowOrdered);
-
+    UNPROTECT(protecti);
     return(ans);
 }
 
+/* 
+## The section below implements "chmatch2_old" and "chmatch2" (faster version of chmatch2_old).
+## It's basically 'pmatch' but without the partial matching part. These examples should 
+## make it clearer.
+## Examples:
+## chmatch2_old(c("a", "a"), c("a", "a"))     # 1,2  - the second 'a' in 'x' has a 2nd match in 'table'
+## chmatch2_old(c("a", "a"), c("a", "b"))     # 1,NA - the second one doesn't 'see' the first 'a'
+## chmatch2_old(c("a", "a"), c("a", "a.1"))   # 1,NA - differs from 'pmatch' output = 1,2
+##
+## The algorithm: given 'x' and 'y':
+## dt = data.table(val=c(x,y), grp1 = rep(1:2, c(length(x),length(y))), grp2=c(1:length(x), 1:length(y)))
+## dt[, grp1 := 0:(.N-1), by="val,grp1"]
+## dt[, grp2[2], by="val,grp1"]
+## 
+## NOTE: This is FAST, but not AS FAST AS it could be. See chmatch2 for a faster implementation (and bottom 
+## of this file for a benchmark). I've retained here for now. Ultimately, will've to discuss with Matt and 
+## probably export it??
+*/
+SEXP chmatch2_old(SEXP x, SEXP table, SEXP nomatch) {
+    
+    R_len_t i, j, k, nx, li, si, oi;
+    SEXP dt, l, ans, order, start, lens, grpid, index;
+    if (TYPEOF(nomatch) != INTSXP || length(nomatch) != 1) error("'nomatch' must be an integer of length 1");
+    if (!length(x) || isNull(x)) return(allocVector(INTSXP, 0));
+    if (TYPEOF(x) != STRSXP) error("'x' must be a character vector");
+    nx=length(x);
+    if (!length(table) || isNull(table)) {
+        ans = PROTECT(allocVector(INTSXP, nx));
+        for (i=0; i<nx; i++) INTEGER(ans)[i] = INTEGER(nomatch)[0];
+        UNPROTECT(1);
+        return(ans);
+    }
+    if (TYPEOF(table) != STRSXP) error("'table' must be a character vector");
+    // Done with special cases. On to the real deal.
+    l = PROTECT(allocVector(VECSXP, 2));
+    SET_VECTOR_ELT(l, 0, x);
+    SET_VECTOR_ELT(l, 1, table);
+    
+    UNPROTECT(1); // l
+    dt = PROTECT(unlist2(l));
 
+    // order - first time
+    order = PROTECT(fast_order(dt, 2, 1));
+    start = PROTECT(getAttrib(order, mkString("starts")));
+    lens  = PROTECT(uniq_lengths(start, length(order))); // length(order) = nrow(dt)
+    grpid = VECTOR_ELT(dt, 1);
+    index = VECTOR_ELT(dt, 2);
+    
+    // replace dt[1], we don't need it anymore
+    k=0;
+    for (i=0; i<length(lens); i++) {
+        for (j=0; j<INTEGER(lens)[i]; j++) {
+            INTEGER(grpid)[INTEGER(order)[k+j]-1] = j;
+        }
+        k += j;
+    }
+    // order - again
+    UNPROTECT(3); // order, start, lens
+    order = PROTECT(fast_order(dt, 2, 1)); 
+    start = PROTECT(getAttrib(order, mkString("starts")));
+    lens  = PROTECT(uniq_lengths(start, length(order)));
+    
+    ans = PROTECT(allocVector(INTSXP, nx));
+    k = 0;
+    for (i=0; i<length(lens); i++) {
+        li = INTEGER(lens)[i];
+        si = INTEGER(start)[i]-1;
+        oi = INTEGER(order)[si]-1;
+        if (oi > nx-1) continue;
+        INTEGER(ans)[oi] = (li == 2) ? INTEGER(index)[INTEGER(order)[si+1]-1]+1 : INTEGER(nomatch)[0];
+    }
+    UNPROTECT(5); // order, start, lens, ans
+    return(ans);
+}
+
+// utility function used from within chmatch2
+static SEXP listlist(SEXP x) {
+    
+    R_len_t i,j,k, nl;
+    SEXP lx, xo, xs, xl, tmp, ans, ans0, ans1;
+    
+    lx = PROTECT(allocVector(VECSXP, 1));
+    SET_VECTOR_ELT(lx, 0, x);
+    xo = PROTECT(fast_order(lx, 1, 1));
+    xs = PROTECT(getAttrib(xo, mkString("starts")));
+    xl = PROTECT(uniq_lengths(xs, length(x)));
+    
+    ans0 = PROTECT(allocVector(STRSXP, length(xs)));
+    ans1 = PROTECT(allocVector(VECSXP, length(xs)));
+    k=0;
+    for (i=0; i<length(xs); i++) {
+        SET_STRING_ELT(ans0, i, STRING_ELT(x, INTEGER(xo)[INTEGER(xs)[i]-1]-1));
+        nl = INTEGER(xl)[i];
+        tmp = allocVector(INTSXP, nl);
+        SET_VECTOR_ELT(ans1, i, tmp);
+        for (j=0; j<nl; j++) {
+            INTEGER(tmp)[j] = INTEGER(xo)[k+j];
+        }
+        k += j;
+    }
+    ans = PROTECT(allocVector(VECSXP, 2));
+    SET_VECTOR_ELT(ans, 0, ans0);
+    SET_VECTOR_ELT(ans, 1, ans1);
+    UNPROTECT(7);
+    return(ans);
+}
+
+/*
+## While chmatch2_old works great, I find it inefficient in terms of both memory (stores 2 indices over the 
+## length of x+y) and speed (2 ordering and looping over unnecesssary amount of times). So, here's 
+## another stab at a faster version of 'chmatch2_old', leveraging the power of 'chmatch' and data.table's 
+## DT[ , list(list()), by=.] syntax.
+## 
+## The algorithm:
+## x.agg = data.table(x)[, list(list(rep(x, .N))), by=x]
+## y.agg = data.table(y)[, list(list(rep(y, .N))), by=y]
+## mtch  = chmatch(x.agg, y.agg, nomatch)                 ## here we look at only unique values!
+## Now, it's just a matter of filling corresponding matches from x.agg's indices with y.agg's indices.
+## BENCHMARKS ON THE BOTTOM OF THIS FILE
+*/
+SEXP chmatch2(SEXP x, SEXP y, SEXP nomatch) {
+
+    R_len_t i, j, k, nx, ix, iy;
+    SEXP xll, yll, xu, yu, ans, xl, yl, mx;
+    if (TYPEOF(nomatch) != INTSXP || length(nomatch) != 1) error("'nomatch' must be an integer of length 1");
+    if (!length(x) || isNull(x)) return(allocVector(INTSXP, 0));
+    if (TYPEOF(x) != STRSXP) error("'x' must be a character vector");
+    nx = length(x);
+    if (!length(y) || isNull(y)) {
+        ans = PROTECT(allocVector(INTSXP, nx));
+        for (i=0; i<nx; i++) INTEGER(ans)[i] = INTEGER(nomatch)[0];
+        UNPROTECT(1);
+        return(ans);
+    }
+    if (TYPEOF(y) != STRSXP) error("'table' must be a character vector");
+    // Done with special cases. On to the real deal.
+    xll = PROTECT(listlist(x));
+    yll = PROTECT(listlist(y));
+    
+    xu = VECTOR_ELT(xll, 0);
+    yu = VECTOR_ELT(yll, 0);
+    
+    mx  = PROTECT(chmatch(xu, yu, 0, FALSE));
+    ans = PROTECT(allocVector(INTSXP, nx));
+    k=0;
+    for (i=0; i<length(mx); i++) {
+        xl = VECTOR_ELT(VECTOR_ELT(xll, 1), i);
+        ix = length(xl); 
+        if (INTEGER(mx)[i] == 0) {
+            for (j=0; j<ix; j++) 
+                INTEGER(ans)[INTEGER(xl)[j]-1] = INTEGER(nomatch)[0];
+        } else {
+            yl = VECTOR_ELT(VECTOR_ELT(yll, 1), INTEGER(mx)[i]-1);
+            iy = length(yl);
+            for (j=0; j < (ix < iy ? ix : iy); j++)
+                INTEGER(ans)[INTEGER(xl)[j]-1] = INTEGER(yl)[j];
+            k += ix;
+        }
+    }
+    UNPROTECT(4);
+    return(ans);
+    
+}
+
+/*
+## Benchmark:
+set.seed(45L)
+x <- sample(letters, 1e6, TRUE)
+y <- sample(letters, 1e7, TRUE)
+system.time(ans1 <- .Call("Cchmatch2_old", x,y,0L)) # 2.405 seconds
+system.time(ans2 <- .Call("Cchmatch2", x,y,0L)) # 0.174 seconds
+identical(ans1, ans2) # [1] TRUE
+## Note: 'pmatch(x,y,0L)' dint finish still after about 5 minutes, so stopped.
+## Speed up of about ~14x!!! nice ;). (And this uses lesser memory as well).
+*/

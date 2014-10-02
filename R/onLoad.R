@@ -37,7 +37,10 @@
              "datatable.warnredundantby"="TRUE",                  # not a function argument
              "datatable.alloccol"="quote(max(100L,ncol(DT)+64L))",# argument 'n' of alloc.col. Allocate at least 64 spare slots by default. Needs to be 100L floor to save small object reallocs.
              "datatable.integer64"="'integer64'",    # datatable.<argument name>    integer64|double|character
-             "datatable.showProgress"="1L"           # in fread
+             "datatable.showProgress"="1L",          # in fread
+             "datatable.auto.index"="TRUE",          # DT[col=="val"] to auto add index so 2nd time faster
+             "datatable.fread.datatable"="TRUE",
+             "datatable.old.bywithoutby"="FALSE"     # temp rollback method for code migration, will be removed in future
              )
     for (i in setdiff(names(opts),names(options()))) {
         eval(parse(text=paste("options(",i,"=",opts[i],")",sep="")))
@@ -82,5 +85,8 @@ getRversion = function(...) stop("Reminder to data.table developers: don't use g
 # 3) The discipline of adding a feaure test here helps fully understand the change.
 # 4) Defining getRversion with a stop() here helps prevent new switches on getRversion() being added in future. Easily circumvented but the point is to issue the message above.
 
-
-
+.onUnload <- function(libpath) {
+    # fix for #474. the shared object name is different from package name
+    # So 'detach' doesn't find datatable.so, as it looks by default for data.table.so
+    library.dynam.unload("datatable", libpath)
+}

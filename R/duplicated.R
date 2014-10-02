@@ -1,28 +1,37 @@
 
-duplicated.data.table <- function(x, incomparables=FALSE, by=key(x), ...) {
+duplicated.data.table <- function(x, incomparables=FALSE, fromLast=FALSE, by=key(x), ...) {
     if (!cedta()) return(NextMethod("duplicated"))
     if (!identical(incomparables, FALSE)) {
         .NotYetUsed("incomparables != FALSE")
     }
-
+    if (nrow(x) == 0L || ncol(x) == 0L) return(logical(0)) # fix for bug #5582
+    if (is.na(fromLast) || !is.logical(fromLast)) stop("'fromLast' must be TRUE or FALSE")
     query <- .duplicated.helper(x, by)
+    # fix for bug #5405 - unique on null data table returns error (because of 'forderv')
+    # however, in this case we can bypass having to go to forderv at all.
+    if (!length(query$by)) return(logical(0))
     res <- rep.int(TRUE, nrow(x))
     
     if (query$use.keyprefix) {
         f = uniqlist(x[, query$by, with=FALSE])
+        if (fromLast) f = cumsum(uniqlengths(f, nrow(x)))
     } else {
-        o = forder(x, by=query$by, sort=FALSE, retGrp=TRUE)
+        o = forderv(x, by=query$by, sort=FALSE, retGrp=TRUE)
         f = attr(o,"starts")
+        if (fromLast) f = cumsum(uniqlengths(f, nrow(x)))
         if (length(o)) f=o[f]
     }
     res[f] = FALSE
     res
 }
 
-unique.data.table <- function(x, incomparables=FALSE, by=key(x), ...) {
+unique.data.table <- function(x, incomparables=FALSE, fromLast=FALSE, by=key(x), ...) {
     if (!cedta()) return(NextMethod("unique"))
-    dups <- duplicated.data.table(x, incomparables, by, ...)
-    x[!dups]
+    dups <- duplicated.data.table(x, incomparables, fromLast, by, ...)
+    .Call(CsubsetDT, x, which(!dups), seq_len(ncol(x)))
+    # i.e. x[!dups] but avoids [.data.table overhead when unique() is loop'd
+    # TO DO: allow logical to be passed through to C level, and allow cols=NULL to mean all, for further speed gain.
+    #        See news for v1.9.3 for link to benchmark use-case on datatable-help.
 }
 
 ## Specify the column names to be used in the uniqueness query, and if this
@@ -34,7 +43,7 @@ unique.data.table <- function(x, incomparables=FALSE, by=key(x), ...) {
 ## unique.data.table has bene refactored to simply call duplicated.data.table
 ## making the refactor unnecessary, but let's leave it here just in case
 .duplicated.helper <- function(x, by) {
-    use.sub.cols <- !is.null(by) && !isTRUE(by)
+    use.sub.cols <- !is.null(by) # && !isTRUE(by) # Fixing bug #5424
 
     if (use.sub.cols) {
         ## Did the user specify (integer) indexes for the columns?
@@ -46,7 +55,7 @@ unique.data.table <- function(x, incomparables=FALSE, by=key(x), ...) {
             by <- names(x)[by]
         }
         if (!is.character(by)) {
-            stop("Only column indices or names are allowed in by")
+            stop("Only NULL, column indices or column names are allowed in by")
         }
         bad.cols <- setdiff(by, names(x))
         if (length(bad.cols)) {
@@ -65,4 +74,14 @@ unique.data.table <- function(x, incomparables=FALSE, by=key(x), ...) {
     list(use.keyprefix=use.keyprefix, by=by)
 }
 
-
+# FR #5172 anyDuplicated.data.table
+# Note that base's anyDuplicated is faster than any(duplicated(.)) (for vectors) - for data.frames it still pastes before calling duplicated
+# In that sense, this anyDuplicated is *not* the same as base's - meaning it's not a different implementation
+# This is just a wrapper. That being said, it should be incredibly fast on data.tables (due to data.table's fast forder)
+anyDuplicated.data.table <- function(x, incomparables=FALSE, fromLast=FALSE, by=key(x), ...) {
+    if (!cedta()) return(NextMethod("anyDuplicated"))
+    dups <- duplicated(x, incomparables, fromLast, by, ...)
+    if (fromLast) idx = tail(which(dups), 1L) else idx = head(which(dups), 1L)
+    if (!length(idx)) idx=0L
+    idx
+}

@@ -10,10 +10,11 @@
 }
 \usage{
 fread(input, sep="auto", sep2="auto", nrows=-1L, header="auto", na.strings="NA",
-stringsAsFactors=FALSE, verbose=FALSE, autostart=30L, skip=-1L, select=NULL,
-drop=NULL, colClasses=NULL,
+stringsAsFactors=FALSE, verbose=getOption("datatable.verbose"), autostart=30L,
+skip=-1L, select=NULL, drop=NULL, colClasses=NULL,
 integer64=getOption("datatable.integer64"),         # default: "integer64"
-showProgress=getOption("datatable.showProgress")    # default: TRUE
+showProgress=getOption("datatable.showProgress"),   # default: TRUE
+data.table=getOption("datatable.fread.datatable")   # default: TRUE
 )
 }
 \arguments{
@@ -32,6 +33,7 @@ showProgress=getOption("datatable.showProgress")    # default: TRUE
   \item{colClasses}{ A character vector of classes (named or unnamed), as read.csv. Or a named list of vectors of column names or numbers, see examples. colClasses in fread is intended for rare overrides, not for routine use. fread will only promote a column to a higher type if colClasses requests it. It won't downgrade a column to a lower type since NAs would result. You have to coerce such columns afterwards yourself, if you really require data loss. }
   \item{integer64}{ "integer64" (default) reads columns detected as containing integers larger than 2^31 as type \code{bit64::integer64}. Alternatively, \code{"double"|"numeric"} reads as \code{base::read.csv} does; i.e., possibly with loss of precision and if so silently. Or, "character". }
   \item{showProgress}{ TRUE displays progress on the console using \code{\\r}. It is produced in fread's C code where the very nice (but R level) txtProgressBar and tkProgressBar are not easily available. }
+  \item{data.table}{ TRUE returns a \code{data.table}. FALSE returns a \code{data.frame}. }
 }
 \details{
 
@@ -41,7 +43,7 @@ The first 5 rows, middle 5 rows and last 5 rows are then read to determine colum
 
 There is no line length limit, not even a very large one. Since we are encouraging \code{list} columns (i.e. \code{sep2}) this has the potential to encourage longer line lengths. So the approach of scanning each line into a buffer first and then rescanning that buffer is not used. There are no buffers used in \code{fread}'s C code at all. The field width limit is limited by R itself: the maximum width of a character string (currenly 2^31-1 bytes, 2GB).
 
-\code{character} columns can be quoted (\code{...,2,"Joe Bloggs",3.14,...}) or not quoted (\code{...,2,Joe Bloggs,3.14,...}). Spaces and other whitepace (other than \code{sep} and \code{\\n}) may appear in an unquoted character field, provided the field doesn't contain \code{sep} itself. Therefore quoting character values is only required if \code{sep} itself appears in the string value. Quoting may also be used to signify that numeric data should be read as text (or that can be achieved by specifying the column type via \code{colClasses}). Field quoting is automatically detected and no arguments are needed to control it.
+\code{character} columns can be quoted (\code{...,2,"Joe Bloggs",3.14,...}) or not quoted (\code{...,2,Joe Bloggs,3.14,...}). Spaces and other whitepace (other than \code{sep} and \code{\\n}) may appear in an unquoted character field, provided the field doesn't contain \code{sep} itself. Therefore quoting character fields is only \emph{required} if \code{sep} or \code{\\n} appears in the string value. Quoting may be used to signify that numeric data should be read as text, or specify the column type as \code{character} via \code{colClasses}). Field quoting is automatically detected and no arguments are needed to control it. A quoted field must start with quote and end with a quote that is also immediately followed by \code{sep} or \code{\\n}. Thus, unescaped quotes may be present in a quoted field (\code{...,2,"Joe, "Bloggs"",3.14,...}) as well as escaped quotes (\code{...,2,"Joe \",Bloggs\"",3.14,...}). If an embedded quote is followed by the separator inside a quoted field, the embedded quotes up to that point in that field must be balanced; e.g. \code{...,2,"www.blah?x="one",y="two"",3.14,...}.
 
 The filename extension (such as .csv) is irrelevant for "auto" \code{sep} and \code{sep2}. Separator detection is entirely driven by the file contents. This can be useful when loading a set of different files which may not be named consistently, or may not have the extension .csv despite being csv. Some datasets have been collected over many years, one file per day for example. Sometimes the file name format has changed at some point in the past or even the format of the file itself. So the idea is that you can loop \code{fread} through a set of files and as long as each file is regular and delimited, \code{fread} can read them all. Whether they all stack is another matter but at least each one is read quickly without you needing to vary \code{colClasses} in \code{read.table} or \code{read.csv}.
 
@@ -51,7 +53,7 @@ If an empty line is encountered then reading stops there, with warning if any te
 
 }
 \value{
-    A \code{data.table}.
+    A \code{data.table} by default. A \code{data.frame} when \code{data.table=FALSE}; e.g. \code{options(datatable.fread.datatable=FALSE)}.
 }
 \references{
 Background :\cr

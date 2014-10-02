@@ -1,7 +1,15 @@
 
-cedta.override = c("gWidgetsWWW","statET","FastRWeb")
-# user may add more to this using :
-# assignInNamespace("cedta.override", c(data.table:::cedta.override,"<nsname>"), "data.table")
+cedta.override = c("gWidgetsWWW","statET","FastRWeb","slidify","rmarkdown","knitr")
+# These packages tend to be ones that run user code in their own environment and thus do not
+# themselves Depend or Import data.table.
+# If a new package needs to be added to this vector, a user may add to it using :
+#   assignInNamespace("cedta.override", c(data.table:::cedta.override,"<nsname>"), "data.table")
+# But please let us know so we can add the package to this vector in the package upstream, so other
+# users don't have to tread the same path. Then you can remove your assignInNamepace() call.
+# Or, packages like those above can set a variable in their namespace
+#   .datatable.aware = TRUE
+# which achieves the same thing.  Either way.
+# http://stackoverflow.com/a/13131555/403310
 
 cedta = function(n=2L) {
     # Calling Environment Data Table Aware
@@ -11,7 +19,8 @@ cedta = function(n=2L) {
     ans = nsname == "data.table" ||
         "data.table" %chin% names(getNamespaceImports(te)) ||
         "data.table" %chin% tryCatch(get(".Depends",paste("package",nsname,sep=":"),inherits=FALSE),error=function(e)NULL) ||
-        (nsname == "utils" && exists("debugger.look",parent.frame(n+1L))) ||
+        (nsname == "utils" && exists("debugger.look",parent.frame(n+1L))) || 
+        (nsname == "base"  && all(c("FUN", "X") %in% ls(parent.frame(n)))  ) || # lapply
         nsname %chin% cedta.override ||
         identical(TRUE, tryCatch(get(".datatable.aware",asNamespace(nsname),inherits=FALSE),error=function(e)NULL))
     if (!ans && getOption("datatable.verbose"))

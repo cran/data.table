@@ -3,7 +3,7 @@
 \alias{dcast}
 \title{Fast dcast for data.table}
 \description{
-  A \code{dcast.data.table} is a much faster version of \code{reshape2:::dcast}, but for data.table. More importantly, it's able to handle bigger data quite efficiently without compromising speed. This is still under development, meaning it's stable, but not all features are complete yet. Once complete, we plan to make it an S3 generic by making changes to \code{reshape2:::dcast}. Then by loading both \code{data.table} and \code{reshape2}, one could use \code{dcast} on \code{data.table} as one would on a \code{data.frame}.
+  A \code{dcast.data.table} is a \emph{much} faster version of \code{reshape2::dcast}, but for data.table. More importantly, it's capable of handling very large data quite efficiently in terms of memory usage as well, in comparison to \code{reshape2::dcast}. This is still under development, meaning it's stable, but not all features are complete yet. Once complete, we plan to make it an S3 generic by making changes to \code{reshape2::dcast}. Then by loading both \code{data.table} and \code{reshape2}, one could use \code{dcast} on \code{data.table} as one would on a \code{data.frame}.
   
   If you think of a particular feature that might be useful, then file a feature request (FR) at the datatable projects page (link at the bottom). 
 }
@@ -36,24 +36,19 @@ When the combination of variables in \code{formula} doesn't identify a unique va
 
 If the formula's LHS contains the same column more than once, ex: \code{dcast.data.table(DT, x+x~ y)}, then the answer will have duplicate names. In those cases, the duplicate names are renamed using \code{make.unique} so that the key can be set without issues.
 
-The only feature that's not implemented from \code{reshape2:::dcast} *yet* is the argument \code{margins}. 
+Names for columns that are being cast are generated in the same order (separated by a \code{_}) from the (unique) values in each column mentioned in the formula RHS.
+
+From \code{v1.9.3}, \code{dcast.data.table} tries to preserve attributes whereever possible, except when \code{value.var} is a factor (or ordered factor). For \code{factor} types, the resulting casted columns will be coerced to character type thereby losing \code{levels} attribute.
 }
 \value{
     A keyed \code{data.table} that has been cast. The key columns are equal to the variables in the \code{formula} LHS in the same order.
 }
 
 \note{
-\bold{Currently unimplemented features from \code{reshape2:::melt}:}
+\bold{Currently unimplemented features from \code{reshape2::dcast}:}
 \enumerate{
 	\item At the moment, only formula interface is supported. That the argument \code{formula} can accept a list of quoted expressions is yet to be implemented. 
 	\item The argument \code{margins} is yet to be implemented. 
-}
-
-\bold{New features and the ones likely to be added:}
-\enumerate{
-	\item Implemented: \code{dcast.data.table} allows \code{value.var} column to be of type \code{list}.
-	\item To do: The \code{fun.aggregate} could accept more than one function. It could take a list of functions, all of which satisfy the criteria that they take a vector as input and provide a single value as output. This is very useful for scenarios where one needs to calculate multiple summary statistics on a data set and cast simultaneously.
-
 }
 
 % \bold{Speedup using \code{fdcast}:}
@@ -102,14 +97,14 @@ set.seed(45)
 DT <- data.table(aa=sample(1e4, 1e6, TRUE), 
       bb=sample(1e3, 1e6, TRUE), 
       cc = sample(letters, 1e6, TRUE), dd=runif(1e6))
-system.time(dcast.data.table(DT, aa ~ cc, fun=sum)) # 0.59 seconds
-system.time(dcast.data.table(DT, bb ~ cc, fun=mean)) # 0.26 seconds
-# reshape2:::dcast takes 192.1 seconds
-system.time(dcast.data.table(DT, aa + bb ~ cc, fun=sum)) # 3.6 seconds
+system.time(dcast.data.table(DT, aa ~ cc, fun=sum)) # 0.28 seconds
+system.time(dcast.data.table(DT, bb ~ cc, fun=mean)) # 0.08 seconds
+# reshape2::dcast takes 99 seconds
+system.time(dcast.data.table(DT, aa + bb ~ cc, fun=sum)) # 2.7 seconds
 }
 }
 \seealso{
-  \code{\link{melt.data.table}}, \url{https://r-forge.r-project.org/projects/datatable/}
+  \code{\link{melt.data.table}}, \url{https://github.com/Rdatatable/data.table}
 }
 \keyword{data}
 

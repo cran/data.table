@@ -1,6 +1,4 @@
-#include <R.h>
-#define USE_RINTERNALS
-#include <Rinternals.h>
+#include "data.table.h"
 #include <Rdefines.h>
 #include <R_ext/Rdynload.h>
 #include <R_ext/Visibility.h>
@@ -40,7 +38,21 @@ SEXP gstart();
 SEXP gend();
 SEXP gsum();
 SEXP gmean();
-SEXP twiddlewrapper();
+SEXP gmin();
+SEXP gmax();
+SEXP isOrderedSubset();
+SEXP pointWrapper();
+SEXP setNumericRounding();
+SEXP getNumericRounding();
+SEXP binary();
+SEXP chmatch2();
+SEXP subsetDT();
+SEXP subsetVector();
+SEXP convertNegativeIdx();
+SEXP frank();
+SEXP dt_na();
+SEXP lookup();
+SEXP overlaps();
 
 // .Externals
 SEXP fastmean();
@@ -81,7 +93,21 @@ R_CallMethodDef callMethods[] = {
 {"Cgend", (DL_FUNC) &gend, -1},
 {"Cgsum", (DL_FUNC) &gsum, -1},
 {"Cgmean", (DL_FUNC) &gmean, -1},
-{"Ctwiddlewrapper", (DL_FUNC) &twiddlewrapper, -1},
+{"Cgmin", (DL_FUNC) &gmin, -1},
+{"Cgmax", (DL_FUNC) &gmax, -1},
+{"CisOrderedSubset", (DL_FUNC) &isOrderedSubset, -1},
+{"CpointWrapper", (DL_FUNC) &pointWrapper, -1},
+{"CsetNumericRounding", (DL_FUNC) &setNumericRounding, -1},
+{"CgetNumericRounding", (DL_FUNC) &getNumericRounding, -1},
+{"Cbinary", (DL_FUNC) &binary, -1},
+{"Cchmatch2", (DL_FUNC) &chmatch2, -1},
+{"CsubsetDT", (DL_FUNC) &subsetDT, -1},
+{"CsubsetVector", (DL_FUNC) &subsetVector, -1},
+{"CconvertNegativeIdx", (DL_FUNC) &convertNegativeIdx, -1},
+{"Cfrank", (DL_FUNC) &frank, -1},
+{"Cdt_na", (DL_FUNC) &dt_na, -1},
+{"Clookup", (DL_FUNC) &lookup, -1},
+{"Coverlaps", (DL_FUNC) &overlaps, -1},
 {NULL, NULL, 0}
 };
 
@@ -91,8 +117,6 @@ R_ExternalMethodDef externalMethods[] = {
 {"Cfastmean", (DL_FUNC) &fastmean, -1},
 {NULL, NULL, 0}
 };
-
-void setSizes();
 
 void attribute_visible R_init_datatable(DllInfo *info)
 // relies on pkg/src/Makevars to mv data.table.so to datatable.so
@@ -105,8 +129,9 @@ void attribute_visible R_init_datatable(DllInfo *info)
     if (NA_INTEGER != NA_LOGICAL) error("Checking NA_INTEGER [%d] == NA_LOGICAL [%d] %s", NA_INTEGER, NA_LOGICAL, msg);
     if (sizeof(int) != 4) error("Checking sizeof(int) [%d] is 4 %s", sizeof(int), msg);
     if (sizeof(double) != 8) error("Checking sizeof(double) [%d] is 8 %s", sizeof(double), msg);  // 8 on both 32bit and 64bit.
-    if (sizeof(int *) != 4 && sizeof(int *) != 8) error("Checking sizeof(pointer) [%d] is 4 or 8 %s", sizeof(int *), msg);
-    if (sizeof(SEXP) != sizeof(int *)) error("Checking sizeof(SEXP) [%d] == sizeof(pointer) [%d] %s", sizeof(SEXP), sizeof(int *), msg);
+    if (sizeof(long long) != 8) error("Checking sizeof(long long) [%d] is 8 %s", sizeof(long long), msg);
+    if (sizeof(char *) != 4 && sizeof(char *) != 8) error("Checking sizeof(pointer) [%d] is 4 or 8 %s", sizeof(char *), msg);
+    if (sizeof(SEXP) != sizeof(char *)) error("Checking sizeof(SEXP) [%d] == sizeof(pointer) [%d] %s", sizeof(SEXP), sizeof(char *), msg);
     
     SEXP tmp = PROTECT(allocVector(INTSXP,2));
     if (LENGTH(tmp)!=2) error("Checking LENGTH(allocVector(INTSXP,2)) [%d] is 2 %s", LENGTH(tmp), msg);
@@ -127,6 +152,10 @@ void attribute_visible R_init_datatable(DllInfo *info)
     long double ld = 3.14;
     memset(&ld, 0, sizeof(long double));
     if (ld != 0.0) error("Checking memset(&ld, 0, sizeof(long double)); ld == (long double)0.0 %s", msg);
+    
+    setNumericRounding(ScalarInteger(2));
+    
+    char_integer64 = mkChar("integer64");  // for speed, similar to R_*Symbol.
 }
 
 
