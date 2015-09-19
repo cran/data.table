@@ -6,6 +6,11 @@
 // raise(SIGINT);
 
 #define SIZEOF(x) sizes[TYPEOF(x)]
+#ifdef MIN
+#undef MIN
+#endif
+#define MIN(a,b) (((a)<(b))?(a):(b))
+#define NAINT64 LLONG_MIN
 
 // init.c
 void setSizes();
@@ -20,6 +25,7 @@ SEXP SelfRefSymbol;
 // assign.c
 SEXP allocNAVector(SEXPTYPE type, R_len_t n);
 void savetl_init(), savetl(SEXP s), savetl_end();
+Rboolean isDatatable(SEXP x);
 
 // forder.c
 int StrCmp(SEXP x, SEXP y);
@@ -50,16 +56,23 @@ void setselfref(SEXP);
 // fmelt.c
 SEXP seq_int(int n, int start);
 SEXP set_diff(SEXP x, int n);
-SEXP which(SEXP x);
+SEXP which(SEXP x, Rboolean bool);
+
+// frank.c
+SEXP dt_na(SEXP x, SEXP cols);
 
 // assign.c
 SEXP alloccol(SEXP dt, R_len_t n, Rboolean verbose);
 void memrecycle(SEXP target, SEXP where, int r, int len, SEXP source);
+SEXP shallowwrapper(SEXP dt, SEXP cols);
 
-SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEXP xjiscols, SEXP grporder, SEXP order, SEXP starts, SEXP lens, SEXP jexp, SEXP env, SEXP lhs, SEXP newnames, SEXP verbose);
+SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEXP xjiscols, SEXP grporder, SEXP order, SEXP starts, SEXP lens, SEXP jexp, SEXP env, SEXP lhs, SEXP newnames, SEXP on, SEXP verbose);
 
 // bmerge.c
 SEXP bmerge(SEXP left, SEXP right, SEXP leftcols, SEXP rightcols, SEXP isorted, SEXP xoArg, SEXP rollarg, SEXP rollends, SEXP nomatch, SEXP retFirst, SEXP retLength, SEXP allLen1);
 
 // fcast.c
 SEXP coerce_to_char(SEXP s, SEXP env);
+
+// rbindlist.c
+SEXP combineFactorLevels(SEXP factorLevels, int * factorType, Rboolean * isRowOrdered);

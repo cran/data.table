@@ -9,6 +9,11 @@
 SEXP setattrib(SEXP x, SEXP name, SEXP value)
 {
     if (TYPEOF(name) != STRSXP) error("Attribute name must be of type character");
+    if ( !isNewList(x) && 
+         strcmp(CHAR(STRING_ELT(name, 0)), "class") == 0 && 
+         isString(value) && (strcmp(CHAR(STRING_ELT(value, 0)), "data.table") == 0 || 
+         strcmp(CHAR(STRING_ELT(value, 0)), "data.frame") == 0) )
+        error("Internal structure doesn't seem to be a list. Can't set class to be 'data.table' or 'data.frame'. Use 'as.data.table()' or 'as.data.frame()' methods instead.");
     setAttrib(x, name,
         NAMED(value) ? duplicate(value) : value);
         // duplicate is temp fix to restore R behaviour prior to R-devel change on 10 Jan 2014 (r64724).
@@ -16,6 +21,21 @@ SEXP setattrib(SEXP x, SEXP name, SEXP value)
         // ... Error: selfrefnames is ok but tl names [1] != tl [100]
     return(R_NilValue);
 }               
+
+// fix for #1142 - duplicated levels for factors
+SEXP setlevels(SEXP x, SEXP levels, SEXP ulevels) {
+
+    R_len_t nx = length(x), i;
+    SEXP xchar, newx;
+    xchar = PROTECT(allocVector(STRSXP, nx));
+    for (i=0; i<nx; i++)
+        SET_STRING_ELT(xchar, i, STRING_ELT(levels, INTEGER(x)[i]-1));
+    newx = PROTECT(chmatch(xchar, ulevels, NA_INTEGER, FALSE));
+    for (i=0; i<nx; i++) INTEGER(x)[i] = INTEGER(newx)[i];
+    setAttrib(x, R_LevelsSymbol, ulevels);
+    UNPROTECT(2);
+    return(x);
+}
 
 SEXP copy(SEXP x)
 {

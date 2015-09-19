@@ -1,4 +1,4 @@
-setkey = function(x, ..., verbose=getOption("datatable.verbose"), physical=TRUE)
+setkey <- function(x, ..., verbose=getOption("datatable.verbose"), physical=TRUE)
 {
     if (is.character(x)) stop("x may no longer be the character name of the data.table. The possibility was undocumented and has been removed.")
     cols = as.character(substitute(list(...))[-1])
@@ -7,10 +7,10 @@ setkey = function(x, ..., verbose=getOption("datatable.verbose"), physical=TRUE)
     setkeyv(x, cols, verbose=verbose, physical=physical)
 }
 
-set2key = function(...) setkey(..., physical=FALSE)
-set2keyv = function(...) setkeyv(..., physical=FALSE)
+set2key <- function(...) setkey(..., physical=FALSE)
+set2keyv <- function(...) setkeyv(..., physical=FALSE)
 
-setkeyv = function(x, cols, verbose=getOption("datatable.verbose"), physical=TRUE)
+setkeyv <- function(x, cols, verbose=getOption("datatable.verbose"), physical=TRUE)
 {
     if (is.null(cols)) {   # this is done on a data.frame when !cedta at top of [.data.table
         if (physical) setattr(x,"sorted",NULL)
@@ -49,8 +49,8 @@ setkeyv = function(x, cols, verbose=getOption("datatable.verbose"), physical=TRU
         o <- forderv(x, cols, sort=TRUE, retGrp=FALSE)
     }
     if (!physical) {
-        if (is.null(attr(x,"index"))) setattr(x, "index", integer())
-        setattr(attr(x,"index"), paste(cols,collapse="__"), o)
+        if (is.null(attr(x,"index",exact=TRUE))) setattr(x, "index", integer())
+        setattr(attr(x,"index",exact=TRUE), paste("__",paste(cols,collapse="__"),sep=""), o)
         return(invisible(x))
     }
     setattr(x,"index",NULL)   # TO DO: reorder existing indexes likely faster than rebuilding again. Allow optionally. Simpler for now to clear.
@@ -69,11 +69,15 @@ setkeyv = function(x, cols, verbose=getOption("datatable.verbose"), physical=TRU
     invisible(x)
 }
 
-key = function(x) attr(x,"sorted")
+key <- function(x) attr(x,"sorted",exact=TRUE)
+key2 <- function(x) {
+    ans = names(attributes(attr(x,"index",exact=TRUE)))
+    if (is.null(ans)) return(ans) # otherwise character() gets returned by next line
+    gsub("^__","",ans)
+}
+get2key <- function(x, col) attr(attr(x,"index",exact=TRUE),paste("__",col,sep=""),exact=TRUE)   # work in progress, not yet exported
 
-key2 = function(x) names(attributes(attr(x,"index")))
-
-"key<-" = function(x,value) {
+"key<-" <- function(x,value) {
     warning("The key(x)<-value form of setkey can copy the whole table. This is due to <- in R itself. Please change to setkeyv(x,value) or setkey(x,...) which do not copy and are faster. See help('setkey'). You can safely ignore this warning if it is inconvenient to change right now. Setting options(warn=2) turns this warning into an error, so you can then use traceback() to find and change your key<- calls.")
     setkeyv(x,value)
     # The returned value here from key<- is then copied by R before assigning to x, it seems. That's
@@ -83,7 +87,7 @@ key2 = function(x) names(attributes(attr(x,"index")))
     # So, solution is that caller has to call setkey or setkeyv directly themselves, to avoid <- dispatch and its copy.
 }
 
-haskey = function(x) !is.null(key(x))
+haskey <- function(x) !is.null(key(x))
 
 # reverse a vector by reference (no copy)
 setrev <- function(x) .Call(Csetrev, x)
@@ -94,7 +98,7 @@ setrev <- function(x) .Call(Csetrev, x)
 # FOR INTERNAL USE ONLY
 setreordervec <- function(x, order) .Call(Creorder, x, order)
 
-# sort = sort.int = sort.list = order = is.unsorted = function(...)
+# sort = sort.int = sort.list = order = is.unsorted <- function(...)
 #    stop("Should never be called by data.table internals. Use is.sorted() on vectors, or forder() for lists and vectors.")
 # Nice idea, but users might use these in i or j e.g. blocking order caused tests 304 to fail.
 # Maybe just a grep through *.R for use of these function internally would be better (TO DO).
@@ -109,7 +113,7 @@ setreordervec <- function(x, order) .Call(Creorder, x, order)
 # The others (order, sort.int etc) are turned off to protect ourselves from using them internally, for speed and for
 # consistency; e.g., consistent twiddling of numeric/integer64, NA at the beginning of integer, locale ordering of character vectors.
 
-is.sorted = function(x, by=seq_along(x)) {
+is.sorted <- function(x, by=seq_along(x)) {
     if (is.list(x)) {
         warning("Use 'if (length(o<-forderv(DT,by))) ...' for efficiency in one step, so you have o as well if not sorted.")
         # could pass through a flag for forderv to return early on first FALSE. But we don't need that internally
@@ -125,7 +129,7 @@ is.sorted = function(x, by=seq_along(x)) {
     # Important to call forder.c::fsorted here, for consistent character ordering and numeric/integer64 twiddling.
 }
 
-forderv = function(x, by=seq_along(x), retGrp=FALSE, sort=TRUE, order=1L, na.last=FALSE)
+forderv <- function(x, by=seq_along(x), retGrp=FALSE, sort=TRUE, order=1L, na.last=FALSE)
 {
     if (!(sort || retGrp)) stop("At least one of retGrp or sort must be TRUE")
     na.last = as.logical(na.last)
@@ -141,7 +145,7 @@ forderv = function(x, by=seq_along(x), retGrp=FALSE, sort=TRUE, order=1L, na.las
         if ( !missing(order) && (length(order) != 1L || !(order %in% c(1L, -1L))) )
             stop("x is a single vector, length(order) must be =1 and it's value should be 1 (ascending) or -1 (descending).")
     } else {
-        if (!length(x)) return(integer(0)) # to be consistent with base:::order. this'll make sure forderv(NULL) will result in error 
+        if (!length(x)) return(integer(0)) # to be consistent with base::order. this'll make sure forderv(NULL) will result in error 
                                            # (as base does) but forderv(data.table(NULL)) and forderv(list()) will return integer(0))
         if (is.character(by)) by=chmatch(by, names(x))
         by = as.integer(by)
@@ -153,13 +157,13 @@ forderv = function(x, by=seq_along(x), retGrp=FALSE, sort=TRUE, order=1L, na.las
     .Call(Cforder, x, by, retGrp, sort, order, na.last)  # returns integer() if already sorted, regardless of sort=TRUE|FALSE
 }
 
-forder = function(x, ..., na.last=TRUE, decreasing=FALSE)
+forder <- function(x, ..., na.last=TRUE, decreasing=FALSE)
 {
     if (!is.data.table(x)) stop("x must be a data.table.")
     if (ncol(x) == 0) stop("Attempting to order a 0-column data.table.")
     if (is.na(decreasing) || !is.logical(decreasing)) stop("'decreasing' must be logical TRUE or FALSE")
     cols = substitute(list(...))[-1]
-    if (identical(as.character(cols),"NULL") || !length(cols)) return(NULL) # to provide the same output as base:::order
+    if (identical(as.character(cols),"NULL") || !length(cols)) return(NULL) # to provide the same output as base::order
     ans = x
     order = rep(1L, length(cols))
     if (length(cols)) {
@@ -202,17 +206,17 @@ forder = function(x, ..., na.last=TRUE, decreasing=FALSE)
     o
 }
 
-fsort = function(x, decreasing = FALSE, na.last = FALSE, ...)
+fsort <- function(x, decreasing = FALSE, na.last = FALSE, ...)
 {
     o = forderv(x, order=!decreasing, na.last=na.last)
     return( if (length(o)) x[o] else x )   # TO DO: document the nice efficiency here
 }
 
-setorder = function(x, ..., na.last=FALSE)
+setorder <- function(x, ..., na.last=FALSE)
 # na.last=FALSE here, to be consistent with data.table's default
 # as opposed to DT[order(.)] where na.last=TRUE, to be consistent with base
 {
-    if (!is.data.table(x)) stop("x must be a data.table.")
+    if (!is.data.frame(x)) stop("x must be a data.frame or data.table.")
     cols = substitute(list(...))[-1]
     if (identical(as.character(cols),"NULL")) return(x)
     if (length(cols)) {
@@ -235,10 +239,10 @@ setorder = function(x, ..., na.last=FALSE)
     setorderv(x, cols, order, na.last)
 }
 
-setorderv = function(x, cols, order=1L, na.last=FALSE)
+setorderv <- function(x, cols, order=1L, na.last=FALSE)
 {
     if (is.null(cols)) return(x)
-    if (!is.data.table(x)) stop("x is not a data.table")
+    if (!is.data.frame(x)) stop("x must be a data.frame or data.table")
     na.last = as.logical(na.last)
     if (is.na(na.last) || !length(na.last)) stop('na.last must be logical TRUE/FALSE')
     if (!is.character(cols)) stop("cols is not a character vector. Please see further information in ?setorder.")
@@ -265,17 +269,22 @@ setorderv = function(x, cols, order=1L, na.last=FALSE)
     o = forderv(x, cols, sort=TRUE, retGrp=FALSE, order=order, na.last=na.last)
     if (length(o)) {
         .Call(Creorder, x, o)
+        if (is.data.frame(x) & !is.data.table(x)) {
+            .Call(Creorder, rn <- rownames(x), o)
+            setattr(x, 'row.names', rn)
+        }
         setattr(x, 'sorted', NULL) # if 'forderv' is not 0-length, it means order has changed. So, set key to NULL, else retain key.
+        setattr(x, 'index', NULL)  # remove secondary keys too. These could be reordered and retained, but simpler and faster to remove
     }
     invisible(x)
 }
 
-binary = function(x) .Call(Cbinary, x)
+binary <- function(x) .Call(Cbinary, x)
 
-setNumericRounding = function(x) {.Call(CsetNumericRounding, as.integer(x)); invisible()}
-getNumericRounding = function() .Call(CgetNumericRounding)
+setNumericRounding <- function(x) {.Call(CsetNumericRounding, as.integer(x)); invisible()}
+getNumericRounding <- function() .Call(CgetNumericRounding)
 
-SJ = function(...) {
+SJ <- function(...) {
     JDT = as.data.table(list(...))
     setkey(JDT)
 }
@@ -283,12 +292,13 @@ SJ = function(...) {
 
 # TO DO?: Use the CJ list() replication method for SJ (inside as.data.table.list?, #2109) too to avoid alloc.col
 
-CJ = function(..., sorted = TRUE)
+CJ <- function(..., sorted = TRUE, unique = FALSE)
 {
     # Pass in a list of unique values, e.g. ids and dates
     # Cross Join will then produce a join table with the combination of all values (cross product).
     # The last vector is varied the quickest in the table, so dates should be last for roll for example
     l = list(...)
+    if (unique) l = lapply(l, unique)
 
     # using rep.int instead of rep speeds things up considerably (but attributes are dropped).
     j = lapply(l, class)  # changed "vapply" to avoid errors with "ordered" "factor" input
@@ -325,49 +335,50 @@ CJ = function(..., sorted = TRUE)
     l
 }
 
-frankv = function(x, na.last=TRUE, order=1L, ties.method=c("average", "first", "random", "max", "min")) {
+frankv <- function(x, cols=seq_along(x), order=1L, na.last=TRUE, ties.method=c("average", "first", "random", "max", "min", "dense")) {
     ties.method = match.arg(ties.method)
-    na.last = as.logical(na.last)
     if (!length(na.last)) stop('length(na.last) = 0')
     if (length(na.last) != 1L) {
         warning("length(na.last) > 1, only the first element will be used")
         na.last = na.last[1L]
     }
+    keep = (na.last == "keep")
+    na.last = as.logical(na.last)
     as_list <- function(x) {
         xx = vector("list", 1L)
         .Call(Csetlistelt, xx, 1L, x)
         xx
     }
-    if (is.atomic(x)) x = as_list(x)
-    else {
-        n = vapply(x, length, 0L)
-        if (any(n<max(n))) stop("All elements in input list x must be of same length")
+    if (is.atomic(x)) {
+        if (!missing(cols) && !is.null(cols)) 
+            stop("x is a single vector, non-NULL 'cols' doesn't make sense")
+        cols = 1L
+        x = as_list(x)
+    } else {
+        if (!length(cols))
+            stop("x is a list, 'cols' can not be 0-length")
+        if (is.character(cols)) 
+            cols = chmatch(cols, names(x))
+        cols = as.integer(cols)
     }
-    shallow_list <- function(x) {
-        lx = length(x); sx = seq_len(lx)
-        xx = vector("list", lx)
-        point(xx, sx, x, sx)
-    }
-    remove_na <- function(x) {
-        na = is_na(x)
-        xx = shallow_list(x)
-        setDT(xx)
-        .Call(CsubsetDT, xx, which(!na), seq_along(xx))
-    }
-    ties_random <- function(x) {
-        lx = length(x); sx = seq_len(lx)
-        xx = vector("list", lx+1L)
-        point(xx, sx, x, sx)
-        .Call(Csetlistelt, xx, lx+1L, stats::runif(length(x[[1L]])))
-        xx
+    x = .shallow(x, cols) # shallow copy even if list..
+    setDT(x)
+    cols = seq_along(cols)
+    if (is.na(na.last)) {
+        set(x, j = "..na_prefix..", value = is_na(x, cols))
+        order = if (length(order) == 1L) c(1L, rep(order, length(cols))) else c(1L, order)
+        cols = c(ncol(x), cols)
+        nas  = x[[ncol(x)]]
     }
     if (ties.method == "random") {
-        # seems inefficient to subset, but have to do to get same results as base
-        # is okay because it's just for the case where na.last=NA *and* ties="random"
-        if (is.na(na.last)) x = remove_na(x)
-        x = ties_random(x)
+        set(x, i = if (is.na(na.last)) which_(nas, FALSE) else NULL, 
+               j = "..stats_runif..", 
+               value = stats::runif(nrow(x)))
+        order = if (length(order) == 1L) c(rep(order, length(cols)), 1L) else c(order, 1L)
+        cols = c(cols, ncol(x))
     }
-    xorder  = forderv(x, sort=TRUE, retGrp=TRUE, order=order, na.last=na.last)
+    xorder  = forderv(x, by=cols, order=order, sort=TRUE, retGrp=TRUE, 
+                na.last=if (identical(na.last, FALSE)) na.last else TRUE)
     xstart  = attr(xorder, 'starts')
     xsorted = FALSE
     if (!length(xorder)) {
@@ -375,23 +386,47 @@ frankv = function(x, na.last=TRUE, order=1L, ties.method=c("average", "first", "
         xorder  = seq_along(x[[1L]])
     }
     ans = switch(ties.method, 
-           average = , min = , max = {
+           average = , min = , max =, dense = {
                rank = .Call(Cfrank, xorder, xstart, uniqlengths(xstart, length(xorder)), ties.method)
-               if (is.na(na.last) && xorder[1L] == 0L) {
-                   idx = which(rank != 0L)
-                   rank = .Call(CsubsetVector, rank, idx) # rank[idx], but faster
-               }
-               rank
            },
            first = , random = {
-               if (is.na(na.last) && xorder[1L] == 0L) {
-                   idx = which(xorder != 0L)
-                   xorder = xorder[idx] # .Call("CsubsetVector", xorder, idx) retains attributes. TODO: fix this
-               }
                if (xsorted) xorder else forderv(xorder)
            }
          )
+    # take care of na.last="keep"
+    V1 = NULL # for R CMD CHECK warning
+    if (isTRUE(keep)) {
+        ans = (setDT(as_list(ans))[which_(nas, TRUE), V1 := NA])[[1L]]
+    } else if (is.na(na.last)) {
+        ans = ans[which_(nas, FALSE)]
+    }
     ans
+}
+
+frank <- function(x, ..., na.last=TRUE, ties.method=c("average", "first", "random", "max", "min", "dense")) {
+    cols = substitute(list(...))[-1]
+    if (identical(as.character(cols), "NULL")) {
+        cols  = NULL
+        order = 1L
+    } else if (length(cols)) {
+        cols=as.list(cols)
+        order=rep(1L, length(cols))
+        for (i in seq_along(cols)) {
+            v=as.list(cols[[i]])
+            if (length(v) > 1 && v[[1L]] == "+") v=v[[-1L]]
+            else if (length(v) > 1 && v[[1L]] == "-") {
+                v=v[[-1L]]
+                order[i] = -1L
+            }
+            cols[[i]]=as.character(v)
+        }
+        cols=unlist(cols, use.names=FALSE)
+    } else {
+        cols=colnames(x)
+        order=if (is.null(cols)) 1L else rep(1L, length(cols))
+    }
+    frankv(x, cols=cols, order=order, na.last=na.last, ties.method=ties.method)
+
 }
 
 #########################################################################################
@@ -399,8 +434,9 @@ frankv = function(x, na.last=TRUE, order=1L, ties.method=c("average", "first", "
 #########################################################################################
 
 
-
-bench = function(quick=TRUE, testback=TRUE, baseline=FALSE) {
+# nocov start
+# don't include functions not used for coverage
+bench <- function(quick=TRUE, testback=TRUE, baseline=FALSE) {
     if (baseline) testback=FALSE  # when baseline return in fastorder.c is uncommented, baseline must be TRUE
     # fastorder benchmark forwards vs backwards
     
@@ -421,8 +457,8 @@ bench = function(quick=TRUE, testback=TRUE, baseline=FALSE) {
     ans[, SubGroupN:=format(as.integer(ceiling(Rows/Levels)), big.mark=",")]
     ans[,Rows:=format(Rows,big.mark=",")]
     ans[,Levels:=format(Levels,big.mark=",")]
-    ident = function(x,y) if (length(x)==0) length(y)==0 || identical(y,seq_along(y)) else identical(x,y)
-    IS.SORTED = function(...)suppressWarnings(is.sorted(...))  # just needed here to ensure the test data construction is working
+    ident <- function(x,y) if (length(x)==0) length(y)==0 || identical(y,seq_along(y)) else identical(x,y)
+    IS.SORTED <- function(...)suppressWarnings(is.sorted(...))  # just needed here to ensure the test data construction is working
     for (i in 1:nrow(ans)) {
         ttype = c("user.self","sys.self")  # elapsed can sometimes be >> user.self+sys.self. TO DO: three repeats as well.
         tol = 0.5                          # we don't mind about 0.5s; benefits when almost sorted outweigh
@@ -554,7 +590,7 @@ regularorder1 <- function(x) {
     base::sort.list(x, na.last=FALSE, decreasing=FALSE)
 }
 
-ordernumtol = function(x, tol=.Machine$double.eps^0.5) {
+ordernumtol <- function(x, tol=.Machine$double.eps^0.5) {
     o = forderv(x)
     if (length(o)) o else seq_along(x)
     # was as follows, but we removed Crorder_tol at C level. 
@@ -568,7 +604,7 @@ ordernumtol = function(x, tol=.Machine$double.eps^0.5) {
 
 # chorder2 to be used only with fastorder
 # neither are exported
-chorder2 = function(x, o=NULL) {
+chorder2 <- function(x, o=NULL) {
     if (!is.null(o)) {
         x = copy(x)
         setreordervec(x, o)
@@ -617,5 +653,4 @@ fastorder <- function(x, by=seq_along(x), verbose=getOption("datatable.verbose")
     o
 }
 
-
-
+# nocov end

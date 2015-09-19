@@ -13,7 +13,7 @@ duplicated.data.table <- function(x, incomparables=FALSE, fromLast=FALSE, by=key
     res <- rep.int(TRUE, nrow(x))
     
     if (query$use.keyprefix) {
-        f = uniqlist(x[, query$by, with=FALSE])
+        f = uniqlist(shallow(x, query$by))
         if (fromLast) f = cumsum(uniqlengths(f, nrow(x)))
     } else {
         o = forderv(x, by=query$by, sort=FALSE, retGrp=TRUE)
@@ -28,7 +28,7 @@ duplicated.data.table <- function(x, incomparables=FALSE, fromLast=FALSE, by=key
 unique.data.table <- function(x, incomparables=FALSE, fromLast=FALSE, by=key(x), ...) {
     if (!cedta()) return(NextMethod("unique"))
     dups <- duplicated.data.table(x, incomparables, fromLast, by, ...)
-    .Call(CsubsetDT, x, which(!dups), seq_len(ncol(x)))
+    .Call(CsubsetDT, x, which_(dups, FALSE), seq_len(ncol(x))) # more memory efficient version of which(!dups)
     # i.e. x[!dups] but avoids [.data.table overhead when unique() is loop'd
     # TO DO: allow logical to be passed through to C level, and allow cols=NULL to mean all, for further speed gain.
     #        See news for v1.9.3 for link to benchmark use-case on datatable-help.
@@ -84,4 +84,16 @@ anyDuplicated.data.table <- function(x, incomparables=FALSE, fromLast=FALSE, by=
     if (fromLast) idx = tail(which(dups), 1L) else idx = head(which(dups), 1L)
     if (!length(idx)) idx=0L
     idx
+}
+
+
+# simple straightforward helper function to get the number 
+# of groups in a vector or data.table. Here by data.table, 
+# we really mean `.SD` - used in a grouping operation
+uniqueN <- function(x, by = if (is.data.table(x)) key(x) else NULL) {
+    if (!is.atomic(x) && !is.data.frame(x))
+        return(length(unique(x)))
+    if (is.atomic(x)) x = as_list(x)
+    if (is.null(by)) by = seq_along(x)
+    length(attr(forderv(x, by=by, retGrp=TRUE), 'starts'))
 }

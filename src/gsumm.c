@@ -39,11 +39,13 @@ SEXP gend() {
     free(grp); grp = NULL; ngrp = 0;
     return(R_NilValue);
 }
-    
+
+// long double usage here results in test 648 being failed when running with valgrind
+// http://valgrind.org/docs/manual/manual-core.html#manual-core.limits
 SEXP gsum(SEXP x, SEXP narm)
 {
     if (!isLogical(narm) || LENGTH(narm)!=1 || LOGICAL(narm)[0]==NA_LOGICAL) error("na.rm must be TRUE or FALSE");
-    if (!isVectorAtomic(x)) error("GForce sum can only be applied to columns, not .SD or similar. To sum all items in a list such as .SD, either add the prefix base::sum(.SD) or turn off GForce optimization using options(datatable.optimize=1). More likely, you may be looking for 'DT[,lappy(.SD,sum),by=,.SDcols=]'");
+    if (!isVectorAtomic(x)) error("GForce sum can only be applied to columns, not .SD or similar. To sum all items in a list such as .SD, either add the prefix base::sum(.SD) or turn off GForce optimization using options(datatable.optimize=1). More likely, you may be looking for 'DT[,lapply(.SD,sum),by=,.SDcols=]'");
     int i, thisgrp;
     int n = LENGTH(x);
     //clock_t start = clock();
@@ -95,6 +97,7 @@ SEXP gsum(SEXP x, SEXP narm)
         error("Type '%s' not supported by GForce sum (gsum). Either add the prefix base::sum(.) or turn off GForce optimization using options(datatable.optimize=1)", type2char(TYPEOF(x)));
     }
     free(s);
+    copyMostAttrib(x, ans);
     UNPROTECT(1);
     // Rprintf("this gsum took %8.3f\n", 1.0*(clock()-start)/CLOCKS_PER_SEC);
     return(ans);
@@ -163,6 +166,7 @@ SEXP gmean(SEXP x, SEXP narm)
         else REAL(ans)[i] = (double)s[i];
     }
     free(s); free(c);
+    copyMostAttrib(x, ans);
     UNPROTECT(1);
     // Rprintf("this gmean na.rm=TRUE took %8.3f\n", 1.0*(clock()-start)/CLOCKS_PER_SEC);
     return(ans);
@@ -174,7 +178,7 @@ SEXP gmean(SEXP x, SEXP narm)
 SEXP gmin(SEXP x, SEXP narm)
 {
     if (!isLogical(narm) || LENGTH(narm)!=1 || LOGICAL(narm)[0]==NA_LOGICAL) error("na.rm must be TRUE or FALSE");
-    if (!isVectorAtomic(x)) error("GForce min can only be applied to columns, not .SD or similar. To find min of all items in a list such as .SD, either add the prefix base::min(.SD) or turn off GForce optimization using options(datatable.optimize=1). More likely, you may be looking for 'DT[,lappy(.SD,min),by=,.SDcols=]'");
+    if (!isVectorAtomic(x)) error("GForce min can only be applied to columns, not .SD or similar. To find min of all items in a list such as .SD, either add the prefix base::min(.SD) or turn off GForce optimization using options(datatable.optimize=1). More likely, you may be looking for 'DT[,lapply(.SD,min),by=,.SDcols=]'");
     R_len_t i, thisgrp=0;
     int n = LENGTH(x);
     //clock_t start = clock();
@@ -218,6 +222,42 @@ SEXP gmin(SEXP x, SEXP narm)
                     for (i=0; i<ngrp; i++) {
                         if (update[i] != 1) REAL(ans)[i] = R_PosInf;
                     }
+                    break;
+                }
+            }
+        }
+        break;
+    case STRSXP:
+        ans = PROTECT(allocVector(STRSXP, ngrp));
+        for (i=0; i<ngrp; i++) SET_STRING_ELT(ans, i, mkChar(""));
+        if (!LOGICAL(narm)[0]) {
+            for (i=0; i<n; i++) {
+                thisgrp = grp[i];
+                if (STRING_ELT(x, i) != NA_STRING && STRING_ELT(ans, thisgrp) != NA_STRING) {
+                    if ( update[thisgrp] != 1 || strcmp(CHAR(STRING_ELT(ans, thisgrp)), CHAR(STRING_ELT(x, i))) > 0 ) {
+                        SET_STRING_ELT(ans, thisgrp, STRING_ELT(x, i));
+                        if (update[thisgrp] != 1) update[thisgrp] = 1;
+                    }
+                } else SET_STRING_ELT(ans, thisgrp, NA_STRING);
+            }
+        } else {
+            for (i=0; i<n; i++) {
+                thisgrp = grp[i];
+                if (STRING_ELT(x, i) != NA_STRING) {
+                    if ( update[thisgrp] != 1 || strcmp(CHAR(STRING_ELT(ans, thisgrp)), CHAR(STRING_ELT(x, i))) > 0 ) {
+                        SET_STRING_ELT(ans, thisgrp, STRING_ELT(x, i));
+                        if (update[thisgrp] != 1) update[thisgrp] = 1;
+                    }
+                } else {
+                    if (update[thisgrp] != 1) {
+                        SET_STRING_ELT(ans, thisgrp, NA_STRING);
+                    }
+                }
+            }
+            for (i=0; i<ngrp; i++) {
+                if (update[i] != 1)  {// equivalent of INTEGER(ans)[thisgrp] == NA_INTEGER
+                    warning("No non-missing values found in at least one group. Returning 'NA' for such groups to be consistent with base");
+                    break;
                 }
             }
         }
@@ -272,7 +312,7 @@ SEXP gmin(SEXP x, SEXP narm)
 SEXP gmax(SEXP x, SEXP narm)
 {
     if (!isLogical(narm) || LENGTH(narm)!=1 || LOGICAL(narm)[0]==NA_LOGICAL) error("na.rm must be TRUE or FALSE");
-    if (!isVectorAtomic(x)) error("GForce max can only be applied to columns, not .SD or similar. To find max of all items in a list such as .SD, either add the prefix base::max(.SD) or turn off GForce optimization using options(datatable.optimize=1). More likely, you may be looking for 'DT[,lappy(.SD,max),by=,.SDcols=]'");
+    if (!isVectorAtomic(x)) error("GForce max can only be applied to columns, not .SD or similar. To find max of all items in a list such as .SD, either add the prefix base::max(.SD) or turn off GForce optimization using options(datatable.optimize=1). More likely, you may be looking for 'DT[,lapply(.SD,max),by=,.SDcols=]'");
     R_len_t i, thisgrp=0;
     int n = LENGTH(x);
     //clock_t start = clock();
@@ -316,9 +356,45 @@ SEXP gmax(SEXP x, SEXP narm)
                     for (i=0; i<ngrp; i++) {
                         if (update[i] != 1) REAL(ans)[i] = -R_PosInf;
                     }
+                    break;
                 }
             }
         }
+        break;
+    case STRSXP:
+        ans = PROTECT(allocVector(STRSXP, ngrp));
+        for (i=0; i<ngrp; i++) SET_STRING_ELT(ans, i, mkChar(""));
+        if (!LOGICAL(narm)[0]) { // simple case - deal in a straightforward manner first
+            for (i=0; i<n; i++) {
+                thisgrp = grp[i];
+                if (STRING_ELT(x,i) != NA_STRING && STRING_ELT(ans, thisgrp) != NA_STRING) {
+                    if ( update[thisgrp] != 1 || strcmp(CHAR(STRING_ELT(ans, thisgrp)), CHAR(STRING_ELT(x,i))) < 0 ) {
+                        SET_STRING_ELT(ans, thisgrp, STRING_ELT(x, i));
+                        if (update[thisgrp] != 1) update[thisgrp] = 1;
+                    }
+                } else  SET_STRING_ELT(ans, thisgrp, NA_STRING);
+            }
+        } else {
+            for (i=0; i<n; i++) {
+                thisgrp = grp[i];
+                if (STRING_ELT(x, i) != NA_STRING) {
+                    if ( update[thisgrp] != 1 || strcmp(CHAR(STRING_ELT(ans, thisgrp)), CHAR(STRING_ELT(x, i))) < 0 ) {
+                        SET_STRING_ELT(ans, thisgrp, STRING_ELT(x, i));
+                        if (update[thisgrp] != 1) update[thisgrp] = 1;
+                    }
+                } else {
+                    if (update[thisgrp] != 1) {
+                        SET_STRING_ELT(ans, thisgrp, NA_STRING);
+                    }
+                }
+            }
+            for (i=0; i<ngrp; i++) {
+                if (update[i] != 1)  {// equivalent of INTEGER(ans)[thisgrp] == NA_INTEGER
+                    warning("No non-missing values found in at least one group. Returning 'NA' for such groups to be consistent with base");
+                    break;
+                }
+            }
+        }    
         break;
     case REALSXP:
         ans = PROTECT(allocVector(REALSXP, ngrp));

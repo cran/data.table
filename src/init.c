@@ -53,6 +53,13 @@ SEXP frank();
 SEXP dt_na();
 SEXP lookup();
 SEXP overlaps();
+SEXP whichwrapper();
+SEXP shift();
+SEXP transpose();
+SEXP anyNA();
+SEXP isReallyReal();
+SEXP setlevels();
+SEXP rleid();
 
 // .Externals
 SEXP fastmean();
@@ -108,6 +115,14 @@ R_CallMethodDef callMethods[] = {
 {"Cdt_na", (DL_FUNC) &dt_na, -1},
 {"Clookup", (DL_FUNC) &lookup, -1},
 {"Coverlaps", (DL_FUNC) &overlaps, -1},
+{"Cwhichwrapper", (DL_FUNC) &whichwrapper, -1},
+{"Cshift", (DL_FUNC) &shift, -1},
+{"Ctranspose", (DL_FUNC) &transpose, -1},
+{"CanyNA", (DL_FUNC) &anyNA, -1},
+{"CisReallyReal", (DL_FUNC) &isReallyReal, -1},
+{"Csetlevels", (DL_FUNC) &setlevels, -1},
+{"Crleid", (DL_FUNC) &rleid, -1},
+
 {NULL, NULL, 0}
 };
 

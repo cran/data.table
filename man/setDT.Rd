@@ -8,12 +8,13 @@
   
 }
 \usage{
-setDT(x, giveNames=TRUE, keep.rownames=FALSE)
+setDT(x, keep.rownames=FALSE, key=NULL, check.names=FALSE)
 }
 \arguments{
   \item{x}{ A named or unnamed \code{list}, \code{data.frame} or \code{data.table}. }
-  \item{giveNames}{ For list input to \code{setDT}, \code{TRUE} automatically generates missing column names. \code{FALSE} sets all column names to \code{""}. }
   \item{keep.rownames}{ For \code{data.frame}s, \code{TRUE} retains the \code{data.frame}'s row names under a new column \code{rn}. }
+  \item{key}{Character vector of one or more column names which is passed to \code{\link{setkeyv}}. It may be a single comma separated string such as \code{key="x,y,z"}, or a vector of names such as \code{key=c("x","y","z")}. }
+  \item{check.names}{ Just as \code{check.names} in \code{\link{data.frame}}. }
 }
 
 \details{
@@ -21,11 +22,10 @@ setDT(x, giveNames=TRUE, keep.rownames=FALSE)
 }
 
 \value{
-    The input is modified by reference, and returned (invisibly) so it can be used in compound statements; e.g., \code{setDT(X)[, sum(b), by=a]}.
+    The input is modified by reference, and returned (invisibly) so it can be used in compound statements; e.g., \code{setDT(X)[, sum(B), by=A]}. If you require a copy, take a copy first (using \code{DT2 = copy(DT)}). See \code{?copy}.
 }
 
-\seealso{ \code{\link{setkey}}, \code{\link{setattr}}, \code{\link{setnames}}, \code{\link{set}}, \code{\link{:=}}, \code{\link{setorder}}, \code{\link{copy}}, \code{\link{setDF}}
-\if{html}{\out{<script type="text/javascript">var sc_project=6237851;var sc_invisible=1;var sc_security="518c93ca";</script><script type="text/javascript" src="http://www.statcounter.com/counter/counter.js"></script><noscript><div class="statcounter"><a title="web statistics" href="http://statcounter.com/free-web-stats/" target="_blank"><img class="statcounter" src="http://c.statcounter.com/6237851/0/518c93ca/1/" alt="web statistics"></a></div></noscript>}}
+\seealso{ \code{\link{setkey}}, \code{\link{setcolorder}}, \code{\link{setattr}}, \code{\link{setnames}}, \code{\link{set}}, \code{\link{:=}}, \code{\link{setorder}}, \code{\link{copy}}, \code{\link{setDF}}
 }
 \examples{
 
@@ -34,8 +34,9 @@ X = data.frame(A=sample(3, 10, TRUE),
          B=sample(letters[1:3], 10, TRUE), 
          C=sample(10), stringsAsFactors=FALSE)
 
+# Convert X to data.table by reference and 
 # get the frequency of each "A,B" combination
-setDT(X)[, .N, by="A,B"][]
+setDT(X)[, .N, by=.(A,B)]
 
 # convert list to data.table 
 # autofill names
@@ -44,6 +45,15 @@ setDT(X)
 # don't provide names
 X = list(a=1:4, letters[1:4])
 setDT(X, FALSE)
+
+# setkey directly
+X = list(a = 4:1, b=runif(4))
+setDT(X, key="a")[]
+
+# check.names argument
+X = list(a=1:5, a=6:10)
+setDT(X, check.names=TRUE)[]
+
 }
 \keyword{ data }
 

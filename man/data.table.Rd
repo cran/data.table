@@ -5,9 +5,7 @@
 \alias{as.data.table}
 \alias{is.data.table}
 \alias{Ops.data.table}
-\alias{na.omit.data.table}
 \alias{is.na.data.table}
-\alias{na.omit.data.table}
 \alias{[.data.table}
 \title{ Enhanced data.frame }
 \description{
@@ -15,7 +13,7 @@
    
    The 10 minute quick start guide to \code{data.table} may be a good place to start: \href{../doc/datatable-intro.pdf}{\code{vignette("datatable-intro")}}. Or, the first section of FAQs is intended to be read from start to finish and is considered core documentation: \href{../doc/datatable-faq.pdf}{\code{vignette("datatable-faq")}}. If you have read and searched these documents and the help page below, please feel free to ask questions on \href{http://r.789695.n4.nabble.com/datatable-help-f2315188.html}{datatable-help} or the Stack Overflow \href{http://stackoverflow.com/questions/tagged/data.table}{data.table tag}. To report a bug please type: \code{bug.report(package="data.table")}.
    
-   Please check the \href{http://datatable.r-forge.r-project.org/}{homepage} for up to the minute \href{http://r-forge.r-project.org/scm/viewvc.php/pkg/NEWS?view=markup&root=datatable}{news}.
+   Please check the \href{http://datatable.r-forge.r-project.org/}{homepage} for up to the minute \href{https://github.com/Rdatatable/data.table/blob/master/README.md}{news}.
    
    Tip: one of the quickest ways to learn the features is to type \code{example(data.table)} and study the output at the prompt.
 }
@@ -33,8 +31,8 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
   .SDcols,
   verbose = getOption("datatable.verbose"),                   # default: FALSE
   allow.cartesian = getOption("datatable.allow.cartesian"),   # default: FALSE
-  drop = NULL,
-  rolltolast = FALSE   # deprecated
+  drop = NULL, 
+  on = NULL # join without setting keys, new feature from v1.9.6+
   )
 }
 \arguments{
@@ -53,7 +51,7 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
   \item{x}{ A \code{data.table}.
 
 }
-  \item{i}{ Integer, logical or character vector, expression of column names, \code{list} or \code{data.table}.
+  \item{i}{ Integer, logical or character vector, single column numeric \code{matrix}, expression of column names, \code{list} or \code{data.table}.
 
   integer and logical vectors work the same way they do in \code{\link{[.data.frame}}. Other than \code{NA}s in logical \code{i} are treated as \code{FALSE} and a single \code{NA} logical is not recycled to match the number of rows, as it is in \code{[.data.frame}.
 
@@ -81,7 +79,7 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
 
   When \code{by} contains the first \code{n} columns of \code{x}'s key, we call this a \emph{keyed by}. In a keyed by the groups appear contiguously in RAM and memory is copied in bulk internally, for extra speed. Otherwise, we call it an \emph{ad hoc by}. Ad hoc by is still many times faster than \code{tapply}, for example, but just not as fast as keyed by when datasets are very large, in particular when the size of \emph{each group} is large. Not to be confused with \code{keyby=} defined below.
 
-  Advanced: Aggregation for a subset of known groups is particularly efficient when passing those groups in \code{i} and setting \code{by=.EACHI}. When \code{i} is a \code{data.table}, \code{DT[i,j,by=.EACHI]} evaluates \code{j} for the groups of `DT` that each row in \code{i} joins to. We call this \emph{grouping by each i}.
+  Advanced: When \code{i} is a \code{data.table}, \code{DT[i,j,by=.EACHI]} evaluates \code{j} for the groups in `DT` that each row in \code{i} joins to. That is, you can join (in \code{i}) and aggregate (in \code{j}) simultaneously. We call this \emph{grouping by each i}. It is particularly memory efficient as you don't have to materialise the join result only to aggregate later. Please refer to \href{http://stackoverflow.com/a/27004566/559784}{this Stackoverflow answer} for a more detailed explanation until we \href{https://github.com/Rdatatable/data.table/issues/944}{roll out vignettes}.
 
   Advanced: When grouping, symbols \code{.SD}, \code{.BY}, \code{.N}, \code{.I} and \code{.GRP} may be used in the \code{j} expression, defined as follows.
   
@@ -103,7 +101,7 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
   \item{keyby}{ An \emph{ad-hoc-by} or \emph{keyed-by} (just as \code{by=} defined above) but with an additional \code{setkey()} run on the \code{by} columns of the result afterwards, for convenience. It is common practice to use `keyby=` routinely when you wish the result to be sorted. Out loud we read \code{keyby=} as \emph{by= then setkey}. Otherwise, `by=` can be relied on to return the groups in the order they appear in the data.
   
 }
-  \item{with}{ By default \code{with=TRUE} and \code{j} is evaluated within the frame of \code{x}; column names can be used as variables. When \code{with=FALSE}, \code{j} is a vector of names or positions to select, similar to a \code{data.frame}. \code{with=FALSE} is often useful in \code{data.table} to select columns dynamically.
+  \item{with}{ By default \code{with=TRUE} and \code{j} is evaluated within the frame of \code{x}; column names can be used as variables. When \code{with=FALSE} \code{j} is a character vector of column names or a numeric vector of column positions to select, and the value returned is always a \code{data.table}. \code{with=FALSE} is often useful in \code{data.table} to select columns dynamically.
 
 }
   \item{nomatch}{ Same as \code{nomatch} in \code{\link{match}}. When a row in \code{i} has no match to \code{x}'s key, \code{nomatch=NA} (default) means \code{NA} is returned for \code{x}'s non-join columns for that row of \code{i}. \code{0} means no rows will be returned for that row of \code{i}. The default value (used when \code{nomatch} is not supplied) can be changed from \code{NA} to \code{0} using \code{options(datatable.nomatch=0)}.
@@ -130,14 +128,12 @@ data.table(..., keep.rownames=FALSE, check.names=FALSE, key=NULL)
   \item{verbose}{ \code{TRUE} turns on status and information messages to the console. Turn this on by default using \code{options(datatable.verbose=TRUE)}. The quantity and types of verbosity may be expanded in future.
 
 }  
-  \item{allow.cartesian}{ \code{FALSE} prevents joins that would result in more than \code{max(nrow(x),nrow(i))} rows. This is usually caused by duplicate values in \code{i}'s join columns, each of which join to the same group in `x` over and over again: a \emph{misspecified} join. Usually this was not intended and the join needs to be changed. The word 'cartesian' is used loosely in this context. The traditional cartesian join is (deliberately) difficult to achieve in \code{data.table}: where every row in \code{i} joins to every row in \code{x} (a \code{nrow(x)*nrow(i)} row result). 'cartesian' is just meant in a 'large multiplicative' sense. }
+  \item{allow.cartesian}{ \code{FALSE} prevents joins that would result in more than \code{nrow(x)+nrow(i)} rows. This is usually caused by duplicate values in \code{i}'s join columns, each of which join to the same group in `x` over and over again: a \emph{misspecified} join. Usually this was not intended and the join needs to be changed. The word 'cartesian' is used loosely in this context. The traditional cartesian join is (deliberately) difficult to achieve in \code{data.table}: where every row in \code{i} joins to every row in \code{x} (a \code{nrow(x)*nrow(i)} row result). 'cartesian' is just meant in a 'large multiplicative' sense. }
   
   \item{drop}{ Never used by \code{data.table}. Do not use. It needs to be here because \code{data.table} inherits from \code{data.frame}. See \code{vignette("datatable-faq")}.
   
 }
-  \item{rolltolast}{ Deprecated. Setting \code{rolltolast=TRUE} is converted to \code{roll=TRUE;rollends=FALSE} for backwards compatibility.
-  
-}
+  \item{on}{ A named atomic vector of column names indicating which columns in \code{i} should be joined to which columns in \code{x}. See \code{Examples}.}
 }
 \details{
 \code{data.table} builds on base \R functionality to reduce 2 types of time :
@@ -189,8 +185,7 @@ column called \code{"keep"} containing \code{TRUE} and this is correct behaviour
 
 POSIXlt is not supported as a column type because it uses 40 bytes to store a single datetime. Unexpected errors may occur if you manage to create a column of type POSIXlt. Please see \href{http://r-forge.r-project.org/scm/viewvc.php/pkg/NEWS?view=markup&root=datatable}{NEWS} for 1.6.3, and \code{\link{IDateTime}} instead. IDateTime has methods to convert to and from POSIXlt.
 }
-\seealso{ \code{\link{data.frame}}, \code{\link{[.data.frame}}, \code{\link{as.data.table}}, \code{\link{setkey}}, \code{\link{J}}, \code{\link{SJ}}, \code{\link{CJ}}, \code{\link{merge.data.table}}, \code{\link{tables}}, \code{\link{test.data.table}}, \code{\link{IDateTime}}, \code{\link{unique.data.table}}, \code{\link{copy}}, \code{\link{:=}}, \code{\link{alloc.col}}, \code{\link{truelength}}, \code{\link{rbindlist}}
-\if{html}{\out{<script type="text/javascript">var sc_project=6237851;var sc_invisible=1;var sc_security="518c93ca";</script><script type="text/javascript" src="http://www.statcounter.com/counter/counter.js"></script><noscript><div class="statcounter"><a title="web statistics" href="http://statcounter.com/free-web-stats/" target="_blank"><img class="statcounter" src="http://c.statcounter.com/6237851/0/518c93ca/1/" alt="web statistics"></a></div></noscript>}}
+\seealso{ \code{\link{data.frame}}, \code{\link{[.data.frame}} , \code{\link{setkey}}, \code{\link{J}}, \code{\link{SJ}}, \code{\link{CJ}}, \code{\link{merge.data.table}}, \code{\link{tables}}, \code{\link{test.data.table}}, \code{\link{IDateTime}}, \code{\link{unique.data.table}}, \code{\link{copy}}, \code{\link{:=}}, \code{\link{alloc.col}}, \code{\link{truelength}}, \code{\link{rbindlist}}, \code{\link{setNumericRounding}}
 }
 \examples{
 \dontrun{
@@ -285,6 +280,15 @@ DT[!2:4]                   # all rows other than 2:4
 DT[x!="b" | y!=3]          # not yet optimized, currently vector scans
 DT[!.("b",3)]              # same result but much faster
 
+
+# new feature: 'on' argument, from v1.9.6+
+DT1 = data.table(x=c("c", "a", "b", "a", "b"), a=1:5)
+DT2 = data.table(x=c("d", "c", "b"), mul=6:8)
+
+DT1[DT2, on=c(x="x")] # join on columns 'x'
+DT1[DT2, on="x"] # same as above
+DT1[DT2, .(sum(a) * mul), by=.EACHI, on="x"] # using by=.EACHI
+DT1[DT2, .(sum(a) * mul), by=.EACHI, on="x", nomatch=0L] # using by=.EACHI
 
 # Follow r-help posting guide, support is here (*not* r-help) :
 # http://stackoverflow.com/questions/tagged/data.table
