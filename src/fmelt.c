@@ -30,7 +30,7 @@ SEXP set_diff(SEXP x, int n) {
     }
     n = j;
     PROTECT(ans = allocVector(INTSXP, n));
-    memcpy(INTEGER(ans), buf, sizeof(int) * n); // sizeof is of type size_t - no integer overflow issues
+    if (n) memcpy(INTEGER(ans), buf, sizeof(int) * n); // sizeof is of type size_t - no integer overflow issues
     UNPROTECT(1);
     return(ans);
 }
@@ -69,7 +69,7 @@ SEXP which_notNA(SEXP x) {
     }
     n = j;
     PROTECT(ans = allocVector(INTSXP, n));
-    memcpy(INTEGER(ans), buf, sizeof(int) * n);
+    if (n) memcpy(INTEGER(ans), buf, sizeof(int) * n);
     
     UNPROTECT(2);
     return(ans);
@@ -89,7 +89,7 @@ SEXP which(SEXP x, Rboolean bool) {
     }
     n = j;
     PROTECT(ans = allocVector(INTSXP, n));
-    memcpy(INTEGER(ans), buf, sizeof(int) * n);
+    if (n) memcpy(INTEGER(ans), buf, sizeof(int) * n);
     
     UNPROTECT(1);
     return(ans);
@@ -106,7 +106,7 @@ SEXP whichwrapper(SEXP x, SEXP bool) {
 SEXP concat(SEXP vec, SEXP idx) {
     
     SEXP s, t, v;
-    int i;
+    int i, nidx=length(idx);
     
     if (TYPEOF(vec) != STRSXP) error("concat: 'vec must be a character vector");
     if (!isInteger(idx) || length(idx) < 0) error("concat: 'idx' must be an integer vector of length >= 0");
@@ -114,10 +114,11 @@ SEXP concat(SEXP vec, SEXP idx) {
         if (INTEGER(idx)[i] < 0 || INTEGER(idx)[i] > length(vec)) 
             error("concat: 'idx' must take values between 0 and length(vec); 0 <= idx <= length(vec)");
     }
-    PROTECT(v = allocVector(STRSXP, length(idx)));
-    for (i=0; i<length(idx); i++) {
+    PROTECT(v = allocVector(STRSXP, nidx > 5 ? 5 : nidx));
+    for (i=0; i<length(v); i++) {
         SET_STRING_ELT(v, i, STRING_ELT(vec, INTEGER(idx)[i]-1));
     }
+    if (nidx > 5) SET_STRING_ELT(v, 4, mkChar("..."));
     PROTECT(t = s = allocList(3));
     SET_TYPEOF(t, LANGSXP);
     SETCAR(t, install("paste")); t = CDR(t);
@@ -193,8 +194,8 @@ SEXP checkVars(SEXP DT, SEXP id, SEXP measure, Rboolean verbose) {
         }
         booltmp = PROTECT(duplicated(tmp, FALSE)); protecti++;
         for (i=0; i<length(tmp); i++) {
-            if (INTEGER(tmp)[i] <= 0) error("Column '%s' not found in 'data'", CHAR(STRING_ELT(id, i)));
-            else if (INTEGER(tmp)[i] > ncol) error("id.vars value exceeds ncol(data)");
+            if (INTEGER(tmp)[i] <= 0 || INTEGER(tmp)[i] > ncol) 
+                error("One or more values in 'id.vars' is invalid.");
             else if (!LOGICAL(booltmp)[i]) targetcols++;
             else continue;
         }
@@ -227,8 +228,8 @@ SEXP checkVars(SEXP DT, SEXP id, SEXP measure, Rboolean verbose) {
         }
         booltmp = PROTECT(duplicated(tmp, FALSE)); protecti++;
         for (i=0; i<length(tmp); i++) {
-            if (INTEGER(tmp)[i] <= 0) error("Column '%s' not found in 'data'", CHAR(STRING_ELT(measure, i)));
-            else if (INTEGER(tmp)[i] > ncol) error("measure.vars value exceeds ncol(data)");
+            if (INTEGER(tmp)[i] <= 0 || INTEGER(tmp)[i] > ncol) 
+                error("One or more values in 'measure.vars' is invalid.");
             else if (!LOGICAL(booltmp)[i]) targetcols++;
             else continue;
         }
@@ -257,8 +258,8 @@ SEXP checkVars(SEXP DT, SEXP id, SEXP measure, Rboolean verbose) {
             default : error("Unknown 'id.vars' type %s, must be character or integer vector", type2char(TYPEOF(id)));
         }
         for (i=0; i<length(tmp); i++) {
-            if (INTEGER(tmp)[i] <= 0) error("Column '%s' not found in 'data'", CHAR(STRING_ELT(id, i)));
-            else if (INTEGER(tmp)[i] > ncol) error("measure.vars value exceeds ncol(data)");
+            if (INTEGER(tmp)[i] <= 0 || INTEGER(tmp)[i] > ncol) 
+                error("One or more values in 'id.vars' is invalid.");
         }
         idcols = PROTECT(tmp); protecti++;
         switch(TYPEOF(measure)) {
@@ -273,8 +274,8 @@ SEXP checkVars(SEXP DT, SEXP id, SEXP measure, Rboolean verbose) {
             tmp = PROTECT(unlist_(tmp2)); protecti++;
         }
         for (i=0; i<length(tmp); i++) {
-            if (INTEGER(tmp)[i] <= 0) error("Column '%s' not found in 'data'", CHAR(STRING_ELT(measure, i)));
-            else if (INTEGER(tmp)[i] > ncol) error("measure.vars value exceeds ncol(data)");
+            if (INTEGER(tmp)[i] <= 0 || INTEGER(tmp)[i] > ncol) 
+                error("One or more values in 'measure.vars' is invalid.");
         }
         if (isNewList(measure)) valuecols = tmp2; 
         else {
@@ -481,7 +482,7 @@ SEXP getvaluecols(SEXP DT, SEXP dtnames, Rboolean valfactor, Rboolean verbose, s
 
 SEXP getvarcols(SEXP DT, SEXP dtnames, Rboolean varfactor, Rboolean verbose, struct processData *data) {
     
-    int i,j,k,cnt=0,nrows=0, nlevels=0, protecti=0, thislen;
+    int i,j,k,cnt=0,nrows=0, nlevels=0, protecti=0, thislen, zerolen=0;
     SEXP ansvars, thisvaluecols, levels, target, matchvals, thisnames;
 
     ansvars = PROTECT(allocVector(VECSXP, 1)); protecti++;
@@ -499,10 +500,11 @@ SEXP getvarcols(SEXP DT, SEXP dtnames, Rboolean varfactor, Rboolean verbose, str
             for (j=0; j<data->lmax; j++) {
                 thislen = length(VECTOR_ELT(data->naidx, j));
                 for (k=0; k<thislen; k++)
-                    INTEGER(target)[nrows + k] = INTEGER(matchvals)[j];
+                    INTEGER(target)[nrows + k] = INTEGER(matchvals)[j - zerolen]; // fix for #1359
                 nrows += thislen;
-                nlevels += (thislen != 0);
-            } 
+                zerolen += (thislen == 0);
+            }
+            nlevels = data->lmax - zerolen;
         } else {
             for (j=0; j<data->lmax; j++) {
                 for (k=0; k<data->nrow; k++) 

@@ -9,12 +9,13 @@
    `fread` is for \emph{regular} delimited files; i.e., where every row has the same number of columns. In future, secondary separator (\code{sep2}) may be specified \emph{within} each column. Such columns will be read as type \code{list} where each cell is itself a vector.
 }
 \usage{
-fread(input, sep="auto", sep2="auto", nrows=-1L, header="auto", na.strings="NA",
+fread(input, sep="auto", sep2="auto", nrows=-1L, header="auto", na.strings="NA", file,
 stringsAsFactors=FALSE, verbose=getOption("datatable.verbose"), autostart=1L,
 skip=0L, select=NULL, drop=NULL, colClasses=NULL,
 integer64=getOption("datatable.integer64"),         # default: "integer64"
 dec=if (sep!=".") "." else ",", col.names, 
-check.names=FALSE, encoding="unknown", strip.white=TRUE, 
+check.names=FALSE, encoding="unknown", quote="\"", 
+strip.white=TRUE, fill=FALSE, blank.lines.skip=FALSE, key=NULL, 
 showProgress=getOption("datatable.showProgress"),   # default: TRUE
 data.table=getOption("datatable.fread.datatable")   # default: TRUE
 )
@@ -26,27 +27,32 @@ data.table=getOption("datatable.fread.datatable")   # default: TRUE
   \item{nrows}{ The number of rows to read, by default -1 means all. Unlike \code{read.table}, it doesn't help speed to set this to the number of rows in the file (or an estimate), since the number of rows is automatically determined and is already fast. Only set \code{nrows} if you require the first 10 rows, for example. `nrows=0` is a special case that just returns the column names and types; e.g., a dry run for a large file or to quickly check format consistency of a set of files before starting to read any. }
   \item{header}{ Does the first data line contain column names? Defaults according to whether every non-empty field on the first data line is type character. If so, or TRUE is supplied, any empty column names are given a default name. }
   \item{na.strings}{ A character vector of strings which are to be interpreted as \code{NA} values. By default \code{",,"} for columns read as type character is read as a blank string (\code{""}) and \code{",NA,"} is read as \code{NA}. Typical alternatives might be \code{na.strings=NULL} (no coercion to NA at all!) or perhaps \code{na.strings=c("NA","N/A","null")}. }
+  \item{file}{ File path, useful when we want to ensure that no shell commands will be executed. File path can also be provided to \code{input} argument. }
   \item{stringsAsFactors}{ Convert all character columns to factors? }
   \item{verbose}{ Be chatty and report timings? }
   \item{autostart}{ Any line number within the region of machine readable delimited text, by default 30. If the file is shorter or this line is empty (e.g. short files with trailing blank lines) then the last non empty line (with a non empty line above that) is used. This line and the lines above it are used to auto detect \code{sep}, \code{sep2} and the number of fields. It's extremely unlikely that \code{autostart} should ever need to be changed, we hope. }
-  \item{skip}{ If -1 (default) use the procedure described below starting on line \code{autostart} to find the first data row. \code{skip>=0} means ignore \code{autostart} and take line \code{skip+1} as the first data row (or column names according to header="auto"|TRUE|FALSE as usual). \code{skip="string"} searches for \code{"string"} in the file (e.g. a substring of the column names row) and starts on that line (inspired by read.xls in package gdata). }
+  \item{skip}{ If 0 (default) use the procedure described below starting on line \code{autostart} to find the first data row. \code{skip>0} means ignore \code{autostart} and take line \code{skip+1} as the first data row (or column names according to header="auto"|TRUE|FALSE as usual). \code{skip="string"} searches for \code{"string"} in the file (e.g. a substring of the column names row) and starts on that line (inspired by read.xls in package gdata). }
   \item{select}{ Vector of column names or numbers to keep, drop the rest. }
   \item{drop}{ Vector of column names or numbers to drop, keep the rest. }
   \item{colClasses}{ A character vector of classes (named or unnamed), as read.csv. Or a named list of vectors of column names or numbers, see examples. colClasses in fread is intended for rare overrides, not for routine use. fread will only promote a column to a higher type if colClasses requests it. It won't downgrade a column to a lower type since NAs would result. You have to coerce such columns afterwards yourself, if you really require data loss. }
   \item{integer64}{ "integer64" (default) reads columns detected as containing integers larger than 2^31 as type \code{bit64::integer64}. Alternatively, \code{"double"|"numeric"} reads as \code{base::read.csv} does; i.e., possibly with loss of precision and if so silently. Or, "character". }
   \item{dec}{ The decimal separator as in \code{base::read.csv}. If not "." (default) then usually ",". See details. }
   \item{col.names}{ A vector of optional names for the variables (columns). The default is to use the header column if present or detected, or if not "V" followed by the column number. }
-  \item{check.names}{ default is \code{FALSE}. If \code{TRUE}, it uses the base function \code{\link{make.unique}} to ensure that column names are all unique.}
-  \item{encoding}{ default is \code{"unknown"}. Other possible options are \code{"UTF-8"} and \code{"Latin-1"}.  }
+  \item{check.names}{default is \code{FALSE}. If \code{TRUE} then the names of the variables in the \code{data.table} are checked to ensure that they are syntactically valid variable names. If necessary they are adjusted (by \code{\link{make.names}}) so that they are, and also to ensure that there are no duplicates.}
+  \item{encoding}{ default is \code{"unknown"}. Other possible options are \code{"UTF-8"} and \code{"Latin-1"}.  Note: it is not used to re-encode the input, rather enables handling of encoded strings in their native encoding. }
+  \item{quote}{ By default (\code{"\""}), if a field starts with a doublequote, \code{fread} handles embedded quotes robustly as explained under \code{Details}. If it fails, then another attempt is made to read the field \emph{as is}, i.e., as if quotes are disabled. By setting \code{quote=""}, the field is always read as if quotes are disabled. }
   \item{strip.white}{ default is \code{TRUE}. Strips leading and trailing whitespaces of unquoted fields. If \code{FALSE}, only header trailing spaces are removed. }
-  \item{showProgress}{ TRUE displays progress on the console using \code{\\r}. It is produced in fread's C code where the very nice (but R level) txtProgressBar and tkProgressBar are not easily available. }
+  \item{fill}{logical (default is \code{FALSE}). If \code{TRUE} then in case the rows have unequal length, blank fields are implicitly filled.}
+  \item{blank.lines.skip}{\code{logical}, default is \code{FALSE}. If \code{TRUE} blank lines in the input are ignored.}
+  \item{key}{Character vector of one or more column names which is passed to \code{\link{setkey}}. It may be a single comma separated string such as \code{key="x,y,z"}, or a vector of names such as \code{key=c("x","y","z")}. Only valid when argument \code{data.table=TRUE}.}
+  \item{showProgress}{ \code{TRUE} displays progress on the console using \code{\\r}. It is produced in fread's C code where the very nice (but R level) txtProgressBar and tkProgressBar are not easily available. }
   \item{data.table}{ TRUE returns a \code{data.table}. FALSE returns a \code{data.frame}. }
 }
 \details{
 
 Once the separator is found on line \code{autostart}, the number of columns is determined. Then the file is searched backwards from \code{autostart} until a row is found that doesn't have that number of columns. Thus, the first data row is found and any human readable banners are automatically skipped. This feature can be particularly useful for loading a set of files which may not all have consistently sized banners. Setting \code{skip>0} overrides this feature by setting \code{autostart=skip+1} and turning off the search upwards step.
 
-The first 5 rows, middle 5 rows and last 5 rows are then read to determine column types. The lowest type for each column is chosen from the ordered list \code{integer}, \code{integer64}, \code{double}, \code{character}. This enables \code{fread} to allocate exactly the right number of rows, with columns of the right type, up front once. The file may of course \emph{still} contain data of a different type in rows other than first, middle and last 5. In that case, the column types are bumped mid read and the data read on previous rows is coerced. Setting \code{verbose=TRUE} reports the line and field number of each mid read type bump, and how long this type bumping took (if any).
+A sample of 1,000 rows is used to determine column types (100 rows from 10 points). The lowest type for each column is chosen from the ordered list: \code{logical}, \code{integer}, \code{integer64}, \code{double}, \code{character}. This enables \code{fread} to allocate exactly the right number of rows, with columns of the right type, up front once. The file may of course still contain data of a higher type in rows outside the sample. In that case, the column types are bumped mid read and the data read on previous rows is coerced. Setting \code{verbose=TRUE} reports the line and field number of each mid read type bump and how long this type bumping took (if any).
 
 There is no line length limit, not even a very large one. Since we are encouraging \code{list} columns (i.e. \code{sep2}) this has the potential to encourage longer line lengths. So the approach of scanning each line into a buffer first and then rescanning that buffer is not used. There are no buffers used in \code{fread}'s C code at all. The field width limit is limited by R itself: the maximum width of a character string (currenly 2^31-1 bytes, 2GB).
 
@@ -60,10 +66,12 @@ If an empty line is encountered then reading stops there, with warning if any te
 
 On Windows, "French_France.1252" is tried which should be available as standard (any locale with comma decimal separator would suffice) and on unix "fr_FR.utf8" (you may need to install this locale on unix). \code{fread()} is very careful to set the locale back again afterwards, even if the function fails with an error. The choice of locale is determined by \code{options()$datatable.fread.dec.locale}. This may be a \emph{vector} of locale names and if so they will be tried in turn until the desired \code{dec} is obtained; thus allowing more than two different decimal separators to be selected. This is a new feature in v1.9.6 and is experimental. In case of problems, turn it off with \code{options(datatable.fread.dec.experiment=FALSE)}.
 
-\bold{Quotes:}
+\bold{Quotes:} 
+
+When \code{quote} is a single character, 
 
   \itemize{
-      \item{Spaces and othe whitespace (other than \code{sep} and \code{\\n}) may appear in unquoted character fields, e.g., \code{...,2,Joe Bloggs,3.14,...}.}
+      \item{Spaces and other whitespace (other than \code{sep} and \code{\\n}) may appear in unquoted character fields, e.g., \code{...,2,Joe Bloggs,3.14,...}.}
 
       \item{When \code{character} columns are \emph{quoted}, they must start and end with that quoting character immediately followed by \code{sep} or \code{\\n}, e.g., \code{...,2,"Joe Bloggs",3.14,...}. 
 
@@ -71,20 +79,19 @@ On Windows, "French_France.1252" is tried which should be available as standard 
 
       If an embedded quote is followed by the separator inside a quoted field, the embedded quotes up to that point in that field must be balanced; e.g. \code{...,2,"www.blah?x="one",y="two"",3.14,...}.
 
-      Quoting may be used to signify that numeric data should be read as text.
-
       On those fields that do not satisfy these conditions, e.g., fields with unbalanced quotes, \code{fread} re-attempts that field as if it isn't quoted. This is quite useful in reading files that contains fields with unbalanced quotes as well, automatically.}
   }
 
+To read fields \emph{as is} instead, use \code{quote = ""}.
 }
 \value{
     A \code{data.table} by default. A \code{data.frame} when argument \code{data.table=FALSE}; e.g. \code{options(datatable.fread.datatable=FALSE)}.
 }
 \references{
 Background :\cr
-\url{http://cran.r-project.org/doc/manuals/R-data.html}\cr
+\url{https://cran.r-project.org/doc/manuals/R-data.html}\cr
 \url{http://stackoverflow.com/questions/1727772/quickly-reading-very-large-tables-as-dataframes-in-r}\cr
-\url{www.biostat.jhsph.edu/~rpeng/docs/R-large-tables.html}\cr
+\url{http://www.biostat.jhsph.edu/~rpeng/docs/R-large-tables.html}\cr
 \url{https://stat.ethz.ch/pipermail/r-help/2007-August/138315.html}\cr
 \url{http://www.cerebralmastication.com/2009/11/loading-big-data-into-r/}\cr
 \url{http://stackoverflow.com/questions/9061736/faster-than-scan-with-rcpp}\cr
@@ -256,6 +263,18 @@ fread(data, drop=2:3)             # same using column numbers
 fread(data, select=c("A","D"))    # less typing, easier to read
 fread(data, select=c(1,4))        # same using column numbers
 
+# skip blank lines
+fread("a,b\n1,a\n2,b\n\n\n3,c\n", blank.lines.skip=TRUE)
+# fill
+fread("a,b\n1,a\n2\n3,c\n", fill=TRUE)
+fread("a,b\n\n1,a\n2\n\n3,c\n\n", fill=TRUE)
+
+# fill with skip blank lines
+fread("a,b\n\n1,a\n2\n\n3,c\n\n", fill=TRUE, blank.lines.skip=TRUE)
+
+# check.names usage
+fread("a b,a b\n1,2\n")
+fread("a b,a b\n1,2\n", check.names=TRUE) # no duplicates + syntactically valid names
 }
 \keyword{ data }
 

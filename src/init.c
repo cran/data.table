@@ -17,6 +17,8 @@ SEXP setcharvec();
 SEXP setcolorder();
 SEXP chmatchwrapper();
 SEXP readfile();
+SEXP writefile();
+SEXP genLookups();
 SEXP reorder();
 SEXP rbindlist();
 SEXP vecseq();
@@ -29,8 +31,6 @@ SEXP fmelt();
 SEXP fcast();
 SEXP uniqlist();
 SEXP uniqlengths();
-SEXP fastradixdouble();
-SEXP fastradixint();
 SEXP setrev();
 SEXP forder();
 SEXP fsorted();
@@ -60,6 +60,23 @@ SEXP anyNA();
 SEXP isReallyReal();
 SEXP setlevels();
 SEXP rleid();
+SEXP gmedian();
+SEXP gtail();
+SEXP ghead();
+SEXP glast();
+SEXP gfirst();
+SEXP gnthvalue();
+SEXP dim();
+SEXP gvar();
+SEXP gsd();
+SEXP gprod();
+SEXP nestedid();
+SEXP setDTthreads();
+SEXP getDTthreads_R();
+SEXP nqnewindices();
+SEXP fsort();
+SEXP inrange();
+SEXP between();
 
 // .Externals
 SEXP fastmean();
@@ -79,6 +96,8 @@ R_CallMethodDef callMethods[] = {
 {"Csetcolorder", (DL_FUNC) &setcolorder, -1},
 {"Cchmatchwrapper", (DL_FUNC) &chmatchwrapper, -1},
 {"Creadfile", (DL_FUNC) &readfile, -1},
+{"Cwritefile", (DL_FUNC) &writefile, -1},
+{"CgenLookups", (DL_FUNC) &genLookups, -1},
 {"Creorder", (DL_FUNC) &reorder, -1},
 {"Crbindlist", (DL_FUNC) &rbindlist, -1},
 {"Cvecseq", (DL_FUNC) &vecseq, -1},
@@ -91,8 +110,6 @@ R_CallMethodDef callMethods[] = {
 {"Cfcast", (DL_FUNC) &fcast, -1}, 
 {"Cuniqlist", (DL_FUNC) &uniqlist, -1},
 {"Cuniqlengths", (DL_FUNC) &uniqlengths, -1},
-{"Cfastradixdouble", (DL_FUNC) &fastradixdouble, -1}, 
-{"Cfastradixint", (DL_FUNC) &fastradixint, -1},
 {"Csetrev", (DL_FUNC) &setrev, -1},
 {"Cforder", (DL_FUNC) &forder, -1},
 {"Cfsorted", (DL_FUNC) &fsorted, -1},
@@ -122,7 +139,23 @@ R_CallMethodDef callMethods[] = {
 {"CisReallyReal", (DL_FUNC) &isReallyReal, -1},
 {"Csetlevels", (DL_FUNC) &setlevels, -1},
 {"Crleid", (DL_FUNC) &rleid, -1},
-
+{"Cgmedian", (DL_FUNC) &gmedian, -1},
+{"Cgtail", (DL_FUNC) &gtail, -1},
+{"Cghead", (DL_FUNC) &ghead, -1},
+{"Cglast", (DL_FUNC) &glast, -1},
+{"Cgfirst", (DL_FUNC) &gfirst, -1},
+{"Cgnthvalue", (DL_FUNC) &gnthvalue, -1},
+{"Cdim", (DL_FUNC) &dim, -1},
+{"Cgvar", (DL_FUNC) &gvar, -1},
+{"Cgsd", (DL_FUNC) &gsd, -1},
+{"Cgprod", (DL_FUNC) &gprod, -1},
+{"Cnestedid", (DL_FUNC) &nestedid, -1},
+{"CsetDTthreads", (DL_FUNC) &setDTthreads, -1},
+{"CgetDTthreads", (DL_FUNC) &getDTthreads_R, -1},
+{"Cnqnewindices", (DL_FUNC) &nqnewindices, -1},
+{"Cfsort", (DL_FUNC) &fsort, -1},
+{"Cinrange", (DL_FUNC) &inrange, -1},
+{"Cbetween", (DL_FUNC) &between, -1},
 {NULL, NULL, 0}
 };
 
@@ -139,7 +172,7 @@ void attribute_visible R_init_datatable(DllInfo *info)
     R_registerRoutines(info, NULL, callMethods, NULL, externalMethods);
     R_useDynamicSymbols(info, FALSE);
     setSizes();
-    const char *msg = "... failed. Please forward this message to maintainer('data.table') or datatable-help.";
+    const char *msg = "... failed. Please forward this message to maintainer('data.table').";
     if (NA_INTEGER != INT_MIN) error("Checking NA_INTEGER [%d] == INT_MIN [%d] %s", NA_INTEGER, INT_MIN, msg);
     if (NA_INTEGER != NA_LOGICAL) error("Checking NA_INTEGER [%d] == NA_LOGICAL [%d] %s", NA_INTEGER, NA_LOGICAL, msg);
     if (sizeof(int) != 4) error("Checking sizeof(int) [%d] is 4 %s", sizeof(int), msg);
@@ -168,9 +201,44 @@ void attribute_visible R_init_datatable(DllInfo *info)
     memset(&ld, 0, sizeof(long double));
     if (ld != 0.0) error("Checking memset(&ld, 0, sizeof(long double)); ld == (long double)0.0 %s", msg);
     
-    setNumericRounding(ScalarInteger(2));
+    setNumericRounding(ScalarInteger(0)); // #1642, #1728, #1463, #485
     
-    char_integer64 = mkChar("integer64");  // for speed, similar to R_*Symbol.
+    // create needed strings in advance for speed, same techique as R_*Symbol
+    // Following R-exts 5.9.4; paragraph and example starting "Using install ..."
+    // either use PRINTNAME(install()) or R_PreserveObject(mkChar()) here.
+    char_integer64 = PRINTNAME(install("integer64"));
+    char_ITime =     PRINTNAME(install("ITime"));
+    char_Date =      PRINTNAME(install("Date"));   // used for IDate too since IDate inherits from Date
+    char_POSIXct =   PRINTNAME(install("POSIXct"));
+    if (TYPEOF(char_integer64) != CHARSXP) {
+      // checking one is enough in case of any R-devel changes
+      error("PRINTNAME(install(\"integer64\")) has returned %s not %s",
+            type2char(TYPEOF(char_integer64)), type2char(CHARSXP));
+    }
+    
+    #ifndef _OPENMP
+    Rprintf("\nThis data.table install has not detected OpenMP support. It will work but slower in single threaded mode.\n\n");
+    #endif
+
+    avoid_openmp_hang_within_fork();
 }
 
+
+inline Rboolean INHERITS(SEXP x, SEXP char_) {
+  // Thread safe inherits() by pre-calling install() above in init first then
+  // passing those char_* in here for simple and fast non-API pointer compare.
+  // The thread-safety aspect here is only currently actually needed for list columns in
+  // fwrite() where the class of the cell's vector is tested; the class of the column
+  // itself is pre-stored by fwrite (for example in isInteger64[] and isITime[]).
+  // Thread safe in the limited sense of correct and intended usage :
+  // i) no API call such as install() or mkChar() must be passed in.
+  // ii) no attrib writes must be possible in other threads.
+  SEXP class;
+  if (isString(class = getAttrib(x, R_ClassSymbol))) {
+    for (int i=0; i<LENGTH(class); i++) {
+      if (STRING_ELT(class, i) == char_) return TRUE;
+    }
+  }
+  return FALSE;
+}
 

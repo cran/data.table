@@ -2,29 +2,29 @@
 require(data.table)
 knitr::opts_chunk$set(
   comment = "#",
-  error = FALSE,
-  tidy = FALSE,
-  cache = FALSE,
-  collapse=TRUE)
+    error = FALSE,
+     tidy = FALSE,
+    cache = FALSE,
+ collapse = TRUE)
 
-## ----echo=FALSE-----------------------------------------------------------------------------------
-options(width=100)
+## ----echo = FALSE---------------------------------------------------------------------------------
+options(width = 100L)
 
 ## -------------------------------------------------------------------------------------------------
 DT = fread("melt_default.csv")
-DT 
+DT
 ## dob stands for date of birth.
 
 str(DT)
 
 ## -------------------------------------------------------------------------------------------------
-DT.m1 = melt(DT, id.vars = c("family_id", "age_mother"), 
+DT.m1 = melt(DT, id.vars = c("family_id", "age_mother"),
                 measure.vars = c("dob_child1", "dob_child2", "dob_child3"))
 DT.m1
 str(DT.m1)
 
 ## -------------------------------------------------------------------------------------------------
-DT.m1 = melt(DT, measure.vars = c("dob_child1", "dob_child2", "dob_child3"), 
+DT.m1 = melt(DT, measure.vars = c("dob_child1", "dob_child2", "dob_child3"),
                variable.name = "child", value.name = "dob")
 DT.m1
 
@@ -37,19 +37,19 @@ dcast(DT.m1, family_id ~ ., fun.agg = function(x) sum(!is.na(x)), value.var = "d
 ## -------------------------------------------------------------------------------------------------
 DT = fread("melt_enhanced.csv")
 DT
-## 1 = female, 2 = male 
+## 1 = female, 2 = male
 
 ## -------------------------------------------------------------------------------------------------
 DT.m1 = melt(DT, id = c("family_id", "age_mother"))
-DT.m1[, c("variable", "child") := tstrsplit(variable, "_", fixed=TRUE)]
+DT.m1[, c("variable", "child") := tstrsplit(variable, "_", fixed = TRUE)]
 DT.c1 = dcast(DT.m1, family_id + age_mother + child ~ variable, value.var = "value")
 DT.c1
 
 str(DT.c1) ## gender column is character type now!
 
 ## -------------------------------------------------------------------------------------------------
-colA = paste("dob_child", 1:3, sep="")
-colB = paste("gender_child", 1:3, sep="")
+colA = paste("dob_child", 1:3, sep = "")
+colB = paste("gender_child", 1:3, sep = "")
 DT.m2 = melt(DT, measure = list(colA, colB), value.name = c("dob", "gender"))
 DT.m2
 

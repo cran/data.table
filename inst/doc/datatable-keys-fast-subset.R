@@ -2,14 +2,13 @@
 require(data.table)
 knitr::opts_chunk$set(
   comment = "#",
-  error = FALSE,
-  tidy = FALSE,
-  cache = FALSE,
-  collapse=TRUE)
-options(datatable.auto.index=FALSE)
+    error = FALSE,
+     tidy = FALSE,
+    cache = FALSE,
+ collapse = TRUE)
 
-## ----echo=FALSE-----------------------------------------------------------------------------------
-options(width=100)
+## ----echo = FALSE---------------------------------------------------------------------------------
+options(width = 100L)
 
 ## -------------------------------------------------------------------------------------------------
 flights <- fread("flights14.csv")
@@ -18,9 +17,9 @@ dim(flights)
 
 ## -------------------------------------------------------------------------------------------------
 set.seed(1L)
-DF = data.frame(ID1 = sample(letters[1:2], 10, TRUE), 
+DF = data.frame(ID1 = sample(letters[1:2], 10, TRUE),
                 ID2 = sample(1:3, 10, TRUE),
-                val = sample(10), 
+                val = sample(10),
                 stringsAsFactors = FALSE,
                 row.names = sample(LETTERS[1:10]))
 DF
@@ -30,7 +29,7 @@ rownames(DF)
 ## -------------------------------------------------------------------------------------------------
 DF["C", ]
 
-## ----eval=FALSE-----------------------------------------------------------------------------------
+## ----eval = FALSE---------------------------------------------------------------------------------
 #  rownames(DF) = sample(LETTERS[1:5], 10, TRUE)
 #  # Warning: non-unique values when setting 'row.names': 'C', 'D'
 #  # Error in `row.names<-.data.frame`(`*tmp*`, value = value): duplicate 'row.names' are not allowed
@@ -52,9 +51,10 @@ head(flights)
 flights[.("JFK")]
 
 ## alternatively
-# flights[J("JFK")] (or) flights[list("JFK")]
+# flights[J("JFK")] (or) 
+# flights[list("JFK")]
 
-## ----eval=FALSE-----------------------------------------------------------------------------------
+## ----eval = FALSE---------------------------------------------------------------------------------
 #  flights["JFK"]              ## same as flights[.("JFK")]
 
 ## ----eval = FALSE---------------------------------------------------------------------------------
@@ -88,7 +88,7 @@ key(flights)
 flights[.("LGA", "TPA"), .(arr_delay)]
 
 ## ----eval = FALSE---------------------------------------------------------------------------------
-#  flights[.("LGA", "TPA"), "arr_delay", with=FALSE]
+#  flights[.("LGA", "TPA"), "arr_delay", with = FALSE]
 
 ## -------------------------------------------------------------------------------------------------
 flights[.("LGA", "TPA"), .(arr_delay)][order(-arr_delay)]
@@ -114,33 +114,33 @@ setkey(flights, origin, dest)
 key(flights)
 
 ## -------------------------------------------------------------------------------------------------
-ans <- flights["JFK", max(dep_delay), keyby=month]
+ans <- flights["JFK", max(dep_delay), keyby = month]
 head(ans)
 key(ans)
 
 ## -------------------------------------------------------------------------------------------------
-flights[.("JFK", "MIA"), mult="first"]
+flights[.("JFK", "MIA"), mult = "first"]
 
 ## -------------------------------------------------------------------------------------------------
-flights[.(c("LGA", "JFK", "EWR"), "XNA"), mult="last"]
+flights[.(c("LGA", "JFK", "EWR"), "XNA"), mult = "last"]
 
 ## -------------------------------------------------------------------------------------------------
-flights[.(c("LGA", "JFK", "EWR"), "XNA"), mult="last", nomatch = 0L]
+flights[.(c("LGA", "JFK", "EWR"), "XNA"), mult = "last", nomatch = 0L]
 
-## ----eval=FALSE-----------------------------------------------------------------------------------
+## ----eval = FALSE---------------------------------------------------------------------------------
 #  # key by origin,dest columns
 #  flights[.("JFK", "MIA")]
 
-## ----eval=FALSE-----------------------------------------------------------------------------------
+## ----eval = FALSE---------------------------------------------------------------------------------
 #  flights[origin == "JFK" & dest == "MIA"]
 
 ## -------------------------------------------------------------------------------------------------
 set.seed(2L)
 N = 2e7L
-DT = data.table(x = sample(letters, N, TRUE), 
-                y = sample(1000L, N, TRUE), 
-                val=runif(N), key = c("x", "y"))
-print(object.size(DT), units="Mb")
+DT = data.table(x = sample(letters, N, TRUE),
+                y = sample(1000L, N, TRUE),
+              val = runif(N), key = c("x", "y"))
+print(object.size(DT), units = "Mb")
 
 key(DT)
 
@@ -160,6 +160,6 @@ dim(ans2)
 
 identical(ans1$val, ans2$val)
 
-## ----eval=FALSE-----------------------------------------------------------------------------------
+## ----eval = FALSE---------------------------------------------------------------------------------
 #  1, 5, 10, 19, 22, 23, 30
 

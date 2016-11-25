@@ -1,9 +1,28 @@
 #include <R.h>
 #define USE_RINTERNALS
 #include <Rinternals.h>
-// #include <omp.h>
+#include <Rversion.h>
+#ifdef _OPENMP
+  #include <omp.h>
+#else // so it still compiles on machines with compilers void of openmp support
+  #define omp_get_num_threads() 1
+  #define omp_get_thread_num() 0
+#endif
 // #include <signal.h> // the debugging machinery + breakpoint aidee
 // raise(SIGINT);
+
+// Fixes R-Forge #5150, and #1641
+// a simple check for R version to decide if the type should be R_len_t or 
+// R_xlen_t long vector support was added in R 3.0.0
+#if defined(R_VERSION) && R_VERSION >= R_Version(3, 0, 0)
+  typedef R_xlen_t RLEN;
+#else
+  typedef R_len_t RLEN;
+#endif
+
+#define IS_UTF8(x)  (LEVELS(x) & 8)
+#define IS_ASCII(x) (LEVELS(x) & 64)
+#define IS_LATIN(x) (LEVELS(x) & 4)
 
 #define SIZEOF(x) sizes[TYPEOF(x)]
 #ifdef MIN
@@ -15,6 +34,11 @@
 // init.c
 void setSizes();
 SEXP char_integer64;
+SEXP char_ITime;
+SEXP char_IDate;
+SEXP char_Date;
+SEXP char_POSIXct;
+Rboolean INHERITS(SEXP x, SEXP char_); 
 
 // dogroups.c
 SEXP keepattr(SEXP to, SEXP from);
@@ -66,13 +90,26 @@ SEXP alloccol(SEXP dt, R_len_t n, Rboolean verbose);
 void memrecycle(SEXP target, SEXP where, int r, int len, SEXP source);
 SEXP shallowwrapper(SEXP dt, SEXP cols);
 
-SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEXP xjiscols, SEXP grporder, SEXP order, SEXP starts, SEXP lens, SEXP jexp, SEXP env, SEXP lhs, SEXP newnames, SEXP on, SEXP verbose);
+SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, 
+                SEXP xjiscols, SEXP grporder, SEXP order, SEXP starts, 
+                SEXP lens, SEXP jexp, SEXP env, SEXP lhs, SEXP newnames, 
+                SEXP on, SEXP verbose);
 
 // bmerge.c
-SEXP bmerge(SEXP left, SEXP right, SEXP leftcols, SEXP rightcols, SEXP isorted, SEXP xoArg, SEXP rollarg, SEXP rollends, SEXP nomatch, SEXP retFirst, SEXP retLength, SEXP allLen1);
-
-// fcast.c
-SEXP coerce_to_char(SEXP s, SEXP env);
+SEXP bmerge(SEXP iArg, SEXP xArg, SEXP icolsArg, SEXP xcolsArg, SEXP isorted, 
+                SEXP xoArg, SEXP rollarg, SEXP rollendsArg, SEXP nomatchArg, 
+                SEXP multArg, SEXP opArg, SEXP nqgrpArg, SEXP nqmaxgrpArg);
+SEXP ENC2UTF8(SEXP s);
 
 // rbindlist.c
-SEXP combineFactorLevels(SEXP factorLevels, int * factorType, Rboolean * isRowOrdered);
+SEXP combineFactorLevels(SEXP factorLevels, int *factorType, Rboolean *isRowOrdered);
+
+// quickselect
+double dquickselect(double *x, int n, int k);
+double iquickselect(int *x, int n, int k);
+
+// openmp-utils.c
+int getDTthreads();
+void avoid_openmp_hang_within_fork();
+
+

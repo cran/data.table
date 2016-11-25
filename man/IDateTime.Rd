@@ -29,11 +29,14 @@
 \alias{round.IDate}
 \alias{seq.IDate}
 \alias{split.IDate}
+\alias{second}
+\alias{minute}
 \alias{hour}   
 \alias{yday}   
 \alias{wday}   
 \alias{mday}   
 \alias{week}   
+\alias{isoweek}
 \alias{month}  
 \alias{quarter}
 \alias{year}
@@ -64,11 +67,14 @@ as.ITime(x, ...)
 IDateTime(x, ...)
 \method{IDateTime}{default}(x, ...)
 
+second(x)
+minute(x)
 hour(x)   
 yday(x)   
 wday(x)   
 mday(x)   
 week(x)   
+isoweek(x)
 month(x)  
 quarter(x)
 year(x)   
@@ -131,7 +137,7 @@ intervals. \code{as.POSIXlt} is also useful. For example,
 \code{as.POSIXlt(x)$mon} is the integer month. The R base convenience
 functions \code{weekdays}, \code{months}, and \code{quarters} can also
 be used, but these return character values, so they must be converted to
-factors for use with data.table.
+factors for use with data.table. \code{isoweek} is ISO 8601-consistent.
 
 The \code{round} method for IDate's is useful for grouping and plotting. It can
 round to weeks, months, quarters, and years.
@@ -148,10 +154,13 @@ round to weeks, months, quarters, and years.
    For \code{IDateTime}, a data table with columns \code{idate} and
    \code{itime} in \code{IDate} and \code{ITime} format.
 
-   \code{hour}, code{yday}, \code{wday}, \code{mday}, \code{week},
-   \code{month}, \code{quarter}, and \code{year} return integer values
-   for hour, day of year, day of week, day of month, week, month,
-   quarter, and year.
+   \code{second}, \code{minute}, \code{hour}, code{yday}, \code{wday}, 
+   \code{mday}, \code{week}, \code{month}, \code{quarter}, 
+   and \code{year} return integer values
+   for second, minute, hour, day of year, day of week, 
+   day of month, week, month, quarter, and year, respectively.
+   
+   These values are all taken directly from the \code{POSIXlt} representation of \code{x}, with the notable difference that while \code{yday}, \code{wday}, and \code{mon} are all 0-based, here they are 1-based.
    
 }
 \references{
@@ -161,6 +170,7 @@ round to weeks, months, quarters, and years.
 
   H. Wickham, http://gist.github.com/10238.
   
+  ISO 8601, http://www.iso.org/iso/home/standards/iso8601.htm
 }
 
 \author{ Tom Short, t.short@ieee.org }
