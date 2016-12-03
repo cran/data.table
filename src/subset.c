@@ -12,11 +12,9 @@ static SEXP subsetVectorRaw(SEXP target, SEXP source, SEXP idx, Rboolean any0orN
           // any 0 or NA *in idx*; if there's 0 or NA in the data that's just regular data to be copied
           for (int i=0, ansi=0; i<LENGTH(idx); i++) {
               int this = INTEGER(idx)[i];
-              INTEGER(target)[ansi++] = (this<=0 || this>max) ? NA_INTEGER : INTEGER(source)[this-1];
-              ansi -= (this==0);
-              // skip over 0 without using branch.
+              if (this==0) continue;
+              INTEGER(target)[ansi++] = (this==NA_INTEGER || this>max) ? NA_INTEGER : INTEGER(source)[this-1];
               // negatives are checked before (in check_idx()) not to have reached here
-              // this<=0 covers this==NA_INTEGER || this==0
               // NA_INTEGER == NA_LOGICAL is checked in init.c
           }
         } else {
@@ -39,8 +37,8 @@ static SEXP subsetVectorRaw(SEXP target, SEXP source, SEXP idx, Rboolean any0orN
           else naval.d = NA_REAL;
           for (int i=0, ansi=0; i<LENGTH(idx); i++) {
               int this = INTEGER(idx)[i];
-              REAL(target)[ansi++] = (this<=0 || this>max) ? naval.d : REAL(source)[this-1];
-              ansi -= (this==0);
+              if (this==0) continue;
+              REAL(target)[ansi++] = (this==NA_INTEGER || this>max) ? naval.d : REAL(source)[this-1];
           }
         } else {
           double *vd = REAL(source);
@@ -65,8 +63,8 @@ static SEXP subsetVectorRaw(SEXP target, SEXP source, SEXP idx, Rboolean any0orN
           if (any0orNA) {
             for (int i=0, ansi=0; i<LENGTH(idx); i++) {
                 int this = INTEGER(idx)[i];
-                SET_STRING_ELT(target, ansi++, (this<=0 || this>max) ? NA_STRING : STRING_ELT(source, this-1));
-                ansi -= (this==0);
+                if (this==0) continue;
+                SET_STRING_ELT(target, ansi++, (this==NA_INTEGER || this>max) ? NA_STRING : STRING_ELT(source, this-1));
             }
           } else {
             SEXP *vd = (SEXP *)DATAPTR(source);
@@ -84,8 +82,8 @@ static SEXP subsetVectorRaw(SEXP target, SEXP source, SEXP idx, Rboolean any0orN
           if (any0orNA) {
             for (int i=0, ansi=0; i<LENGTH(idx); i++) {
                 int this = INTEGER(idx)[i];
-                SET_VECTOR_ELT(target, ansi++, (this<=0 || this>max) ? R_NilValue : VECTOR_ELT(source, this-1));
-                ansi -= (this==0);
+                if (this==0) continue;
+                SET_VECTOR_ELT(target, ansi++, (this==NA_INTEGER || this>max) ? R_NilValue : VECTOR_ELT(source, this-1));
             }
           } else {
             for (int i=0; i<LENGTH(idx); i++) {
@@ -98,11 +96,11 @@ static SEXP subsetVectorRaw(SEXP target, SEXP source, SEXP idx, Rboolean any0orN
         if (any0orNA) {
           for (int i=0, ansi=0; i<LENGTH(idx); i++) {
               int this = INTEGER(idx)[i];
-              if (this<=0 || this>max) {
+              if (this==0) continue;
+              if (this==NA_INTEGER || this>max) {
                   COMPLEX(target)[ansi].r = NA_REAL;
                   COMPLEX(target)[ansi++].i = NA_REAL;
               } else COMPLEX(target)[ansi++] = COMPLEX(source)[this-1];
-              ansi -= (this==0);
           }
         } else {
           for (int i=0; i<LENGTH(idx); i++)
@@ -113,7 +111,8 @@ static SEXP subsetVectorRaw(SEXP target, SEXP source, SEXP idx, Rboolean any0orN
         if (any0orNA) {
           for (int i=0, ansi=0; i<LENGTH(idx); i++) {
               int this = INTEGER(idx)[i];
-              RAW(target)[ansi++] = (this<=0 || this>max) ? (Rbyte) 0 : RAW(source)[this-1];
+              if (this==0) continue;
+              RAW(target)[ansi++] = (this==NA_INTEGER || this>max) ? (Rbyte) 0 : RAW(source)[this-1];
           }
         } else {
           for (int i=0; i<LENGTH(idx); i++)
@@ -175,7 +174,10 @@ SEXP convertNegativeIdx(SEXP idx, SEXP maxArg)
 
     // idx is all negative without any NA but perhaps 0 present (num0) ...
 
-    char *tmp = Calloc(max, char);    // 4 times less memory that INTSXP in src/main/subscript.c
+    char *tmp = (char *)R_alloc(max, sizeof(char));    // 4 times less memory that INTSXP in src/main/subscript.c
+    for (int i=0; i<max; i++) tmp[i] = 0;
+    // Not using Calloc as valgrind shows it leaking (I don't see why) - just changed to R_alloc to be done with it.
+    // Maybe R needs to be rebuilt with valgrind before Calloc's Free can be matched up by valgrind?
     int firstDup = 0, numDup = 0, firstBeyond = 0, numBeyond = 0;
     for (int i=0; i<LENGTH(idx); i++) {
         int this = -INTEGER(idx)[i];
@@ -198,7 +200,6 @@ SEXP convertNegativeIdx(SEXP idx, SEXP maxArg)
     SEXP ans = PROTECT(allocVector(INTSXP, max-LENGTH(idx)+num0+numDup+numBeyond));
     int ansi = 0;
     for (int i=0; i<max; i++) if (tmp[i]==0) INTEGER(ans)[ansi++] = i+1;
-    Free(tmp);
     UNPROTECT(1);
     if (ansi != max-LENGTH(idx)+num0+numDup+numBeyond) error("Internal error: ansi[%d] != max[%d]-LENGTH(idx)[%d]+num0[%d]+numDup[%d]+numBeyond[%d] in convertNegativeIdx",ansi,max,LENGTH(idx),num0,numDup,numBeyond);
     return(ans);

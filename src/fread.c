@@ -561,12 +561,9 @@ SEXP readfile(SEXP input, SEXP separg, SEXP nrowsarg, SEXP headerarg, SEXP nastr
         error("quote must either be empty or a single character");
     quote = CHAR(STRING_ELT(quoteArg,0));
 
-    // Extra tracing for apparent 32bit Windows problem: https://github.com/Rdatatable/data.table/issues/1111
-    if (!isInteger(showProgressArg)) error("showProgress is not type integer but type '%s'. Please report.", type2char(TYPEOF(showProgressArg)));
-    if (LENGTH(showProgressArg)!=1) error("showProgress is not length 1 but length %d. Please report.", LENGTH(showProgressArg));
-    int showProgress = INTEGER(showProgressArg)[0];
-    if (showProgress!=0 && showProgress!=1)
-        error("showProgress is not 0 or 1 but %d. Please report.", showProgress);    
+    if (!isLogical(showProgressArg) || LENGTH(showProgressArg)!=1 || LOGICAL(showProgressArg)[0]==NA_LOGICAL)
+        error("Internal error: showProgress is not TRUE or FALSE. Please report.");
+    const Rboolean showProgress = LOGICAL(showProgressArg)[0];
     
     if (!isString(dec) || LENGTH(dec)!=1 || strlen(CHAR(STRING_ELT(dec,0))) != 1)
         error("dec must be a single character");
@@ -609,10 +606,10 @@ SEXP readfile(SEXP input, SEXP separg, SEXP nrowsarg, SEXP headerarg, SEXP nastr
     if( ! isNull(nastrings)) {
       FLAG_NA_STRINGS_NULL = 0;
       NASTRINGS_LEN = LENGTH(nastrings);
-      NA_MASK = (int *)malloc(NASTRINGS_LEN * sizeof(int));
+      NA_MASK = (int *)R_alloc(NASTRINGS_LEN, sizeof(int));
       NA_MAX_NCHAR = get_maxlen(nastrings);
-      NA_STRINGS = malloc(NASTRINGS_LEN * sizeof(char *));
-      EACH_NA_STRING_LEN = malloc(NASTRINGS_LEN * sizeof(int));
+      NA_STRINGS = (const char **)R_alloc(NASTRINGS_LEN, sizeof(char *));
+      EACH_NA_STRING_LEN = (int *)R_alloc(NASTRINGS_LEN, sizeof(int));
       for (int i = 0; i < NASTRINGS_LEN; i++) {
         NA_STRINGS[i] = CHAR(STRING_ELT(nastrings, i));
         EACH_NA_STRING_LEN[i] = strlen(CHAR(STRING_ELT(nastrings, i)));
@@ -807,12 +804,12 @@ SEXP readfile(SEXP input, SEXP separg, SEXP nrowsarg, SEXP headerarg, SEXP nastr
         if (verbose) Rprintf("Using supplied sep '%s' ... ", seps[0]=='\t'?"\\t":seps);
     }
     int nseps = strlen(seps);
-    int *maxcols = Calloc(nseps, int); // if (fill) grab longest col stretch as topNcol
-    if (maxcols == NULL) error("Error while allocating memory to store max column size of each separator.");
+    int *maxcols = (int *)R_alloc(nseps, sizeof(int)); // if (fill) grab longest col stretch as topNcol
     const char *topStart=ch, *thisStart=ch;
     char topSep=seps[0];
     int topLine=0, topLen=0, topNcol=-1;
     for (int s=0; s<nseps; s++) {
+        maxcols[s] = 0;  // the R_alloc above doesn't initialize
         if (seps[s] == decChar) continue;
         ch=pos; sep=seps[s];
         i=0;
@@ -846,7 +843,6 @@ SEXP readfile(SEXP input, SEXP separg, SEXP nrowsarg, SEXP headerarg, SEXP nastr
             }
         }
     }
-    Free(maxcols);
     if (topNcol<2) {
         if (verbose) Rprintf("Deducing this is a single column input.\n");
         sep=eol;
@@ -1256,7 +1252,7 @@ SEXP readfile(SEXP input, SEXP separg, SEXP nrowsarg, SEXP headerarg, SEXP nastr
     Rboolean hasPrinted=FALSE, whileBreak=FALSE;
     i = 0;
     while (i<nrow && ch<eof) {
-        if (showProgress==1 && clock()>nexttime) {
+        if (showProgress && clock()>nexttime) {
             Rprintf("\rRead %.1f%% of %d rows", (100.0*i)/nrow, nrow);   // prints straight away if the mmap above took a while, is the idea
             R_FlushConsole();    // for Windows
             nexttime = clock()+CLOCKS_PER_SEC;
@@ -1338,7 +1334,7 @@ SEXP readfile(SEXP input, SEXP separg, SEXP nrowsarg, SEXP headerarg, SEXP nastr
         }
         if (whileBreak) break;
     }
-    if (showProgress==1 && hasPrinted) {
+    if (showProgress && hasPrinted) {
         j = 1+(clock()-t0)/CLOCKS_PER_SEC;
         Rprintf("\rRead %d rows and %d (of %d) columns from %.3f GB file in %02d:%02d:%02d\n", i, ncol-numNULL, ncol, 1.0*filesize/(1024*1024*1024), j/3600, (j%3600)/60, j%60);
         R_FlushConsole();
@@ -1365,12 +1361,7 @@ SEXP readfile(SEXP input, SEXP separg, SEXP nrowsarg, SEXP headerarg, SEXP nastr
         if (verbose) Rprintf("Read %d rows. Exactly what was estimated and allocated up front\n", i);
     }
     for (j=0; j<ncol-numNULL; j++) SETLENGTH(VECTOR_ELT(ans,j), nrow);
-    // release memory from NA handling operations
-    if(!FLAG_NA_STRINGS_NULL) {
-      free(NA_MASK);
-      free(NA_STRINGS);
-      free(EACH_NA_STRING_LEN);
-    }
+    
     // ********************************************************************************************
     //   Convert na.strings to NA for character columns
     // ********************************************************************************************

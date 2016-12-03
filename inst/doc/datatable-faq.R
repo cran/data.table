@@ -8,43 +8,6 @@ knitr::opts_chunk$set(
  collapse = TRUE)
 
 ## ------------------------------------------------------------------------
-DT = data.table(x = 1:3)
-q = quote(x)
-
-#return a vector
-DT[ , eval(q)]
-
-q = quote(list(x))
-
-#return a one-column 'data.table'
-DT[ , eval(q)]
-
-## ------------------------------------------------------------------------
-q = quote(mean(x))
-DT[ , eval(q)]  # identical to 'DT[ , mean(x)]'
-
-DT = data.table(x = 1:3, y = 4:6, z = 7:9)
-q = quote(list(x, sd(y), mean(y*z)))
-DT[ , eval(q)]  # identical to 'DT[ , list(x, sd(y), mean(y*z))]'
-
-## ------------------------------------------------------------------------
-DT = as.data.table(iris)
-setkey(DT, Species)
-myfunction = function(dt, expr) {
-    e = substitute(expr)
-    dt[ , eval(e), by = Species]
-}
-myfunction(DT, sum(Sepal.Width))
-
-## ------------------------------------------------------------------------
-DT = as.data.table(iris)
-whatToRun = quote( .(AvgWidth = mean(Sepal.Width),
-                     MaxLength = max(Sepal.Length)) )
-DT[, eval(whatToRun), by = Species]
-DT[, eval(whatToRun), by = .(FirstLetter = substring(Species, 1, 1))]
-DT[, eval(whatToRun), by = .(Petal.Width = round(Petal.Width, 0))]
-
-## ------------------------------------------------------------------------
 X = data.table(grp = c("a", "a", "b",
                        "b", "b", "c", "c"), foo = 1:7)
 setkey(X, grp)

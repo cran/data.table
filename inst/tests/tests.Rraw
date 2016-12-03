@@ -42,6 +42,7 @@ oldWhenJsymbol = options(datatable.WhenJisSymbolThenCallingScope=FALSE)
 
 if (!.devtesting) {
     test = data.table:::test
+    INT = data.table:::INT
     compactprint = data.table:::compactprint
     is.sorted = data.table:::is.sorted
     forderv = data.table:::forderv
@@ -91,7 +92,7 @@ setkey(TESTDT,a,b)
 #       [5,] 4 9 5
 #       [6,] 4 9 6
 #       [7,] 7 2 7
-INT = function(...) { as.integer(c(...)) }
+
 ##########################
 
 test(1, TESTDT[SJ(4,6),v,mult="first"], 3L)
@@ -5953,7 +5954,8 @@ setattr(ans, 'names', nm)
 test(1463.27, shift(x, 1:2, give.names=TRUE), ans)
 
 # FR #686
-DT = data.table(a=rep(c("A", "B", "C", "A", "B"), c(2,2,3,1,2)))
+DT = data.table(a=rep(c("A", "B", "C", "A", "B"), c(2,2,3,1,2)), foo=1:10)
+# Seemingly superfluous 'foo' is needed to test fix for #1942
 DT[, b := as.integer(factor(a))][, c := as.numeric(factor(a))]
 test(1464.1, rleidv(DT, "a"), c(1L, 1L, 2L, 2L, 3L, 3L, 3L, 4L, 5L, 5L))
 test(1464.2, rleid(DT$a), c(1L, 1L, 2L, 2L, 3L, 3L, 3L, 4L, 5L, 5L))
@@ -5962,6 +5964,15 @@ test(1464.4, rleid(DT$b), c(1L, 1L, 2L, 2L, 3L, 3L, 3L, 4L, 5L, 5L))
 test(1464.5, rleidv(DT, "c"), c(1L, 1L, 2L, 2L, 3L, 3L, 3L, 4L, 5L, 5L))
 test(1464.6, rleid(DT$c), c(1L, 1L, 2L, 2L, 3L, 3L, 3L, 4L, 5L, 5L))
 test(1464.7, rleid(as.complex(c(1,0+5i,0+5i,1))), error="Type 'complex' not supported")
+test(1464.8, rleidv(DT, 0), error="outside range")
+test(1464.9, rleidv(DT, 5), error="outside range")
+test(1464.11, rleidv(DT, 1:4), 1:nrow(DT))
+set.seed(1)
+DT = data.table( sample(1:2,20,replace=TRUE), sample(1:2,20,replace=TRUE), sample(1:2,20, replace=TRUE))
+test(1464.12, rleidv(DT, 1:4), error="outside range")
+test(1464.13, rleidv(DT, 1:2), ans<-INT(1,2,3,4,5,6,6,6,7,8,8,9,10,11,12,13,14,15,16,17))
+test(1464.14, rleidv(DT, 2:1), ans)
+test(1464.15, rleidv(DT, c(3,1)), INT(1,1,2,2,3,4,5,5,6,7,8,9,10,11,12,13,14,15,16,17))
 
 # data.table-xts conversion #882
 
@@ -7497,11 +7508,15 @@ test(1611.1, as.data.table(l1), setnames(setDT(as.data.frame(l1)), c("a", paste(
 test(1611.2, as.data.table(l2), setnames(setDT(as.data.frame(l2)), c("V1", "V1.1", paste("V", 2:5, sep=""))))
 
 # fix for #646
-ll = list(a=as.POSIXlt("2015-01-01"), b=1:5)
-test(1612.1, as.data.table(ll), data.table(a=as.POSIXct("2015-01-01"), b=1:5), warning="POSIXlt column type detected")
+# tz= is explicitly specified otherwise CRAN's solaris (both sparc and x86) fail. It may not be solaris per se
+# but something related to the timezone of the two solaris machines. I guess one or the other of as.POSIXct or
+# as.POSIXlt create the 'tzone' attribute differently for default tz="", just on solaris. I checked test.data.table
+# already uses all.equal(), not identical(). So I don't think it is an accuracy problem. But could be wrong. 
+ll = list(a=as.POSIXlt("2015-01-01", tz='UTC'), b=1:5)
+test(1612.1, as.data.table(ll), data.table(a=as.POSIXct("2015-01-01", tz='UTC'), b=1:5), warning="POSIXlt column type detected")
 dt = data.table(d1="1984-03-17")
-ans = data.table(d1="1984-03-17", d2=as.POSIXct("1984-03-17"))
-test(1612.2, dt[, d2 := strptime(d1, "%Y-%m-%d")], ans, warning="POSIXlt column type detected and converted")
+ans = data.table(d1="1984-03-17", d2=as.POSIXct("1984-03-17", tz='UTC'))
+test(1612.2, dt[, d2 := strptime(d1, "%Y-%m-%d", tz='UTC')], ans, warning="POSIXlt column type detected and converted")
 ll = list(a=as.POSIXlt("2015-01-01"), b=2L)
 test(1612.3, setDT(ll), error="Column 1 is of POSIXlt type")
 
@@ -7972,8 +7987,8 @@ dt = data.table(x=sample(3, 10, TRUE), y=1:10)
 v1 = capture.output(ans1 <- dt[.(3:2), on="x", verbose=TRUE])
 setindex(dt, x)
 v2 = capture.output(ans2 <- dt[.(3:2), on="x", verbose=TRUE])
-test(1634.1, any(grepl("not found", v1)), TRUE)
-test(1634.2, any(grepl("Reusing index", v2)), TRUE)
+test(1634.1, any(grepl("ad hoc", v1)), TRUE)
+test(1634.2, any(grepl("existing index", v2)), TRUE)
 
 # fread's fill argument detects separator better in complex cases as well, #1573
 text = "a	b	c	d	e	f	g	h	i	j	k	l\n1	P	P;A;E;	Y	YW;	H().	1-3 pro\n2	Q9	a;a;a;a;	YB	YH;	M().	13 pn ba\n1	P3	P;	Y	Y;	R().	14 p\n53	P	P6;B;D;0;5;a;X;a;4R;	Y	Y;	H().	13 pe e\n1	P	P;O;O;a;a;a;	HLA-A	HLA-A;;	H().	HcIha,A-n\n102	P	P;O;P;P;P;P;P;P;a;a;a;a;a;a;a;a;a;a;	H-A	H-A;;	H().	HcIha,A"
@@ -8564,21 +8579,24 @@ nqjoin_test <- function(x, y, k=1L, test_no, mult="all") {
         # if (identical(all.equal(ans1,ans2,ignore.row.order=TRUE), TRUE)) cat("successful\n") else stop("failed\n")
     }
 }
-# without NAs in x and i
-nqjoin_test(x, y, 1L, 1641.0, mult="all")
-nqjoin_test(x, y, 2L, 1642.0, mult="all")
-nqjoin_test(x, y, 1L, 1643.0, mult="first")
-nqjoin_test(x, y, 2L, 1644.0, mult="first")
-nqjoin_test(x, y, 1L, 1645.0, mult="last")
-nqjoin_test(x, y, 2L, 1646.0, mult="last")
 
-# with NAs in x and i
-nqjoin_test(dt1, dt2, 1L, 1647.0, mult="all")
-nqjoin_test(dt1, dt2, 2L, 1648.0, mult="all")
-nqjoin_test(dt1, dt2, 1L, 1649.0, mult="first")
-nqjoin_test(dt1, dt2, 2L, 1650.0, mult="first")
-nqjoin_test(dt1, dt2, 1L, 1651.0, mult="last")
-nqjoin_test(dt1, dt2, 2L, 1652.0, mult="last")
+if (TRUE) {  # turn off to FALSE temporarily if needed to rerun valgrind, as very slow
+  # without NAs in x and i
+  nqjoin_test(x, y, 1L, 1641.0, mult="all")
+  nqjoin_test(x, y, 2L, 1642.0, mult="all")
+  nqjoin_test(x, y, 1L, 1643.0, mult="first")
+  nqjoin_test(x, y, 2L, 1644.0, mult="first")
+  nqjoin_test(x, y, 1L, 1645.0, mult="last")
+  nqjoin_test(x, y, 2L, 1646.0, mult="last")
+
+  # with NAs in x and i
+  nqjoin_test(dt1, dt2, 1L, 1647.0, mult="all")
+  nqjoin_test(dt1, dt2, 2L, 1648.0, mult="all")
+  nqjoin_test(dt1, dt2, 1L, 1649.0, mult="first")
+  nqjoin_test(dt1, dt2, 2L, 1650.0, mult="first")
+  nqjoin_test(dt1, dt2, 1L, 1651.0, mult="last")
+  nqjoin_test(dt1, dt2, 2L, 1652.0, mult="last")
+}
 
 # TODO: add tests for nomatch=NA..
 # tested, but takes quite some time.. so commenting for now
@@ -8646,6 +8664,13 @@ test(1658.3, fwrite(data.table(
     "other \"column"=c('foo bar', NA, 'quote" and \\ bs')),
     quote=TRUE, qmethod="double"),
     output='"a","other ""column"\n,"foo bar"\n1.2e-100,\n3.01,"quote"" and \\ bs"\n')
+
+# presence of " triggers auto quoting as well, #1925
+test(1658.4, fwrite(data.table(a=1:4, b=c('"foo','ba"r','baz"','a "quoted" region'))),
+    output='a,b\n1,"""foo"\n2,"ba""r"\n3,"baz"""\n4,"a ""quoted"" region"')
+test(1658.5, fwrite(data.table(a=1:4, b=c('"foo','ba"r','baz"','a "quoted" region')), qmethod='escape'),
+    output='a,b\n1,"\\"foo"\n2,"ba\\"r"\n3,"baz\\""\n4,"a \\"quoted\\" region"')
+# NB: sep2[2] triggering quoting when list columns are present is tested in test 1736
 
 # changing sep
 DT = data.table(a="foo", b="ba\"r")
@@ -8838,24 +8863,25 @@ test(1666.8, grep("Using existing index", capture.output(d[k==1L, verbose=TRUE])
 d1 = data.table(k=3:1) # join - no index
 d2 = data.table(k=2:4)
 options("datatable.use.index"=TRUE, "datatable.auto.index"=TRUE)
-test(1666.9, d1[d2, on="k", verbose=TRUE], d1[d2, on="k"], output="not found.")
+test(1666.9, d1[d2, on="k", verbose=TRUE], d1[d2, on="k"], output="ad hoc")
 options("datatable.use.index"=TRUE, "datatable.auto.index"=FALSE)
-test(1666.10, d1[d2, on="k", verbose=TRUE], d1[d2, on="k"], output="not found.")
+test(1666.11, d1[d2, on="k", verbose=TRUE], d1[d2, on="k"], output="ad hoc")
 options("datatable.use.index"=FALSE, "datatable.auto.index"=FALSE)
-test(1666.11, grep("Looking for existing (secondary) index", capture.output(d1[d2, on="k", verbose=TRUE])), integer(0)) # not looking for index
+test(1666.12, grep("Looking for existing (secondary) index", capture.output(d1[d2, on="k", verbose=TRUE])), integer(0)) # not looking for index
 options("datatable.use.index"=FALSE, "datatable.auto.index"=TRUE)
-test(1666.12, grep("Looking for existing (secondary) index", capture.output(d1[d2, on="k", verbose=TRUE])), integer(0))
-d1 = data.table(k=3:1) # join - index
-d2 = data.table(k=2:4)
+test(1666.13, grep("Looking for existing (secondary) index", capture.output(d1[d2, on="k", verbose=TRUE])), integer(0))
+d1 = data.table(k=3:1,v1=10:12) # join - index
+d2 = data.table(k=2:4,v2=20:22)
 setindex(d1, k)
+ans = data.table(k=2:4, v1=c(11L,10L,NA), v2=20:22)
 options("datatable.use.index"=TRUE, "datatable.auto.index"=TRUE)
-test(1666.13, d1[d2, on="k", verbose=TRUE], d1[d2, on="k"], output="found. Reusing index.")
+test(1666.14, d1[d2, on="k", verbose=TRUE], ans, output="existing index")
 options("datatable.use.index"=TRUE, "datatable.auto.index"=FALSE)
-test(1666.14, d1[d2, on="k", verbose=TRUE], d1[d2, on="k"], output="found. Reusing index.")
+test(1666.15, d1[d2, on="k", verbose=TRUE], ans, output="existing index")
 options("datatable.use.index"=FALSE, "datatable.auto.index"=FALSE)
-test(1666.15, grep("Looking for existing (secondary) index", capture.output(d1[d2, on="k", verbose=TRUE])), integer(0)) # not looking for index
+test(1666.16, d1[d2, on="k", verbose=TRUE], ans, output='ad hoc')
 options("datatable.use.index"=FALSE, "datatable.auto.index"=TRUE)
-test(1666.16, grep("Looking for existing (secondary) index", capture.output(d1[d2, on="k", verbose=TRUE])), integer(0))
+test(1666.17, d1[d2, on="k", verbose=TRUE], ans, output='ad hoc')
 # reset defaults
 options("datatable.use.index"=TRUE, "datatable.auto.index"=TRUE)
 
@@ -9204,7 +9230,7 @@ test(1704, all.equal(data.table( a=1:3, b=4:6 ), data.table( A=1:3, B=4:6 ), che
 
 if (.Platform$OS.type!="windows") {
   # On Windows: "'mc.cores' > 1 is not supported on Windows".
-  # parallel package isn't parallel but data.table is.
+  # parallel package isn't parallel on Windows, but data.table is.
   if ("package:parallel" %in% search()) {   #1745 and #1727
     test(1705, getDTthreads()<=2) # this was set at the top of tests.Rraw.  CRAN's policy is max two.
                                   # not 1, to pass on Rdevel clag UBSAN and ASAN without OpenMP
@@ -9424,10 +9450,13 @@ if ("package:bit64" %in% search()) {
   test(1730.3, as.integer("-2147483647"), -2147483647L)
   test(1730.4, as.integer("-2147483648"), NA_integer_, warning="coercion")
   test(1730.5, as.integer64("-2147483648"), as.integer64(-2147483648))
-  test(1730.6, as.character((as.integer64(2^62)-1)*2+1), "9223372036854775807")
-  test(1730.7, as.character((as.integer64(2^62)-1)*2+2), NA_character_, warning="integer64 overflow")
-  test(1730.8, as.character(-(as.integer64(2^62)-1)*2-1), "-9223372036854775807")
-  test(1730.9, as.character(-(as.integer64(2^62)-1)*2-2), NA_character_, warning="integer64.*flow")
+  if (.devtesting) {
+    # these don't pass UBSAN/USAN because of the overflow being tested here, so just in dev not on CRAN
+    test(1730.6, as.character((as.integer64(2^62)-1)*2+1), "9223372036854775807")
+    test(1730.7, as.character((as.integer64(2^62)-1)*2+2), NA_character_, warning="integer64 overflow")
+    test(1730.8, as.character(-(as.integer64(2^62)-1)*2-1), "-9223372036854775807")
+    test(1730.9, as.character(-(as.integer64(2^62)-1)*2-2), NA_character_, warning="integer64.*flow")
+  }
   # Currently bit64 truncs to extremes in character coercion. Don't test that in case bit64 changes in future.
   # as.integer64("-9223372036854775808") == NA
   # as.integer64("-9223372036854775999") == NA
@@ -9483,12 +9512,13 @@ fwrite(DT,f,quote='auto',qmethod='escape')
 ans = c('x,"ColName,WithComma","Three', 'Line', 'ColName"',
         '"fo,o",1,"bar','"',
         'foo,2,noNeedToQuote',
-        'b"ar,3,"a',  'long', "\\\"sentence\\\"\"",
+        '"b\\"ar",3,"a',  'long', "\\\"sentence\\\"\"",
         ',4,0000',
         ',5," ','  "',
         "NA,6,\"   \\\"", "  \"")
 test(1732.4, readLines(f), ans)
 fwrite(DT,f,quote='auto',qmethod='double')
+ans[7] = '"b""ar",3,"a'
 ans[9] = "\"\"sentence\"\"\""
 ans[13] = "NA,6,\"   \"\""
 test(1732.5, readLines(f), ans)
@@ -9709,6 +9739,47 @@ x = c(2000.167,2000.417,2000.667,2000.917,2001.167)
 test(1744.1, DT[.(x),roll=FALSE,which=TRUE], INT(NA,2,NA,3,NA))
 test(1744.2, DT[.(x),roll=TRUE, which=TRUE], INT(1,2,2,3,3))
 test(1744.3, DT[.(x),roll=1/12, which=TRUE], INT(NA,2,NA,3,NA))
+
+# 0's at the end of a non-empty subset of empty DT, #1937
+test(1745.1, data.table(a=character(0))[c(1,0)], data.table(a=NA_character_))
+test(1745.2, data.table(a=numeric(0))[c(1,0)], data.table(a=NA_real_))
+test(1745.3, data.table(a=integer(0))[c(1,0)], data.table(a=NA_integer_))
+
+# Long standing crash when by=.EACHI, nomatch=0, the first item in i has no match
+# AND j has function call that is passed a key column, #1933.
+DT = data.table(A=letters[1:5],B=1:5,key="A")
+ids = c("p","q","r","c","s","d")
+test(1746.1, DT[ids, A, by=.EACHI, nomatch=0], data.table(A=c("c","d"),A=c("c","d")))   # was always ok
+test(1746.2, DT[ids, print(A), by=.EACHI, nomatch=0],                                   # reliable crash in v1.9.6 and v1.9.8
+             data.table(A=character(0)), output="\"c\".*\"d\"")
+test(1746.3, DT[ids, {print(A);A}, by=.EACHI, nomatch=0],                               # reliable crash in v1.9.6 and v1.9.8
+             data.table(A=c("c","d"),V1=c("c","d")), output="\"c\".*\"d\"")
+
+# combining on= with by= and keyby=, #1943
+freshDT = data.table(x = rep(c("a", "b"), each = 4), y = 1:0, z = c(3L, 6L, 8L, 5L, 4L, 1L, 2L, 7L))
+DT = copy(freshDT)
+test(1747.1, DT["b", max(z), by    = y, on = "x"], ans1<-data.table(y=1:0, V1=c(4L,7L)))
+test(1747.2, DT["b", max(z), keyby = y, on = "x"], ans2<-data.table(y=0:1, V1=c(7L,4L), key="y"))
+test(1747.3, DT[x=="b", max(z), by = y], ans1)
+test(1747.4, DT[x=="b", max(z), keyby = y], ans2)
+DT = copy(freshDT)  # to clear any auto indexes
+test(1747.5, DT[x=="b", max(z), by = y], ans1)
+test(1747.6, DT[x=="b", max(z), keyby = y], ans2)
+setkey(DT, x)
+test(1747.7, DT["b", max(z), by = y], ans1)
+test(1747.8, DT["b", max(z), keyby = y], ans2)
+DT = copy(freshDT)  # and agin without the == having run before the setkey
+setkey(DT, x)
+test(1747.9,  DT["b", max(z), by = y], ans1)
+test(1747.11, DT["b", max(z), keyby = y], ans2)
+
+DT = as.data.table(mtcars[mtcars$cyl %in% c(6, 8), c("am", "vs", "hp")])
+test(1748.1, DT[.(0), max(hp), by    = vs, on = "am"], ans1<-data.table(vs=c(1,0), V1=c(123,245)))
+test(1748.2, DT[.(0), max(hp), keyby = vs, on = "am"], ans2<-data.table(vs=c(0,1), V1=c(245,123), key="vs"))
+DT = as.data.table(mtcars[mtcars$cyl %in% c(6, 8), c("am", "vs", "hp")])
+test(1748.3, DT[am==0, max(hp), by=vs], ans1)
+test(1748.4, DT[am==0, max(hp), keyby=vs], ans2)
+
 
 
 ##########################

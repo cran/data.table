@@ -176,7 +176,7 @@ static inline void writeNumeric(double x, char **thisCh)
     // By design we can just lookup the power from the tables
     double y = (1.0+acc) * expsig[exponent];  // low magnitude mult
     int exp = exppow[exponent];
-    if (y>=10.0) { y /= 10; exp++; }
+    if (y>=9.99999999999999) { y /= 10; exp++; }
     unsigned long long l = y * SIZE_SF;  // low magnitude mult 10^NUM_SF
     // l now contains NUM_SF+1 digits as integer where repeated /10 below is accurate
 
@@ -259,15 +259,15 @@ static inline void writeString(SEXP x, char **thisCh)
     Rboolean q = quote;
     if (q==NA_LOGICAL) { // quote="auto"
       const char *tt = CHAR(x);
-      while (*tt!='\0' && *tt!=sep && *tt!=sep2 && *tt!='\n') *ch++ = *tt++;
+      while (*tt!='\0' && *tt!=sep && *tt!=sep2 && *tt!='\n' && *tt!='"') *ch++ = *tt++;
       // windows includes \n in its \r\n so looking for \n only is sufficient
       // sep2 is set to '\0' when no list columns are present
       if (*tt=='\0') {
-        // most common case: no sep or newline contained in string
+        // most common case: no sep, newline or " contained in string
         *thisCh = ch;  // advance caller over the field already written
         return;
       }
-      ch = *thisCh; // rewind the field written since it contains some sep, sep2 or \n
+      ch = *thisCh; // rewind the field written since it needs to be quoted
       q = TRUE;
     }
     if (q==FALSE) {

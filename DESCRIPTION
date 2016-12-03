@@ -1,8 +1,13 @@
 Package: data.table
-Version: 1.9.8
-Title: Extension of Data.frame
-Author: M Dowle, A Srinivasan, T Short, S Lianoglou with contributions from R Saporta, E Antonyan
-Maintainer: Matt Dowle <mattjdowle@gmail.com>
+Version: 1.10.0
+Title: Extension of `data.frame`
+Authors@R: c(
+  person("Matt","Dowle",      role=c("aut","cre"), email="mattjdowle@gmail.com"),
+  person("Arun","Srinivasan", role="aut", email="arunkumar.sriniv@gmail.com"),
+  person("Jan","Gorecki",     role="ctb"),
+  person("Tom","Short",       role="ctb"),
+  person("Steve","Lianoglou", role="ctb"),
+  person("Eduard","Antonyan", role="ctb") )
 Depends: R (>= 3.0.0)
 Imports: methods
 Suggests: bit64, knitr, chron, ggplot2 (>= 0.9.0), plyr, reshape,
@@ -17,6 +22,13 @@ MailingList: datatable-help@lists.r-forge.r-project.org
 VignetteBuilder: knitr
 ByteCompile: TRUE
 NeedsCompilation: yes
-Packaged: 2016-11-23 17:19:57.267 UTC; mdowle
+Packaged: 2016-12-02 19:25:45.346 UTC; mdowle
+Author: Matt Dowle [aut, cre],
+  Arun Srinivasan [aut],
+  Jan Gorecki [ctb],
+  Tom Short [ctb],
+  Steve Lianoglou [ctb],
+  Eduard Antonyan [ctb]
+Maintainer: Matt Dowle <mattjdowle@gmail.com>
 Repository: CRAN
-Date/Publication: 2016-11-25 12:55:43
+Date/Publication: 2016-12-03 11:05:23

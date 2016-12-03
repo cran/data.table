@@ -11,7 +11,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 
-<meta name="date" content="2016-11-23" />
+<meta name="date" content="2016-12-02" />
 
 <title>Introduction to data.table</title>
 
@@ -68,7 +68,7 @@ code > span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Inf
 
 
 <h1 class="title toc-ignore">Introduction to data.table</h1>
-<h4 class="date"><em>2016-11-23</em></h4>
+<h4 class="date"><em>2016-12-02</em></h4>
 
 
 
@@ -217,10 +217,10 @@ ans
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">odt =<span class="st"> </span><span class="kw">data.table</span>(<span class="dt">col =</span> <span class="kw">sample</span>(<span class="fl">1e7</span>))
 (t1 &lt;-<span class="st"> </span><span class="kw">system.time</span>(ans1 &lt;-<span class="st"> </span>odt[base::<span class="kw">order</span>(col)]))  ## uses order from base R
 <span class="co">#    user  system elapsed </span>
-<span class="co">#   0.336   0.008   0.344</span>
+<span class="co">#   0.640   0.004   0.645</span>
 (t2 &lt;-<span class="st"> </span><span class="kw">system.time</span>(ans2 &lt;-<span class="st"> </span>odt[<span class="kw">order</span>(col)]))        ## uses data.table's forder
 <span class="co">#    user  system elapsed </span>
-<span class="co">#   0.356   0.000   0.356</span>
+<span class="co">#   0.648   0.004   0.651</span>
 (<span class="kw">identical</span>(ans1, ans2))
 <span class="co"># [1] TRUE</span></code></pre></div></li>
 </ul>

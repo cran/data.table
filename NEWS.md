@@ -1,9 +1,40 @@
 
-### Changes in v1.9.8  (on CRAN 24 Nov 2016)
+### Changes in v1.10.0  (on CRAN 3 Dec 2016)
+
+#### BUG FIXES
+
+1. `fwrite(..., quote='auto')` already quoted a field if it contained a `sep` or `\n`, or `sep2[2]` when `list` columns are present. Now it also quotes a field if it contains a double quote (`"`) as documented, [#1925](https://github.com/Rdatatable/data.table/issues/1925). Thanks to Aki Matsuo for reporting. Tests added. The `qmethod` tests did test escaping embedded double quotes, but only when `sep` or `\n` was present in the field as well to trigger the quoting of the field.
+
+2. Fixed 3 test failures on Solaris only, [#1934](https://github.com/Rdatatable/data.table/issues/1934). Two were on both sparc and x86 and related to a `tzone` attribute difference between `as.POSIXct` and `as.POSIXlt` even when passed the default `tz=""`. The third was on sparc only: a minor rounding issue in `fwrite()` of 1e-305.
+
+3. Regression crash fixed when 0's occur at the end of a non-empty subset of an empty table, [#1937](https://github.com/Rdatatable/data.table/issues/1937). Thanks Arun for tracking down. Tests added. For example, subsetting the empty `DT=data.table(a=character())` with `DT[c(1,0)]` should return a 1 row result with one `NA` since 1 is past the end of `nrow(DT)==0`, the same result as `DT[1]`.
+
+4. Fixed newly reported crash that also occurred in old v1.9.6 when `by=.EACHI`, `nomatch=0`, the first item in `i` has no match AND `j` has a function call that is passed a key column, [#1933](https://github.com/Rdatatable/data.table/issues/1933). Many thanks to Reino Bruner for finding and reporting with a reproducible example. Tests added.
+
+5. Fixed `fread()` error occurring for a subset of Windows users: `showProgress is not type integer but type 'logical'.`, [#1944](https://github.com/Rdatatable/data.table/issues/1944) and [#1111](https://github.com/Rdatatable/data.table/issues/1111). Our tests cover this usage (it is just default usage), pass on AppVeyor (Windows), win-builder (Windows) and CRAN's Windows so perhaps it only occurs on a specific and different version of Windows to all those. Thanks to @demydd for reporting. Fixed by using strictly `logical` type at R level and `Rboolean` at C level, consistently throughout.
+
+6. Combining `on=` (new in v1.9.6) with `by=` or `keyby=` gave incorrect results, [#1943](https://github.com/Rdatatable/data.table/issues/1943). Many thanks to Henrik-P for the detailed and reproducible report. Tests added.
+
+7. New function `rleidv` was ignoring its `cols` argument, [#1942](https://github.com/Rdatatable/data.table/issues/1942). Thanks Josh O'Brien for reporting. Tests added.
+
+#### NOTES
+
+1. It seems OpenMP is not available on CRAN's Mac platform; NOTEs appeared in [CRAN checks](https://cran.r-project.org/web/checks/check_results_data.table.html) for v1.9.8. Moved `Rprintf` from `init.c` to `packageStartupMessage` to avoid the NOTE as requested urgently by Professor Ripley. Also fixed the bad grammar of the message: 'single threaded' now 'single-threaded'. If you have a Mac and run macOS or OS X on it (I run Ubuntu on mine) please contact CRAN maintainers and/or Apple if you'd like CRAN's Mac binary to support OpenMP. Otherwise, please follow [these instructions for OpenMP on Mac](https://github.com/Rdatatable/data.table/wiki/Installation) which people have reported success with.
+
+2. Just to state explicitly: data.table does not now depend on or require OpenMP. If you don't have it (as on CRAN's Mac it appears but not in general on Mac) then data.table should build, run and pass all tests just fine.
+
+3. There are now 5,910 raw tests as reported by `test.data.table()`. Tests cover 91% of the 4k lines of R and 89% of the 7k lines of C. These stats are now known thanks to Jim Hester's [Covr](https://CRAN.R-project.org/package=covr) package and [Codecov.io](https://codecov.io/). If anyone is looking for something to help with, creating tests to hit the missed lines shown by clicking the `R` and `src` folders at the bottom [here](https://codecov.io/github/Rdatatable/data.table?branch=master) would be very much appreciated.
+
+4. The FAQ vignette has been revised given the changes in v1.9.8. In particular, the very first FAQ.
+
+5. With hindsight, the last release v1.9.8 should have been named v1.10.0 to convey it wasn't just a patch release from .6 to .8 owing to the 'potentially breaking changes' items. Thanks to @neomantic for correctly pointing out. The best we can do now is now bump to 1.10.0.
+
+
+### Changes in v1.9.8  (on CRAN 25 Nov 2016)
 
 #### POTENTIALLY BREAKING CHANGES
 
-  1. By default all columns are now used by `unique()`, `duplicated()` and `uniqueN()` data.table methods, [#1284](https://github.com/Rdatatable/data.table/issues/1284) and [#1841](https://github.com/Rdatatable/data.table/issues/1841). To restore old behaviour: `options(datatable.old.unique.by.key=TRUE)`. In 1 year this option to restore the old default will be deprecated with warning. In 2 years the option will be removed. Please explicity pass `by=key(DT)` for clarity. Only code that relies on the default is affected. 266 CRAN and Bioconductor packages using data.table were checked before release. 9 needed to change and were notified. Any lines of code without test coverage will have been missed by these checks. Any packages not on CRAN or Bioconductor were not checked.
+  1. By default all columns are now used by `unique()`, `duplicated()` and `uniqueN()` data.table methods, [#1284](https://github.com/Rdatatable/data.table/issues/1284) and [#1841](https://github.com/Rdatatable/data.table/issues/1841). To restore old behaviour: `options(datatable.old.unique.by.key=TRUE)`. In 1 year this option to restore the old default will be deprecated with warning. In 2 years the option will be removed. Please explicitly pass `by=key(DT)` for clarity. Only code that relies on the default is affected. 266 CRAN and Bioconductor packages using data.table were checked before release. 9 needed to change and were notified. Any lines of code without test coverage will have been missed by these checks. Any packages not on CRAN or Bioconductor were not checked.
 
   2. A new column is guaranteed with `:=` even when there are no matches or when its RHS is length 0 (e.g. `integer()`, `numeric()`) but not `NULL`. The NA column is created with the same type as the empty RHS. This is for consistency so that whether a new column is added or not does not depend on whether `i` matched to 1 or more rows or not. See [#759](https://github.com/Rdatatable/data.table/issues/759) for further details and examples.
 
@@ -11,7 +42,7 @@
 
 #### NEW FEATURES
 
-  1. `fwrite` - *parallel .csv writer*:
+  1. `fwrite()` - parallel .csv writer:
     * Thanks to Otto Seiskari for the initial pull request [#580](https://github.com/Rdatatable/data.table/issues/580) that provided C code, R wrapper, manual page and extensive tests.
     * From there Matt parallelized and specialized C functions for writing integer/numeric exactly matching `write.csv` between 2.225074e-308 and 1.797693e+308 to 15 significant figures, dates (between 0000-03-01 and 9999-12-31), times down to microseconds in POSIXct, automatic quoting, `bit64::integer64`, `row.names` and `sep2` for `list` columns where each cell can itself be a vector. See [this blog post](http://blog.h2o.ai/2016/04/fast-csv-writing-for-r/) for implementation details and benchmarks.
     * Accepts any `list` of same length vectors; e.g. `data.frame` and `data.table`.
