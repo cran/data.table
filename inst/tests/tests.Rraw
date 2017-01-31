@@ -3,7 +3,7 @@ if (!exists("test.data.table",.GlobalEnv,inherits=FALSE)) {
     require(data.table)   # in dev the package should not be loaded
     options(warn=0)  # use require() so it warns but doesn't halt if not available
     inst_pkgs = rownames(installed.packages())
-    sugg_pkgs = c("chron", "ggplot2", "plyr", "reshape", "reshape2", "testthat", "hexbin", "fastmatch", "nlme", "GenomicRanges", "xts", "bit64", "gdata", "caret", "knitr", "curl", "zoo", "plm", "rmarkdown", "parallel")
+    sugg_pkgs = c("bit64", "knitr", "nanotime", "chron", "ggplot2", "plyr", "reshape", "reshape2", "testthat", "hexbin", "fastmatch", "nlme", "GenomicRanges", "xts", "gdata", "caret", "curl", "zoo", "plm", "rmarkdown", "parallel")
     lapply(setNames(sugg_pkgs, nm = sugg_pkgs), function(pkg) if(pkg %in% inst_pkgs) require(pkg, character.only=TRUE))
     # reshape2 ahead of reshape ...
     try(detach(package:reshape2),silent=TRUE)
@@ -38,7 +38,6 @@ started.at = Sys.time()
 # Test default values in case user set global option. These are restored
 # at the end of this file.
 oldalloccol = options(datatable.alloccol=1024L)
-oldWhenJsymbol = options(datatable.WhenJisSymbolThenCallingScope=FALSE)
 
 if (!.devtesting) {
     test = data.table:::test
@@ -235,12 +234,10 @@ test(76, TESTDT[,2:3], TESTDT[,2:3,with=FALSE])
 test(77, TESTDT[,2:3,with=FALSE], data.table(b=c("e","e","f","f","i","i","b"),v=1:7))
 test(78, TESTDT[,c("b","v")], data.table(b=c("e","e","f","f","i","i","b"),v=1:7))
 colsVar = c("b","v")
-test(79.1, TESTDT[,colsVar], colsVar)
-test(79.2, TESTDT[,colsVar,with=FALSE], data.table(b=c("e","e","f","f","i","i","b"),v=1:7))
-options(datatable.WhenJisSymbolThenCallingScope=TRUE)
-test(80.1, TESTDT[,colsVar], data.table(b=c("e","e","f","f","i","i","b"),v=1:7))
-test(80.2, TESTDT[,colsVar,with=TRUE], error="is turned on.*Please")
-options(datatable.WhenJisSymbolThenCallingScope=FALSE)
+test(79.1, TESTDT[,colsVar], error="column name 'colsVar' is not found")
+test(79.2, TESTDT[,colsVar,with=FALSE], ans<-data.table(b=c("e","e","f","f","i","i","b"),v=1:7))
+test(79.3, TESTDT[, ..colsVar], ans)
+
 
 # works in test.data.table, but not eval(body(test.data.table)) when in R CMD check ... test(81, TESTDT[1:2,c(a,b)], factor(c("a","c","e","e")))
 # It is expected the above to be common source of confusion. c(a,b) is evaluated within
@@ -9280,13 +9277,14 @@ test(1712, DT[!is.na(a) & d == "3"], DT[2])
 test(1713, DT[d==3], DT[2])
 
 # Test new helpful error message suggested by Jan
-test(1714, !exists("aColumnOfDT"))   # use a long column name to be sure not used before in this test script
-DT = data.table(a=1:3, aColumnOfDT=4:6)
-options(datatable.WhenJisSymbolThenCallingScope=FALSE)
-test(1715, DT[,aColumnOfDT], 4:6)    # old behaviour for sure tested before but here for context
-options(datatable.WhenJisSymbolThenCallingScope=TRUE)
-test(1716, DT[,aColumnOfDT], error=".*datatable.WhenJisSymbolThenCallingScope.*TRUE.*aColumnOfDT.*wrap with quotes.*aColumnOfDT.*aColumnOfDT.*aColumnOfDT")   # The .* are to check the salient points of the error (e.g. that it names the variable correctly 4 times), without getting too picky over the exact wording and punctuation of the full error
-options(datatable.WhenJisSymbolThenCallingScope=FALSE)
+notAColName = 1
+test(1714.1, exists("notAColName")) # use a long column name to be sure it exists and unique
+test(1714.1, !exists("notInCallingScope")) # use a long column name to be sure it exists and unique
+DT = data.table(a=1:3, b=4:6)
+test(1715, DT[,b], 4:6)    # old behaviour for sure tested before but here for context
+test(1716.1, DT[,notAColName], error="column name 'notAColName' is not found")  # ensure it doesn't find it calling scope either 
+test(1716.2, DT[, ..notInCallingScope], error="Variable 'notInCallingScope' is not found in calling scope")
+test(1716.3, DT[, notInCallingScope, with=FALSE], error="Variable 'notInCallingScope' is not found in calling scope")
 
 # Test out-of-bounds error on numeric j
 DT = data.table(a=1:3, b=4:6, c=7:9)
@@ -9484,7 +9482,7 @@ if ("package:bit64" %in% search()) {
   test(1731.1, class(DT[[1L]]), "integer64")
   test(1731.2, fwrite(DT,na="__NA__"), output=paste(ans,collapse=""))
   f = tempfile()
-  test(1731.3, fwrite(DT,f, na="__NA__",..turbo=FALSE), NULL, warning="turbo.*will be removed")
+  test(1731.3, fwrite(DT, f, na="__NA__"), NULL)
   test(1731.4, readLines(f), ans)
   unlink(f)
   test(1731.5, write.csv(DT,na="__NA__",row.names=FALSE,quote=FALSE), output=paste(ans,collapse=""))
@@ -9780,7 +9778,35 @@ DT = as.data.table(mtcars[mtcars$cyl %in% c(6, 8), c("am", "vs", "hp")])
 test(1748.3, DT[am==0, max(hp), by=vs], ans1)
 test(1748.4, DT[am==0, max(hp), keyby=vs], ans2)
 
+# indices() can return list of vectors, #1589
+DT = data.table(A=5:1,B=letters[5:1])
+setindex(DT)
+setindex(DT, A)
+setindex(DT, B)
+indices(DT, vectors = TRUE)
+test(1749.1, indices(DT), c("A__B","A","B"))
+test(1749.2, indices(DT, vectors = TRUE), list(c("A","B"),"A","B"))
 
+# for completeness, added test for NA problem to close #1837. Fixed long ago before release to CRAN.
+test(1750, capture.output(fwrite(data.table(x=NA_integer_),verbose=FALSE)), c("x",""))
+
+if ("package:nanotime" %in% search()) {
+  DT = data.table(A=nanotime(tt<-c("2016-09-28T15:30:00.000000070Z",
+                                   "2016-09-29T23:59:00.000000001Z",
+                                   "2016-09-29T23:59:00.000000999Z",
+                                   "1970-01-01T00:01:01.000001000Z",
+                                   "1970-01-01T00:00:00.000000000Z",
+                                   "1969-12-31T23:59:59.999999999Z",
+                                   "1969-12-31T23:59:59.000000089Z",
+                                   "1969-12-31T12:13:14.000000000Z",
+                                   "1969-12-31T12:13:14.999999999Z",
+                                   "1969-12-31T12:13:14.000000001Z",
+                                   "1967-03-15T00:00:00.300000002Z",
+                                   "1967-03-15T23:59:59.300000002Z")))
+  test(1751, capture.output(fwrite(DT, verbose=FALSE))[-1], tt)
+} else {
+  cat("Test 1751 not run. If required call library(nanotime) first.\n")
+}
 
 ##########################
 
@@ -9814,7 +9840,7 @@ test(1748.4, DT[am==0, max(hp), keyby=vs], ans2)
 options(warn=0)
 setDTthreads(0)
 options(oldalloccol)  # set at top of this file
-options(oldWhenJsymbol)
+
 plat = paste("endian==",.Platform$endian,", sizeof(long double)==",.Machine$sizeof.longdouble,
              ", sizeof(pointer)==",.Machine$sizeof.pointer, sep="")
 if (nfail > 0) {

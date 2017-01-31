@@ -72,10 +72,8 @@ print.data.table <- function(x, topn=getOption("datatable.print.topn"),
         printdots = FALSE
     }
     toprint=format.data.table(toprint, ...)
-    # fix for #975.
-    if (any(sapply(x, function(col) "integer64" %in% class(col))) && !"package:bit64" %in% search()) {
-        warning("Some columns have been read as type 'integer64' but package bit64 isn't loaded. Those columns will display as strange looking floating point data. There is no need to reload the data. Just require(bit64) to obtain the integer64 print method and print the data again.")
-    }
+    if ((!"bit64" %chin% loadedNamespaces()) && any(sapply(x,inherits,"integer64"))) require_bit64()
+    # When we depend on R 3.2.0 (Apr 2015) we can use isNamespaceLoaded() added then, instead of %chin% above
     # FR #5020 - add row.names = logical argument to print.data.table
     if (isTRUE(row.names)) rownames(toprint)=paste(format(rn,right=TRUE,scientific=FALSE),":",sep="") else rownames(toprint)=rep.int("", nrow(toprint))
     if (is.null(names(x)) | all(names(x) == "")) colnames(toprint)=rep("", ncol(toprint)) # fixes bug #97 (RF#4934) and #545 (RF#5253)
@@ -399,34 +397,33 @@ chmatch2 <- function(x, table, nomatch=NA_integer_) {
             ( !length(all.vars(jsub)) &&
               root %chin% c("","c","paste","paste0","-","!") &&
               missing(by) )) {   # test 763. TODO: likely that !missing(by) iff with==TRUE (so, with can be removed)
-            # When no variable names occur in j, scope doesn't matter because there are no symbols to find.
-            # Auto set with=FALSE in this case so that DT[,1], DT[,2:3], DT[,"someCol"] and DT[,c("colB","colD")]
+            # When no variable names (i.e. symbols) occur in j, scope doesn't matter because there are no symbols to find.
+            # Automatically set with=FALSE in this case so that DT[,1], DT[,2:3], DT[,"someCol"] and DT[,c("colB","colD")]
             # work as expected.  As before, a vector will never be returned, but a single column data.table
             # for type consistency with >1 cases. To return a single vector use DT[["someCol"]] or DT[[3]].
-            # The root==":" is to allow DT[,colC:colH] even though that contains two variable names
-            # root either "-" or "!" is for tests 1504.11 and 1504.13 (a : with a ! or - modifier root)
+            # The root==":" is to allow DT[,colC:colH] even though that contains two variable names.
+            # root == "-" or "!" is for tests 1504.11 and 1504.13 (a : with a ! or - modifier root)
             # This change won't break anything because it didn't do anything anyway; i.e. used to return the
-            # j value straight back: DT[,1] == 1 which isn't possibly useful.  It was that was for consistency
-            # of learning, since it was simpler to state that j always gets eval'd within the scope of DT.
+            # j value straight back: DT[,1] == 1 which isn't possibly useful.  It was that for consistency
+            # of learning since it was simpler to state that j always gets eval'd within the scope of DT.
             # We don't want to evaluate j at all in making this decision because i) evaluating itself could
             # increment some variable and not intended to be evaluated a 2nd time later on and ii) we don't
             # want decisions like this to depend on the data or vector lengths since that can introduce
             # inconistency reminiscent of drop in [.data.table that we seek to avoid.
-            #if (verbose) cat("Auto with=FALSE because j  
             with=FALSE
-        } else if (is.name(jsub) && isTRUE(getOption("datatable.WhenJisSymbolThenCallingScope"))) {
-            # Allow future behaviour to be turned on. Current default is FALSE.
-            # Use DT[["someCol"]] or DT$someCol to fetch that column as vector, regardless of this option.
-            if (!missingwith && isTRUE(with)) {
-                # unusual edge case only when future option has been turned on
-                stop('j is a single symbol, WhenJisSymbol is turned on but with=TRUE has been passed explicitly. Please instead use DT[,"someVar"], DT[,.(someVar)] or DT[["someVar"]]')
-            } else {
-                with=FALSE
-            }
+        } else if (is.name(jsub)) {
             jsubChar = as.character(jsub)
-            if (!exists(jsubChar, where=parent.frame()) && jsubChar %chin% names(x)) {
-                # Would fail anyway with 'object 'a' not found' but give a more helpful error. Thanks to Jan's suggestion.
-                stop("The option 'datatable.WhenJisSymbolThenCallingScope' is TRUE so looking for the variable '", jsubChar, "' in calling scope but it is not found there. It is a column name though. So, most likely, please wrap with quotes (i.e. DT[,'", jsubChar, "']) to return a 1-column data.table or if you need the column as a plain vector then DT[['",jsubChar,"']] or DT$",jsubChar)
+            if (substring(jsubChar,1,2) == "..") {
+              if (nchar(jsubChar)==2) stop("The symbol .. is invalid. The .. prefix must be followed by at least one character.")
+              if (!exists(jsubChar, where=parent.frame())) {
+                # We have recommended manual ".." prefix in the past so that needs to keep working and take precedence
+                jsub = as.name(jsubChar<-substring(jsubChar,3))
+              }
+              with = FALSE
+            }
+            if (!with && !exists(jsubChar, where=parent.frame())) {
+              # Would fail anyway with 'object 'a' not found' but give a more helpful error. Thanks to Jan's suggestion.
+              stop("Variable '",jsubChar,"' is not found in calling scope. Looking in calling scope because either you used the .. prefix or set with=FALSE")
             }
         }
         if (root=="{") { 
@@ -1434,10 +1431,14 @@ chmatch2 <- function(x, table, nomatch=NA_integer_) {
         # Since .SD is inside SDenv, alongside its columns as variables, R finds .SD symbol more quickly, if used.
         # There isn't a copy of the columns here, the xvar symbols point to the SD columns (copy-on-write).
 
-        # Temp fix for #921 - check address and copy *after* evaluating 'jval'
+        if (is.name(jsub) && is.null(lhs) && !exists(jsubChar<-as.character(jsub), SDenv, inherits=FALSE)) {
+            stop("j (the 2nd argument inside [...]) is a single symbol but column name '",jsubChar,"' is not found. Perhaps you intended DT[,..",jsubChar,"] or DT[,",jsubChar,",with=FALSE]. This difference to data.frame is deliberate and explained in FAQ 1.1.")
+        }
+
         jval = eval(jsub, SDenv, parent.frame())
         # copy 'jval' when required
         # More speedup - only check + copy if irows is NULL
+        # Temp fix for #921 - check address and copy *after* evaluating 'jval'
         if (is.null(irows)) {
             if (!is.list(jval)) { # performance improvement when i-arg is S4, but not list, #1438, Thanks @DCEmilberg.
                 jcpy = address(jval) %in% sapply(SDenv$.SD, address) # %chin% errors when RHS is list()
@@ -1878,10 +1879,7 @@ chmatch2 <- function(x, table, nomatch=NA_integer_) {
         assign(".N", len__, thisEnv) # For #5760
         #fix for #1683
         if (use.I) assign(".I", seq_len(nrow(x)), thisEnv)
-        gstart(o__, f__, len__, irows) # irows needed for #971.
-        ans = eval(jsub, thisEnv)
-        if (is.atomic(ans)) ans=list(ans)  # won't copy named argument in new version of R, good
-        gend()
+        ans = gforce(thisEnv, jsub, o__, f__, len__, irows) # irows needed for #971.
         gi = if (length(o__)) o__[f__] else f__
         g = lapply(grpcols, function(i) groups[[i]][gi])
         ans = c(g, ans)
@@ -2860,8 +2858,7 @@ gmin <- function(x, na.rm=FALSE) .Call(Cgmin, x, na.rm)
 gmax <- function(x, na.rm=FALSE) .Call(Cgmax, x, na.rm)
 gvar <- function(x, na.rm=FALSE) .Call(Cgvar, x, na.rm)
 gsd <- function(x, na.rm=FALSE) .Call(Cgsd, x, na.rm)
-gstart <- function(o, f, l, rows) .Call(Cgstart, o, f, l, rows)
-gend <- function() .Call(Cgend)
+gforce <- function(env, jsub, o, f, l, rows) .Call(Cgforce, env, jsub, o, f, l, rows)
 
 isReallyReal <- function(x) {
     .Call(CisReallyReal, x)
