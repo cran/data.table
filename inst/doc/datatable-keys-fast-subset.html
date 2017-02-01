@@ -574,7 +574,7 @@ DT =<span class="st"> </span><span class="kw">data.table</span>(<span class="dt"
 t1 &lt;-<span class="st"> </span><span class="kw">system.time</span>(ans1 &lt;-<span class="st"> </span>DT[x ==<span class="st"> &quot;g&quot;</span> &amp;<span class="st"> </span>y ==<span class="st"> </span>877L])
 t1
 <span class="co">#    user  system elapsed </span>
-<span class="co">#   0.360   0.032   0.396</span>
+<span class="co">#   0.124   0.016   0.140</span>
 <span class="kw">head</span>(ans1)
 <span class="co">#    x   y       val</span>
 <span class="co"># 1: g 877 0.3946652</span>
@@ -590,7 +590,7 @@ t1
 t2 &lt;-<span class="st"> </span><span class="kw">system.time</span>(ans2 &lt;-<span class="st"> </span>DT[.(<span class="st">&quot;g&quot;</span>, 877L)])
 t2
 <span class="co">#    user  system elapsed </span>
-<span class="co">#   0.000   0.000   0.002</span>
+<span class="co">#   0.000   0.000   0.001</span>
 <span class="kw">head</span>(ans2)
 <span class="co">#    x   y       val</span>
 <span class="co"># 1: g 877 0.3946652</span>
@@ -605,7 +605,7 @@ t2
 <span class="kw">identical</span>(ans1$val, ans2$val)
 <span class="co"># [1] TRUE</span></code></pre></div>
 <ul>
-<li>The speedup is <strong>~198x</strong>!</li>
+<li>The speedup is <strong>~140x</strong>!</li>
 </ul>
 </div>
 <div id="b-why-does-keying-a-data.table-result-in-blazing-fast-susbets" class="section level3">
