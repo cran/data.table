@@ -9,7 +9,7 @@
 * 3) And not if user doesn't want to:
 *    i) Respect env variable OMP_NUM_THREADS (which just calls (ii) on startup)
 *    ii) Respect omp_set_num_threads()
-*    iii) Provide way to restrict data.table only independently of base R and 
+*    iii) Provide way to restrict data.table only independently of base R and
 *         other packages using openMP
 * 4) Avoid user needing to remember to unset this control after their use of data.table
 * 5) Automatically drop down to 1 thread when called from parallel package (e.g. mclapply) to
@@ -22,7 +22,7 @@ static int DTthreads = 0;
 
 int getDTthreads() {
 #ifdef _OPENMP
-    return DTthreads == 0 ? omp_get_max_threads() : DTthreads;  
+    return DTthreads == 0 ? omp_get_max_threads() : DTthreads;
 #else
     return 1;
 #endif
@@ -38,7 +38,7 @@ SEXP setDTthreads(SEXP threads) {
         error("Argument to setDTthreads must be a single integer >= 0. \
             Default 0 is recommended to use all CPU.");
     }
-    // do not call omp_set_num_threads() here as that affects other openMP 
+    // do not call omp_set_num_threads() here as that affects other openMP
     // packages and base R as well potentially.
     int old = DTthreads;
     DTthreads = INTEGER(threads)[0];
@@ -46,19 +46,14 @@ SEXP setDTthreads(SEXP threads) {
 }
 
 // auto avoid deadlock when data.table called from parallel::mclapply
-static int preFork_DTthreads = 0;
 void when_fork() {
-    preFork_DTthreads = DTthreads;
+    omp_set_num_threads(1);
     DTthreads = 1;
-}
-void when_fork_end() {
-    DTthreads = preFork_DTthreads;
 }
 void avoid_openmp_hang_within_fork() {
     // Called once on loading data.table from init.c
 #ifdef _OPENMP
-    pthread_atfork(&when_fork, &when_fork_end, NULL);
+    pthread_atfork(&when_fork, NULL, NULL);
 #endif
 }
-
 

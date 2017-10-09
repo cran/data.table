@@ -17,8 +17,6 @@ SEXP uniqlist(SEXP l, SEXP order)
 
     int *iidx = Calloc(isize, int); // for 'idx'
     int *n_iidx; // to catch allocation errors using Realloc!
-    if (NA_INTEGER != NA_LOGICAL || sizeof(NA_INTEGER)!=sizeof(NA_LOGICAL)) 
-        error("Have assumed NA_INTEGER == NA_LOGICAL (currently R_NaInt). If R changes this in future (seems unlikely), an extra case is required; a simple change.");
     ncol = length(l);
     nrow = length(VECTOR_ELT(l,0));
     len = 1;

@@ -1,9 +1,23 @@
 
+### Changes in v1.10.4-1  (on CRAN 06 Oct 2017)
+#### (Minimal patch release to pass CRAN checks)
+
+1. The `nanotime` v0.2.0 update on CRAN 22 June 2017 changed from `integer64` to `S4` and broke `fwrite` of `nanotime` columns. Fixed to work with `nanotime` both before and after v0.2.0.
+
+2. Pass R-devel changes related to `deparse(,backtick=)` and `factor()`.
+
+3. Internal `NAMED()==2` now `MAYBE_SHARED()` instead, [#2330](https://github.com/Rdatatable/data.table/issues/2330). Back-ported to pass under the stated dependency, R 3.0.0.
+
+4. Attempted improvement on Mac with Intel's OpenMP when package 'parallel' forks after `data.table` has performed in parallel with OpenMP. That OpenMP implementation appears to leave threads running after the parallel region has finished. If this fix still doesn't work, call `setDTthreads(1)` immediately after `library(data.table)` which has been reported to fix the problem.
+
+5. When `fread()` and `print()` see `integer64` columns are present but package `bit64` is not installed, the warning is now displayed as intended. Thanks to a question by Santosh on r-help and forwarded by Bill Dunlap.
+
+
 ### Changes in v1.10.4  (on CRAN 01 Feb 2017)
 
 #### BUG FIXES
 
-1. The new specialized `nanotime` writer in `fwrite()` type punned using `*(long long *)&REAL(column)[i]` which, strictly, is undefined behavour under C standards. It passed a plethora of tests on linux (gcc 5.4 and clang 3.8), win-builder and 6 out 10 CRAN flavours using gcc. But failed (wrong data written) with the newest version of clang (3.9.1) as used by CRAN on the failing flavors, and solaris-sparc. Replaced with the union method and added a grep to CRAN_Release.cmd.
+1. The new specialized `nanotime` writer in `fwrite()` type punned using `*(long long *)&REAL(column)[i]` which, strictly, is undefined behaviour under C standards. It passed a plethora of tests on linux (gcc 5.4 and clang 3.8), win-builder and 6 out 10 CRAN flavours using gcc. But failed (wrong data written) with the newest version of clang (3.9.1) as used by CRAN on the failing flavors, and solaris-sparc. Replaced with the union method and added a grep to CRAN_Release.cmd.
 
 
 ### Changes in v1.10.2  (on CRAN 31 Jan 2017)

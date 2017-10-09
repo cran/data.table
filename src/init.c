@@ -24,7 +24,7 @@ SEXP rbindlist();
 SEXP vecseq();
 SEXP copyattr();
 SEXP setlistelt();
-SEXP setnamed();
+SEXP setmutable();
 SEXP address();
 SEXP copyNamedInList();
 SEXP fmelt();
@@ -103,11 +103,11 @@ R_CallMethodDef callMethods[] = {
 {"Cvecseq", (DL_FUNC) &vecseq, -1},
 {"Ccopyattr", (DL_FUNC) &copyattr, -1},
 {"Csetlistelt", (DL_FUNC) &setlistelt, -1},
-{"Csetnamed", (DL_FUNC) &setnamed, -1},
+{"Csetmutable", (DL_FUNC) &setmutable, -1},
 {"Caddress", (DL_FUNC) &address, -1},
 {"CcopyNamedInList", (DL_FUNC) &copyNamedInList, -1},
-{"Cfmelt", (DL_FUNC) &fmelt, -1}, 
-{"Cfcast", (DL_FUNC) &fcast, -1}, 
+{"Cfmelt", (DL_FUNC) &fmelt, -1},
+{"Cfcast", (DL_FUNC) &fcast, -1},
 {"Cuniqlist", (DL_FUNC) &uniqlist, -1},
 {"Cuniqlengths", (DL_FUNC) &uniqlengths, -1},
 {"Csetrev", (DL_FUNC) &setrev, -1},
@@ -173,14 +173,19 @@ void attribute_visible R_init_datatable(DllInfo *info)
     R_useDynamicSymbols(info, FALSE);
     setSizes();
     const char *msg = "... failed. Please forward this message to maintainer('data.table').";
-    if (NA_INTEGER != INT_MIN) error("Checking NA_INTEGER [%d] == INT_MIN [%d] %s", NA_INTEGER, INT_MIN, msg);
-    if (NA_INTEGER != NA_LOGICAL) error("Checking NA_INTEGER [%d] == NA_LOGICAL [%d] %s", NA_INTEGER, NA_LOGICAL, msg);
+    if ((int)NA_INTEGER != (int)INT_MIN) error("Checking NA_INTEGER [%d] == INT_MIN [%d] %s", NA_INTEGER, INT_MIN, msg);
+    if ((int)NA_INTEGER != (int)NA_LOGICAL) error("Checking NA_INTEGER [%d] == NA_LOGICAL [%d] %s", NA_INTEGER, NA_LOGICAL, msg);
     if (sizeof(int) != 4) error("Checking sizeof(int) [%d] is 4 %s", sizeof(int), msg);
-    if (sizeof(double) != 8) error("Checking sizeof(double) [%d] is 8 %s", sizeof(double), msg);  // 8 on both 32bit and 64bit.
+    if (sizeof(double) != 8) error("Checking sizeof(double) [%d] is 8 %s", sizeof(double), msg);     // 8 on both 32bit and 64bit
+    // alignof not available in C99: if (alignof(double) != 8) error("Checking alignof(double) [%d] is 8 %s", alignof(double), msg);  // 8 on both 32bit and 64bit
     if (sizeof(long long) != 8) error("Checking sizeof(long long) [%d] is 8 %s", sizeof(long long), msg);
     if (sizeof(char *) != 4 && sizeof(char *) != 8) error("Checking sizeof(pointer) [%d] is 4 or 8 %s", sizeof(char *), msg);
     if (sizeof(SEXP) != sizeof(char *)) error("Checking sizeof(SEXP) [%d] == sizeof(pointer) [%d] %s", sizeof(SEXP), sizeof(char *), msg);
-    
+    if (sizeof(uint64_t) != 8) error("Checking sizeof(uint64_t) [%d] is 8 %s", sizeof(uint64_t), msg);
+    if (sizeof(int64_t) != 8) error("Checking sizeof(int64_t) [%d] is 8 %s", sizeof(int64_t), msg);
+    if (sizeof(signed char) != 1) error("Checking sizeof(signed char) [%d] is 1 %s", sizeof(signed char), msg);
+    if (sizeof(int8_t) != 1) error("Checking sizeof(int8_t) [%d] is 1 %s", sizeof(int8_t), msg);
+
     SEXP tmp = PROTECT(allocVector(INTSXP,2));
     if (LENGTH(tmp)!=2) error("Checking LENGTH(allocVector(INTSXP,2)) [%d] is 2 %s", LENGTH(tmp), msg);
     if (TRUELENGTH(tmp)!=0) error("Checking TRUELENGTH(allocVector(INTSXP,2)) [%d] is 0 %s", TRUELENGTH(tmp), msg);
@@ -200,10 +205,10 @@ void attribute_visible R_init_datatable(DllInfo *info)
     long double ld = 3.14;
     memset(&ld, 0, sizeof(long double));
     if (ld != 0.0) error("Checking memset(&ld, 0, sizeof(long double)); ld == (long double)0.0 %s", msg);
-    
+
     setNumericRounding(PROTECT(ScalarInteger(0))); // #1642, #1728, #1463, #485
     UNPROTECT(1);
-    
+
     // create needed strings in advance for speed, same techique as R_*Symbol
     // Following R-exts 5.9.4; paragraph and example starting "Using install ..."
     // either use PRINTNAME(install()) or R_PreserveObject(mkChar()) here.
@@ -218,18 +223,18 @@ void attribute_visible R_init_datatable(DllInfo *info)
       error("PRINTNAME(install(\"integer64\")) has returned %s not %s",
             type2char(TYPEOF(char_integer64)), type2char(CHARSXP));
     }
-    
+
     // create commonly used symbols, same as R_*Symbol but internal to DT
     // Not really for speed but to avoid leak in situations like setAttrib(DT, install(), allocVector()) where
     // the allocVector() can happen first and then the install() could gc and free it before it is protected
     // within setAttrib. Thanks to Bill Dunlap finding and reporting. Using these symbols instead of install()
     // avoids the gc without needing an extra PROTECT and immediate UNPROTECT after the setAttrib which would
     // look odd (and devs in future might be tempted to remove them). Avoiding passing install() to API calls
-    // keeps the code neat and readable. Also see grep's added to CRAN_Release.cmd to find such calls. 
+    // keeps the code neat and readable. Also see grep's added to CRAN_Release.cmd to find such calls.
     sym_sorted  = install("sorted");
     sym_BY      = install(".BY");
     sym_maxgrpn = install("maxgrpn");
-    
+
     avoid_openmp_hang_within_fork();
 }
 
@@ -251,13 +256,13 @@ inline Rboolean INHERITS(SEXP x, SEXP char_) {
   return FALSE;
 }
 
-inline long long I64(double x) {
+inline int64_t I64(double x) {
   // type punning such as  *(long long *)&REAL(column)[i] is undefined and I think was the
   // cause of 1.10.2 failing on 31 Jan 2017 under clang 3.9.1 -O3 and solaris-sparc but
-  // not solaris-x86 or gcc. There is now a grep in CRAN_Release.cmd; use this union method instead.  
-  union {double d; long long ll;} u;
+  // not solaris-x86 or gcc. There is now a grep in CRAN_Release.cmd; use this union method instead.
+  union {double d; int64_t i64;} u;  // not static, inline instead
   u.d = x;
-  return u.ll;
+  return u.i64;
 }
 
 SEXP hasOpenMP() {
@@ -271,5 +276,4 @@ SEXP hasOpenMP() {
   return ScalarLogical(FALSE);
   #endif
 }
-
 
