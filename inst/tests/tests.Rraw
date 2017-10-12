@@ -4197,11 +4197,11 @@ if (base::getRversion() < "3.3.0") {
 } else {
     base_order <- function(..., na.last=TRUE, method=c("shell","radix")) {
         ans1 = base::order(..., na.last=na.last, method="shell")
-        if (!is.na(na.last) || base::getRversion()>"3.3.2") {
+        if (!is.na(na.last) || base::getRversion()>"3.3.3") {
             ans2 = base::order(..., na.last=na.last, method="radix")
             if (!identical(ans1,ans2)) stop("Base R's order(,method='shell') != order(,method='radix')")
         } else {
-            # Only when na.last=NA in just R 3.3.0-3.3.2 we don't check shell==radix
+            # Only when na.last=NA in just R 3.3.0-3.3.3 we don't check shell==radix
             # because there was a problem in base R's port of data.table code then when :
             #     1) 2 or more vectors were passed to base::order(,method="radix")
             # AND 2) na.last=NA

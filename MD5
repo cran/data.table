@@ -1,7 +1,7 @@
-d0ac1c4913d5a7ace816865e3950fb41 *DESCRIPTION
+fac6375e9b7bd47a4b07d14eb27600ae *DESCRIPTION
 d32239bcb673463ab874e80d47fae504 *LICENSE
 5feca43f299bbbd001563b1033a59705 *NAMESPACE
-b5605677121fce74a5f18ca1b20bc7dc *NEWS.md
+25a37cfa18cb1fffe50e5f11dec46d5e *NEWS.md
 4377e4b917c44366f66862324c8fd32a *R/AllS4.R
 3d35eb16da4271f72a9118200db76d65 *R/IDateTime.R
 55b63a5d831071ec745ce7bd4ab4a336 *R/as.data.table.R
@@ -21,7 +21,7 @@ cd2b459de37c217870b1ada4d197d1c4 *R/fwrite.R
 9e49976bdb1d7b41a755a588fd9eb05b *R/last.R
 a9a8ec624e5afd3067d8ea9cc33482f6 *R/like.R
 8cace748741791eac2d81501c02a1488 *R/merge.R
-9a127e9279e88bebc231dd038a62f537 *R/onAttach.R
+05ff4c9a78ae75c9904346e0310b44f6 *R/onAttach.R
 0354731d8708c60ba8bcc167c6428829 *R/onLoad.R
 a00ff6edb3599fcf2801acfc12c4a7e4 *R/openmp-utils.R
 4cbd6f0cf26f1a7ecc7b2bd2fb5df8bb *R/setkey.R
@@ -41,10 +41,10 @@ d20a5d50c2a2fae35659da9de05acea3 *inst/doc/datatable-faq.R
 ac84983e3ef23aec8afed8a0a1d58282 *inst/doc/datatable-faq.html
 a6cee59288fadeb28014a1ecbd66c326 *inst/doc/datatable-intro.R
 e9fff1a46fdf96e3572b583bc89e8f86 *inst/doc/datatable-intro.Rmd
-eff58794daf1be26794c8d46a1ed7277 *inst/doc/datatable-intro.html
+627a040520c6a285aa2f7f99654c79bf *inst/doc/datatable-intro.html
 c2f4d1dc6234576bf0c1f071325d5b1d *inst/doc/datatable-keys-fast-subset.R
 3f2980389baaff06c2d6b401b26d71bf *inst/doc/datatable-keys-fast-subset.Rmd
-7b50761e5d814a931dddc500941ac0bf *inst/doc/datatable-keys-fast-subset.html
+0ec41e717cbfea0881f2c90841f6f808 *inst/doc/datatable-keys-fast-subset.html
 723df81331669d44c4cab1f541a3d956 *inst/doc/datatable-reference-semantics.R
 531acab6260b82f65ab9048aee6fb331 *inst/doc/datatable-reference-semantics.Rmd
 c5cebe2a0d8d2bc31d5f5ec1bdc2b4ee *inst/doc/datatable-reference-semantics.html
@@ -53,7 +53,7 @@ e8ef65c1d8424e390059b854cb18740e *inst/doc/datatable-reshape.Rmd
 6a3b8dbf14a5a7b78aec35525dbdfee6 *inst/doc/datatable-reshape.html
 22265ade65535db347b44213d4354772 *inst/doc/datatable-secondary-indices-and-auto-indexing.R
 bcdc8c1716a1e3aa1ef831bad0d67715 *inst/doc/datatable-secondary-indices-and-auto-indexing.Rmd
-68160e14519963e00dd61c2a5f08295d *inst/doc/datatable-secondary-indices-and-auto-indexing.html
+9ce3beb36cba7e2c2dc5251f157f05c1 *inst/doc/datatable-secondary-indices-and-auto-indexing.html
 e48efd4babf364e97ff98e56b1980c8b *inst/tests/1206FUT.txt
 28b57d31f67353c1192c6f65d69a12b1 *inst/tests/1680-fread-header-encoding.csv
 fe198c1178f7db508ee0b10a94272e7e *inst/tests/2008head.csv
@@ -84,7 +84,7 @@ d5f1a4914ee94df080c787a3dcc530e3 *inst/tests/issue_785_fread.txt
 0738c8cabf507aecd5b004fbbc45c2b4 *inst/tests/quoted_multiline.csv
 278198d16e23ea87b8be7822d0af26e3 *inst/tests/russellCRCRLF.csv
 2d8e8b64b59f727ae5bf5c527948be6a *inst/tests/russellCRLF.csv
-d5fe672afd719c97ce7dff5860b6ef51 *inst/tests/tests.Rraw
+c145c5065401223f5ba07a63ed975700 *inst/tests/tests.Rraw
 9f0dd826cb0518ead716be2e932d4def *man/IDateTime.Rd
 9cbcd078347c5a08402df1ba73aa44b5 *man/J.Rd
 835019f8d7596f0e2f6482b725b10cbf *man/address.Rd
@@ -144,7 +144,7 @@ a2a4eb530691106fb68f4851182b66fb *man/transpose.Rd
 12239da57bc1754b2345486e48fe1d2b *src/bmerge.c
 771f833144f4bcd530d36944c9ece29f *src/chmatch.c
 953f4ff30171bb62e65cda435d90fb47 *src/data.table.h
-530e5eb6ef7580c12385c9a964f5e7de *src/dogroups.c
+d89a571cb1ac3548042db13a43fab6bc *src/dogroups.c
 e3d5b289ef4b511e4f89c9838b86cbd0 *src/fastmean.c
 87d693c023ca8935be4f1f4aa8aa979e *src/fcast.c
 15f33d9fd7a31c7f288019c0d667f003 *src/fmelt.c
@@ -158,9 +158,9 @@ e7aae63b27c01a5acce45023ff436b69 *src/gsumm.c
 47792eafb3cee1c03bbcb972d00c4aad *src/ijoin.c
 bef407b3b627c2e8704e3a9cc6456de8 *src/init.c
 520938944d8dbd58460bcf4ca44e9479 *src/inrange.c
-91ba3fb33582a7894143e03e5cc9bd90 *src/openmp-utils.c
+85ad32d99ab86c022521b275f5dc86de *src/openmp-utils.c
 ab561ed83137b5b2d78d5d06030f7446 *src/quickselect.c
-7081147bbf13dd8d85c29a58a4a66e55 *src/rbindlist.c
+5fafe7c34074d2eaf6549debadaa37df *src/rbindlist.c
 416562e57a9368398d026ec1edc96313 *src/reorder.c
 43566a73264aab49b4f4fb9ffcf77c0b *src/shift.c
 eb145cdab68c4ea5d0285ffa8dcb7bb4 *src/subset.c

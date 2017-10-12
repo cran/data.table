@@ -47,7 +47,9 @@ SEXP setDTthreads(SEXP threads) {
 
 // auto avoid deadlock when data.table called from parallel::mclapply
 void when_fork() {
+#ifdef _OPENMP
     omp_set_num_threads(1);
+#endif
     DTthreads = 1;
 }
 void avoid_openmp_hang_within_fork() {

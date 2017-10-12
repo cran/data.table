@@ -1,6 +1,12 @@
 
-### Changes in v1.10.4-1  (on CRAN 06 Oct 2017)
-#### (Minimal patch release to pass CRAN checks)
+### Changes in v1.10.4-2  (on CRAN 12 Oct 2017)
+
+1. OpenMP on MacOS is now supported by CRAN and included in CRAN's package binaries for Mac. But installing v1.10.4-1 from source on MacOS failed when OpenMP was not enabled at compile time, [#2409](https://github.com/Rdatatable/data.table/issues/2409). Thanks to Liz Macfie and @fupangpangpang for reporting. The startup message when OpenMP is not enabled has been updated.
+
+2. Two rare potential memory faults fixed, thanks to CRAN's automated use of latest compiler tools; e.g. clang-5 and gcc-7
+
+
+### Changes in v1.10.4-1  (on CRAN 09 Oct 2017)
 
 1. The `nanotime` v0.2.0 update on CRAN 22 June 2017 changed from `integer64` to `S4` and broke `fwrite` of `nanotime` columns. Fixed to work with `nanotime` both before and after v0.2.0.
 
