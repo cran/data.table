@@ -750,7 +750,7 @@ key(DT)
 t1 &lt;- system.time(ans1 &lt;- DT[x == &quot;g&quot; &amp; y == 877L])
 t1
 #    user  system elapsed 
-#   0.132   0.020   0.153
+#   0.140   0.012   0.155
 head(ans1)
 #    x   y       val
 # 1: g 877 0.3946652
@@ -769,7 +769,7 @@ dim(ans1)
 t2 &lt;- system.time(ans2 &lt;- DT[.(&quot;g&quot;, 877L)])
 t2
 #    user  system elapsed 
-#   0.000   0.000   0.001
+#   0.004   0.000   0.000
 head(ans2)
 #    x   y       val
 # 1: g 877 0.3946652
@@ -786,7 +786,7 @@ identical(ans1$val, ans2$val)
 </code></pre>
 
 <ul>
-<li>The speedup is <strong>~153x</strong>!</li>
+<li>The speedup is <strong>~155x</strong>!</li>
 </ul>
 
 <h3>b) Why does keying a <em>data.table</em> result in blazing fast susbets?</h3>

@@ -367,16 +367,16 @@ head(ans)
 <pre><code class="r">odt = data.table(col = sample(1e7))
 (t1 &lt;- system.time(ans1 &lt;- odt[base::order(col)]))  ## uses order from base R
 #    user  system elapsed 
-#   0.408   0.000   0.408
+#   0.384   0.000   0.384
 (t2 &lt;- system.time(ans2 &lt;- odt[order(col)]))        ## uses data.table&#39;s forder
 #    user  system elapsed 
-#   0.852   0.000   0.852
+#   0.360   0.004   0.364
 (identical(ans1, ans2))
 # [1] TRUE
 </code></pre></li>
 </ul>
 
-<p>The speedup here is <strong>~0x</strong>. We will discuss <em>data.table</em>&#39;s fast order in more detail in the <em>data.table internals</em> vignette.</p>
+<p>The speedup here is <strong>~1x</strong>. We will discuss <em>data.table</em>&#39;s fast order in more detail in the <em>data.table internals</em> vignette.</p>
 
 <ul>
 <li>This is so that you can improve performance tremendously while using already familiar functions.</li>
