@@ -1,7 +1,7 @@
 
 cedta.override = NULL  # If no need arises, will deprecate.
 
-cedta.pkgEvalsUserCode = c("gWidgetsWWW","statET","FastRWeb","slidify","rmarkdown","knitr", "IRkernel")
+cedta.pkgEvalsUserCode = c("gWidgetsWWW","statET","FastRWeb","slidify","rmarkdown","knitr","ezknitr","IRkernel")
 # These packages run user code in their own environment and thus do not
 # themselves Depend or Import data.table. knitr's eval is passed envir=globalenv() so doesn't
 # need to be listed here currently, but we include it in case it decides to change that.
@@ -20,25 +20,27 @@ cedta.pkgEvalsUserCode = c("gWidgetsWWW","statET","FastRWeb","slidify","rmarkdow
 # http://stackoverflow.com/a/13131555/403310
 
 cedta <- function(n=2L) {
-    # Calling Environment Data Table Aware
-    te = topenv(parent.frame(n))
-    if (!isNamespace(te)) {
-        # e.g. DT queries at the prompt (.GlobalEnv) and knitr's eval(,envir=globalenv()) but not DF[...] inside knitr::kable v1.6
-        return(TRUE)
-    }
-    nsname = getNamespaceName(te)
-    ans = nsname == "data.table" ||
-        "data.table" %chin% names(getNamespaceImports(te)) ||
-        "data.table" %chin% tryCatch(get(".Depends",paste("package",nsname,sep=":"),inherits=FALSE),error=function(e)NULL) ||
-        (nsname == "utils" && exists("debugger.look",parent.frame(n+1L))) || 
-        (nsname == "base"  && all(c("FUN", "X") %in% ls(parent.frame(n)))  ) || # lapply
-        (nsname %chin% cedta.pkgEvalsUserCode && any(sapply(sys.calls(), "[[", 1L)=="eval")) ||
-        nsname %chin% cedta.override ||
-        identical(TRUE, tryCatch(get(".datatable.aware",asNamespace(nsname),inherits=FALSE),error=function(e)NULL))
-    if (!ans && getOption("datatable.verbose"))
-        cat("cedta decided '",nsname,"' wasn't data.table aware\n",sep="")
-        # so we can trace the namespace name that may need to be added (very unusually)
-    ans
+  # Calling Environment Data Table Aware
+  te = topenv(parent.frame(n))
+  if (!isNamespace(te)) {
+    # e.g. DT queries at the prompt (.GlobalEnv) and knitr's eval(,envir=globalenv()) but not DF[...] inside knitr::kable v1.6
+    return(TRUE)
+  }
+  nsname = getNamespaceName(te)
+  ans = nsname == "data.table" ||
+    "data.table" %chin% names(getNamespaceImports(te)) ||
+    "data.table" %chin% tryCatch(get(".Depends",paste("package",nsname,sep=":"),inherits=FALSE),error=function(e)NULL) ||
+    (nsname == "utils" && exists("debugger.look",parent.frame(n+1L))) ||
+    (nsname == "base"  && all(c("FUN", "X") %in% ls(parent.frame(n)))  ) || # lapply
+    (nsname %chin% cedta.pkgEvalsUserCode && any(sapply(sys.calls(), function(x) is.name(x[[1L]]) && (x[[1L]]=="eval" || x[[1L]]=="evalq")))) ||
+    nsname %chin% cedta.override ||
+    identical(TRUE, tryCatch(get(".datatable.aware",asNamespace(nsname),inherits=FALSE),error=function(e)NULL))
+  if (!ans && getOption("datatable.verbose")) {
+    cat("cedta decided '",nsname,"' wasn't data.table aware. Call stack with [[1L]] applied:\n",sep="")
+    print(sapply(sys.calls(), "[[", 1L))
+    # so we can trace the namespace name that may need to be added (very unusually)
+  }
+  ans
 }
 
 

@@ -1,165 +1,183 @@
 
-fread <- function(input="",sep="auto",sep2="auto",nrows=-1L,header="auto",na.strings="NA",file,stringsAsFactors=FALSE,verbose=getOption("datatable.verbose"),autostart=1L,skip=0L,select=NULL,drop=NULL,colClasses=NULL,integer64=getOption("datatable.integer64"),dec=if (sep!=".") "." else ",", col.names, check.names=FALSE, encoding="unknown", quote="\"", strip.white=TRUE, fill=FALSE, blank.lines.skip=FALSE, key=NULL, showProgress=getOption("datatable.showProgress"),data.table=getOption("datatable.fread.datatable"))
-{    
-    if (!is.character(dec) || length(dec)!=1L || nchar(dec)!=1) stop("dec must be a single character e.g. '.' or ','")
-    # handle encoding, #563
-    if (length(encoding) != 1L || !encoding %in% c("unknown", "UTF-8", "Latin-1")) {
-        stop("Argument 'encoding' must be 'unknown', 'UTF-8' or 'Latin-1'.")
-    }
-    isLOGICAL = function(x) isTRUE(x) || identical(FALSE, x)
-    stopifnot( isLOGICAL(strip.white), isLOGICAL(blank.lines.skip), isLOGICAL(fill), isLOGICAL(showProgress),
-               isLOGICAL(stringsAsFactors), isLOGICAL(verbose), isLOGICAL(check.names) )
-    
-    if (getOption("datatable.fread.dec.experiment") && Sys.localeconv()["decimal_point"] != dec) {
-        oldlocale = Sys.getlocale("LC_NUMERIC")
-        if (verbose) cat("dec='",dec,"' but current locale ('",oldlocale,"') has dec='",Sys.localeconv()["decimal_point"],"'. Attempting to change locale to one that has the desired decimal point.\n",sep="")
-        on.exit(Sys.setlocale("LC_NUMERIC", oldlocale))
-        if (dec==".") {
-            tt <- Sys.setlocale("LC_NUMERIC", "C")
-            if (!identical(tt,"C")) stop("It is supposed to be guaranteed that Sys.setlocale('LC_NUMERIC', 'C') will always work!")
-        }
-        else suppressWarnings(tt <- Sys.setlocale("LC_NUMERIC", ""))   # hope get lucky with system locale; i.e. France in France
-        if (Sys.localeconv()["decimal_point"] != dec) {
-            if (verbose) cat("Changing to system locale ('",tt,"') did not provide the desired dec. Now trying any provided in getOption('datatable.fread.dec.locale')\n", sep="")
-            for (i in getOption("datatable.fread.dec.locale")) {
-                if (i=="") {
-                    if (verbose) cat("Ignoring ''\n")
-                    next
-                } else {
-                    if (verbose) cat("Trying '",i,"'\n", sep="")
-                }
-                suppressWarnings(tt <- Sys.setlocale("LC_NUMERIC", i))
-                cmd = paste("Sys.setlocale('LC_NUMERIC','",i,"')",sep="")
-                if (is.null(tt)) stop(cmd," returned NULL (locale information is unavailable). See ?Sys.setlocale.")
-                if (tt=="") {
-                    if (verbose) cat(cmd, ' returned ""; i.e., this locale name is not valid on your system. It was provided by you in getOption("datatable.fread.dec.locale"). See ?Sys.setlocale and ?fread.')
-                    next
-                }
-                if (toupper(tt)!=toupper(i)) {
-                    warning(cmd, " returned '",tt,"' != '",i,"' (not NULL not '' and allowing for case differences). This may not be a problem but please report.")
-                }
-                if (Sys.localeconv()["decimal_point"] == dec) break
-                if (verbose) cat("Successfully changed locale but it provides dec='",Sys.localeconv()["decimal_point"],"' not the desired dec", sep="")
-            }
-        }
-        if (Sys.localeconv()["decimal_point"] != dec) {
-            stop('Unable to change to a locale which provides the desired dec. You will need to add a valid locale name to getOption("datatable.fread.dec.locale"). See the long paragraph in ?fread.', if(verbose)'' else ' Run again with verbose=TRUE to inspect.')   # see issue #502
-        }
-        if (verbose) cat("This R session's locale is now '",tt,"' which provides the desired decimal point for reading numerics in the file - success! The locale will be restored to what it was ('",oldlocale,") even if the function fails for other reasons.\n")
-    }
-    # map file as input
-    if (!missing(file)) {
-        if (!identical(input, "")) stop("You can provide 'input' or 'file', not both.")
-        if (!file.exists(file)) stop(sprintf("Provided file '%s' does not exists.", file))
-        input = file
-    }
-
-    is_url <- function(x) grepl("^(http|ftp)s?://", x)
-    is_secureurl <- function(x) grepl("^(http|ftp)s://", x)
-    is_file <- function(x) grepl("^file://", x)
+fread <- function(input="",file,sep="auto",sep2="auto",dec=".",quote="\"",nrows=Inf,header="auto",na.strings=getOption("datatable.na.strings","NA"),stringsAsFactors=FALSE,verbose=getOption("datatable.verbose",FALSE),skip="__auto__",select=NULL,drop=NULL,colClasses=NULL,integer64=getOption("datatable.integer64","integer64"), col.names, check.names=FALSE, encoding="unknown", strip.white=TRUE, fill=FALSE, blank.lines.skip=FALSE, key=NULL, index=NULL, showProgress=getOption("datatable.showProgress",interactive()), data.table=getOption("datatable.fread.datatable",TRUE), nThread=getDTthreads(), logical01=getOption("datatable.logical01", FALSE), autostart=NA)
+{
+  if (is.null(sep)) sep="\n"         # C level knows that \n means \r\n on Windows, for example
+  else {
+    stopifnot( length(sep)==1L, !is.na(sep), is.character(sep) )
+    if (sep=="") sep="\n"             # meaning readLines behaviour. The 3 values (NULL, "" or "\n") are equivalent.
+    else if (sep=="auto") sep=""      # sep=="" at C level means auto sep
+    else stopifnot( nchar(sep)==1L )  # otherwise an actual character to use as sep
+  }
+  stopifnot( is.character(dec), length(dec)==1L, nchar(dec)==1L )
+  # handle encoding, #563
+  if (length(encoding) != 1L || !encoding %in% c("unknown", "UTF-8", "Latin-1")) {
+    stop("Argument 'encoding' must be 'unknown', 'UTF-8' or 'Latin-1'.")
+  }
+  isTrueFalse = function(x) isTRUE(x) || identical(FALSE, x)
+  isTrueFalseNA = function(x) isTRUE(x) || identical(FALSE, x) || identical(NA, x)
+  stopifnot( isTrueFalse(strip.white), isTrueFalse(blank.lines.skip), isTrueFalse(fill), isTrueFalse(showProgress),
+             isTrueFalse(stringsAsFactors), isTrueFalse(verbose), isTrueFalse(check.names), isTrueFalse(logical01) )
+  stopifnot( is.numeric(nrows), length(nrows)==1L )
+  if (is.na(nrows) || nrows<0) nrows=Inf   # accept -1 to mean Inf, as read.table does
+  if (identical(header,"auto")) header=NA
+  stopifnot(isTrueFalseNA(header))
+  stopifnot(is.numeric(nThread) && length(nThread)==1L)
+  nThread=as.integer(nThread)
+  stopifnot(nThread>=1L)
+  if (!missing(file)) {
+    if (!identical(input, "")) stop("You can provide 'input=' or 'file=', not both.")
+    if (!file.exists(file)) stop("File '",file,"' does not exist.")
+    if (isTRUE(file.info(file)$isdir)) stop("File '",file,"' is a directory. Not yet implemented.") # dir.exists() requires R v3.2+, #989
+    input = file
+  } else {
     if (!is.character(input) || length(input)!=1L) {
-        stop("'input' must be a single character string containing a file name, a command, full path to a file, a URL starting 'http[s]://', 'ftp[s]://' or 'file://', or the input data itself")
-    } else if (is_url(input) || is_file(input)) {
-        tt = tempfile()
-        on.exit(unlink(tt), add = TRUE)
-        # In text mode on Windows-only, R doubles up \r to make \r\r\n line endings. mode="wb" avoids that. See ?connections:"CRLF"
-        if (!is_secureurl(input)) {
-            #1668 - force "auto" when is_file to
-            #  ensure we don't use an invalid option, e.g. wget
-            method <- if (is_file(input)) "auto" else 
-                getOption("download.file.method", default = "auto")
-            download.file(input, tt, method = method,
-                          mode = "wb", quiet = !showProgress)
-        } else {
-            if (!requireNamespace("curl", quietly = TRUE))
-                stop("Input URL requires https:// connection for which fread() requires 'curl' package, but cannot be found. Please install the package using 'install.packages()'.")
-            curl::curl_download(input, tt, mode = "wb", quiet = !showProgress)
-        }
-        input = tt
-    } else if (input == "" || length(grep('\\n|\\r', input)) > 0) {
-        # text input
-    } else if (isTRUE(file.info(input)$isdir)) { # fix for #989, dir.exists() requires v3.2+
-        stop("'input' can not be a directory name, but must be a single character string containing a file name, a command, full path to a file, a URL starting 'http[s]://', 'ftp[s]://' or 'file://', or the input data itself.")
-    } else if (!file.exists(input)) {
-        if (length(grep(' ', input)) == 0) stop("File '",input,"' does not exist. Include one or more spaces to consider the input a system command.")
-        tt = tempfile()
-        on.exit(unlink(tt), add = TRUE)
-        if (.Platform$OS.type == "unix") {
-            if (file.exists('/dev/shm') && file.info('/dev/shm')$isdir) {
-                tt = tempfile(tmpdir = '/dev/shm')
-            }
-            system(paste('(', input, ') > ', tt, sep=""))
-        } else {
-            shell(paste('(', input, ') > ', tt, sep=""))
-        }
-        input = tt
+      stop("'input' must be a single character string containing a file name, a system command containing at least one space, a URL starting 'http[s]://', 'ftp[s]://' or 'file://', or, the input data itself containing at least one \\n or \\r")
     }
-    if (identical(header,"auto")) header=NA
-    if (identical(sep,"auto")) sep=NULL
-    if (is.atomic(colClasses) && !is.null(names(colClasses))) colClasses = tapply(names(colClasses),colClasses,c,simplify=FALSE) # named vector handling
-    ans = .Call(Creadfile,input,sep,as.integer(nrows),header,na.strings,verbose,as.integer(autostart),skip,select,drop,colClasses,integer64,dec,encoding,quote,strip.white,blank.lines.skip,fill,showProgress)
-    nr = length(ans[[1]])
-    if ((!"bit64" %chin% loadedNamespaces()) && any(sapply(ans,inherits,"integer64"))) require_bit64()
-    setattr(ans,"row.names",.set_row_names(nr))
-
-    if (isTRUE(data.table)) {
-        setattr(ans, "class", c("data.table", "data.frame"))
-        alloc.col(ans)
+    if ( input == "" || length(grep('\\n|\\r', input)) ) {
+      # input is data itself containing at least one \n or \r
+    } else if (file.exists(input)) {
+      if (isTRUE(file.info(input)$isdir)) stop("File '",input,"' is a directory. Not yet implemented.")
     } else {
-        setattr(ans, "class", "data.frame")
+      if (substring(input,1L,1L)==" ") {
+        stop("Input argument is not a file name and contains no \\n or \\r, but starts with a space. Please remove the leading space.")
+      }
+      # either a download or a system command, both to temp file
+      tmpFile = tempfile()
+      on.exit(unlink(tmpFile), add=TRUE)
+      str6 = substring(input,1L,6L)   # avoid grepl() for #2531
+      str7 = substring(input,1L,7L)
+      str8 = substring(input,1L,8L)
+      if (str7=="ftps://" || str8=="https://") {
+        if (!requireNamespace("curl", quietly = TRUE))
+            stop("Input URL requires https:// connection for which fread() requires 'curl' package, but cannot be found. Please install curl using 'install.packages('curl')'.")
+        curl::curl_download(input, tmpFile, mode="wb", quiet = !showProgress)
+      }
+      else if (str6=="ftp://" || str7== "http://" || str7=="file://") {
+        method = if (str7=="file://") "internal" else getOption("download.file.method", default="auto")
+        # force "auto" when file:// to ensure we don't use an invalid option (e.g. wget), #1668
+        download.file(input, tmpFile, method=method, mode="wb", quiet=!showProgress)
+        # In text mode on Windows-only, R doubles up \r to make \r\r\n line endings. mode="wb" avoids that. See ?connections:"CRLF"
+      }
+      else if (length(grep(' ', input))) {
+        (if (.Platform$OS.type == "unix") system else shell)(paste0('(', input, ') > ', tmpFile))
+      }
+      else stop("File '",input,"' does not exist; getwd()=='", getwd(), "'",
+                ". Include correct full path, or one or more spaces to consider the input a system command.")
+      input = tmpFile  # the file name
     }
-    # #1027, make.unique -> make.names as spotted by @DavidArenberg
-    if (check.names) {
-        setattr(ans, 'names', make.names(names(ans), unique=TRUE))
+  }
+  if (!missing(autostart)) warning("'autostart' is now deprecated and ignored. Consider skip='string' or skip=n");
+  if (is.logical(colClasses)) {
+    if (!all(is.na(colClasses))) stop("colClasses is type 'logical' which is ok if all NA but it has some TRUE or FALSE values in it which is not allowed. Please consider the drop= or select= argument instead. See ?fread.")
+    colClasses = NULL
+  }
+  if (!is.null(colClasses) && is.atomic(colClasses)) {
+    if (!is.character(colClasses)) stop("colClasses is not type list or character vector")
+    if (!length(colClasses)) stop("colClasses is character vector ok but has 0 length")
+    if (!is.null(names(colClasses))) {   # names are column names; convert to list approach
+      colClasses = tapply(names(colClasses), colClasses, c, simplify=FALSE)
     }
-    cols = NULL
-    if (stringsAsFactors)
-        cols = which(vapply(ans, is.character, TRUE))
-    else if (length(colClasses)) {
-        if (is.list(colClasses) && "factor" %in% names(colClasses))
-            cols = colClasses[["factor"]]
-        else if (is.character(colClasses) && "factor" %chin% colClasses)
-            cols = which(colClasses=="factor")
+  }
+  stopifnot(length(skip)==1L, !is.na(skip), is.character(skip) || is.numeric(skip))
+  if (skip=="__auto__") skip=-1L   # skip="string" so long as "string" is not "__auto__". Best conveys to user something is automatic there (than -1 or NA).
+  if (is.double(skip)) skip = as.integer(skip)
+  stopifnot(is.null(na.strings) || is.character(na.strings))
+  tt = grep("^\\s+$", na.strings)
+  if (length(tt)) {
+    msg = paste0('na.strings[', tt[1L], ']=="',na.strings[tt[1L]],'" consists only of whitespace, ignoring. ')
+    if (strip.white) {
+      if (any(na.strings=="")) {
+        warning(msg, 'strip.white==TRUE (default) and "" is present in na.strings, so any number of spaces in string columns will already be read as <NA>.')
+      } else {
+        warning(msg, 'Since strip.white=TRUE (default), use na.strings="" to specify that any number of spaces in a string column should be read as <NA>.')
+      }
+      na.strings = na.strings[-tt]
+    } else {
+      stop(msg, 'But strip.white=FALSE. Use strip.white=TRUE (default) together with na.strings="" to turn any number of spaces in string columns into <NA>')
     }
-    setfactor(ans, cols, verbose)
-    if (!missing(select)) {
-        # fix for #1445
-        if (is.numeric(select)) {
-            reorder = if (length(o <- forderv(select))) o else seq_along(select)
-        } else {
-            reorder = select[select %chin% names(ans)]
-            # any missing columns are warning about in fread.c and skipped
-        }
-        setcolorder(ans, reorder)
+    # whitespace at the beginning or end of na.strings is checked at C level and is an error there; test 1804
+  }
+  warnings2errors = getOption("warn") >= 2
+  ans = .Call(CfreadR,input,sep,dec,quote,header,nrows,skip,na.strings,strip.white,blank.lines.skip,
+              fill,showProgress,nThread,verbose,warnings2errors,logical01,select,drop,colClasses,integer64,encoding)
+  nr = length(ans[[1L]])
+  if ((!"bit64" %chin% loadedNamespaces()) && any(sapply(ans,inherits,"integer64"))) require_bit64()
+  setattr(ans,"row.names",.set_row_names(nr))
+
+  if (isTRUE(data.table)) {
+    setattr(ans, "class", c("data.table", "data.frame"))
+    alloc.col(ans)
+  } else {
+    setattr(ans, "class", "data.frame")
+  }
+  # #1027, make.unique -> make.names as spotted by @DavidArenberg
+  if (check.names) {
+    setattr(ans, 'names', make.names(names(ans), unique=TRUE))
+  }
+  cols = NULL
+  if (stringsAsFactors)
+    cols = which(vapply(ans, is.character, TRUE))
+  else if (length(colClasses)) {
+    if (is.list(colClasses) && "factor" %in% names(colClasses))
+      cols = colClasses[["factor"]]
+    else if (is.character(colClasses) && "factor" %chin% colClasses)
+      cols = which(colClasses=="factor")
+  }
+  setfactor(ans, cols, verbose)
+  # 2007: is.missing is not correct since default value of select is NULL
+  if (!is.null(select)) {
+    # fix for #1445
+    if (is.numeric(select)) {
+      reorder = if (length(o <- forderv(select))) o else seq_along(select)
+    } else {
+      reorder = select[select %chin% names(ans)]
+      # any missing columns are warning about in fread.c and skipped
     }
-    # FR #768
-    if (!missing(col.names))
-        setnames(ans, col.names) # setnames checks and errors automatically
-    if (!is.null(key) && data.table) {
-        if (!is.character(key)) 
-            stop("key argument of data.table() must be character")
-        if (length(key) == 1L) {
-            key = strsplit(key, split = ",")[[1L]]
-        }
-        setkeyv(ans, key)
+    setcolorder(ans, reorder)
+  }
+  # FR #768
+  if (!missing(col.names))
+    setnames(ans, col.names) # setnames checks and errors automatically
+  if (!is.null(key) && data.table) {
+    if (!is.character(key))
+      stop("key argument of data.table() must be a character vector naming columns (NB: col.names are applied before this)")
+    if (length(key) == 1L) {
+      key = strsplit(key, split = ",", fixed = TRUE)[[1L]]
     }
-    ans
+    setkeyv(ans, key)
+  }
+  if (!is.null(index) && data.table) {
+    if (!all(sapply(index, is.character)))
+      stop("index argument of data.table() must be a character vector naming columns (NB: col.names are applied before this)")
+    if (is.list(index)) {
+      to_split = sapply(index, length) == 1L
+      if (any(to_split))
+        index[to_split] = sapply(index[to_split], strsplit, split = ",", fixed = TRUE)
+    } else {
+      if (length(index) == 1L) {
+        # setindexv accepts lists, so no [[1]]
+        index = strsplit(index, split = ",", fixed = TRUE)
+      }
+    }
+    setindexv(ans, index)
+  }
+  ans
 }
 
 # for internal use only. Used in `fread` and `data.table` for 'stringsAsFactors' argument
 setfactor <- function(x, cols, verbose) {
-    # simplified but faster version of `factor()` for internal use.
-    as_factor <- function(x) {
-        lev = forderv(x, retGrp = TRUE, na.last = NA)
-        # get levels, also take care of all sorted condition
-        lev = if (length(lev)) x[lev[attributes(lev)$starts]] else x[attributes(lev)$starts]
-        ans = chmatch(x, lev)
-        setattr(ans, 'levels', lev)
-        setattr(ans, 'class', 'factor')
-    }
-    if (length(cols)) {
-        if (verbose) cat("Converting column(s) [", paste(names(x)[cols], collapse = ", "), "] from 'char' to 'factor'\n", sep = "")
-        for (j in cols) set(x, j = j, value = as_factor(.subset2(x, j)))
-    }
-    invisible(x)
+  # simplified but faster version of `factor()` for internal use.
+  as_factor <- function(x) {
+    lev = forderv(x, retGrp = TRUE, na.last = NA)
+    # get levels, also take care of all sorted condition
+    lev = if (length(lev)) x[lev[attributes(lev)$starts]] else x[attributes(lev)$starts]
+    ans = chmatch(x, lev)
+    setattr(ans, 'levels', lev)
+    setattr(ans, 'class', 'factor')
+  }
+  if (length(cols)) {
+    if (verbose) cat("Converting column(s) [", paste(names(x)[cols], collapse = ", "), "] from 'char' to 'factor'\n", sep = "")
+    for (j in cols) set(x, j = j, value = as_factor(.subset2(x, j)))
+  }
+  invisible(x)
 }

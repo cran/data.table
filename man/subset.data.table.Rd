@@ -31,7 +31,7 @@
   The \code{subset} argument works on the rows and will be evaluated
   in the \code{data.table} so columns can be referred to (by name) as variables
   in the expression.
-  
+
   The \code{data.table} that is returned will maintain the original keys
   as long as they are not \code{select}-ed out.
 }
@@ -43,12 +43,12 @@
 \seealso{ \code{\link[base]{subset}} }
 \examples{
 
-dt <- data.table(a=sample(c('a', 'b', 'c'), 20, replace=TRUE),
+DT <- data.table(a=sample(c('a', 'b', 'c'), 20, replace=TRUE),
                  b=sample(c('a', 'b', 'c'), 20, replace=TRUE),
                  c=sample(20), key=c('a', 'b'))
 
-sub <- subset(dt, a == 'a')
-all.equal(key(sub), key(dt))
+sub <- subset(DT, a == 'a')
+all.equal(key(sub), key(DT))
 }
 \keyword{ data }
 
