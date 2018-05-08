@@ -66,8 +66,7 @@ if (exists("test.data.table", .GlobalEnv, inherits=FALSE)) {
 sugg = c(
   "bit64",          # if big integers are detected in file, fread reads them as bit64::integer64 if installed (warning if not)
   "xts",            # we have xts methods in R/xts.R
-  "nanotime",       # fwrite looks for the 'nanotime' class name at C level (but we have our own writer in C, though)
-  "chron"           # we have chron methods in R/IDateTime.R
+  "nanotime"        # fwrite looks for the 'nanotime' class name at C level (but we have our own writer in C, though)
   # zoo             # In DESCRIPTION:Suggests otherwise R CMD check warning: '::' or ':::' import not declared from: 'zoo'; it is tested in other.Rraw though
   # reshape2        # In DESCRIPTION:Suggests otherwise same R CMD check warning. See fmelt.R line 1 refers to reshape2 depending on R 3.0.0, but now we do too,
 )                   # perhaps something can be improved now. dcast and melt methods for data.table are tested directly here in main without needing reshape2 loaded.
@@ -1330,7 +1329,7 @@ test(470, DT[,baz:=x], data.table(a=1:3,b=4:6,foo=list(),bar=list(1,"a",3.14),ba
 DT = data.table(a=1:4,b=5:8)
 test(471, DT[,foo:=list("a",2:3)], data.table(a=1:4,b=5:8,foo=list("a",2:3,"a",2:3)))
 # Test recycling singleton list
-DT[,foo:=NULL]
+if (ncol(DT)==3L) DT[,foo:=NULL] # else don't warn here under torture with skip= such that test 471 didn't run
 test(472, DT[,foo:=list(list(2:3))], data.table(a=1:4,b=5:8,foo=list(2:3,2:3,2:3,2:3)))
 
 # Test adding new column with a recycled factor, #1691
@@ -1484,22 +1483,23 @@ test(525.1, set(DT,j="b",value=9:11), data.table(a=1:3, b=9:11, foo=INT(NA,7,NA)
 test(525.2, set(DT,NULL,"b",12:14), data.table(a=1:3, b=12:14, foo=INT(NA,7,NA)))  # plonk syntax via NULL i
 
 # NEW ADDITIONAL TESTS FOR set() - bug #2077 - for using set to add columns by reference
+# were tests 1096.1-4
 DT1 <- data.table(x = 1, y = 1:10, fac = sample(LETTERS[1:3], 10, replace = TRUE)) # from SO
 DT2 <- copy(DT1)
 mul=c(5.3,2.8)
 for (j in seq_along(mul)) set(DT1, i=NULL, j=paste("dot", j, sep=""), mul[j]*DT1[[j]])
 DT2[, `:=`(dot1=5.3*x, dot2=2.8*y)]
-test(1096.1, DT1, DT2)
+test(529.1, DT1, DT2)
 set(DT1, i=NULL, j="dot2", value=NULL) # remove "dot2"
-test(1096.2, DT1, DT2[, list(x,y,fac, dot1)])
+test(529.2, DT1, DT2[, list(x,y,fac, dot1)])
 DT2[, dot2 := NULL][5:9, `:=`(bla1 = 0L, x = 3L, bla2 = 2L)]
 set(DT1, i=5:9, j=c("bla1", "x", "bla2"), value=list(0L, 3L, 2L))
-test(1096.3, DT1, DT2) # more testing with many columns including existing columns
-test(1096.4, set(DT1, i=NULL, j=7L, value=5L), error="Item 1 of column numbers in j is 7 which is outside range.*1.*6.*Use column names instead in j to add new columns.")
+test(529.3, DT1, DT2) # more testing with many columns including existing columns
+test(529.4, set(DT1, i=NULL, j=7L, value=5L), error="Item 1 of column numbers in j is 7 which is outside range.*1.*6.*Use column names instead in j to add new columns.")
 
 # Test that data.frame incompability is fixed, came to light in Feb 2012
 DT = data.table(name=c('a','b','c'), value=1:3)
-test(526, base::droplevels(DT[ name != 'a' ]), data.table(name=c('b','c'),value=2:3))   # base:: because we'll implement a fast droplevels, too.
+test(530, base::droplevels(DT[ name != 'a' ]), data.table(name=c('b','c'),value=2:3))   # base:: because we'll implement a fast droplevels, too.
 
 # Test that .set_row_names() is maintained on .SD for each group
 DT = data.table(a=INT(1,1,2,2,2,3,3,3,3),b=1:9)
@@ -1715,7 +1715,7 @@ DT$time1 <- Sys.time()         # recycle via *tmp*
 DT$time2 <- rep(Sys.time(), 5) # plonk via *tmp*
 DT[,time3:=Sys.time()]         # recycle
 DT[,time4:=rep(Sys.time(),5)]  # plonk
-test(625, all(sapply(DT,is,"POSIXct")[-1]))
+test(625, all(sapply(DT,methods::is,"POSIXct")[-1]))
 
 # unique on ITime doesn't lose attributes, #1719
 t = as.ITime(strptime(c("09:10:00","09:11:00","09:11:00","09:12:00"),"%H:%M:%S"))
@@ -1947,7 +1947,7 @@ test(707, rbindlist(list(DT1,DT2)), rbind(DT1,DT2))
 # Test := adding column after a setnames of all column names (which [,list(x)] does), #2146
 DT = data.table(x=1:5)[,list(x)]
 test(713, DT[,y:=5], data.table(x=1:5,y=5))
-setnames(DT,c("A","B"))
+if (ncol(DT)==2L) setnames(DT,c("A","B")) # else don't stop under torture with skip= such that test 713 was not run
 test(714, DT[,z:=6:10], data.table(A=1:5,B=5,z=6:10))
 
 # Test J alias is now removed outside DT[...] from v1.8.7 (to resolve rJava::J conflict)
@@ -7799,17 +7799,6 @@ test(1601.2, tryCatch(merge(data.table(a=1),data.table(NULL), by="a"), warning =
 test(1601.3, tryCatch(merge(data.table(NULL),data.table(a=1), by="a"), warning = function(w) w$message), "You are trying to join data.tables where 'x' argument is 0 columns data.table.")
 test(1601.4, tryCatch(merge(data.table(NULL),data.table(NULL), by="a"), warning = function(w) w$message), "You are trying to join data.tables where 'x' and 'y' arguments are 0 columns data.table.")
 
-# migrate `chron` dependency to Suggests #1558
-dd = as.IDate("2016-02-28")
-tt = as.ITime("03:04:43")
-if (test_chron) {
-  test(1602.1, as.chron.IDate(dd), chron::as.chron(as.Date(dd)))
-  test(1602.2, class(as.chron.ITime(tt)), "times")
-} else {
-  test(1602.3, as.chron.IDate(dd), error = "Install suggested `chron` package to use `as.chron.IDate` function.")
-  test(1602.4, as.chron.ITime(tt), error = "Install suggested `chron` package to use `as.chron.ITime` function.")
-}
-
 # fix for #1549
 d1 <- data.table(v1=1:2,x=x)
 d2 <- data.table(v1=3:4)
@@ -11365,7 +11354,7 @@ for (i in 100:1) {
 # miscellaneous missing tests uncovered by CodeCov difference
 #   in the process of PR #2573
 ## data.table cannot recycle complicated types
-short_s4_col = getClass("MethodDefinition")
+short_s4_col = methods::getClass("MethodDefinition")
 test(1872.1, data.table(a = 1:4, short_s4_col), error = 'problem recycling.*try a simpler type')
 ## i must be a data.table when on is specified
 DT = data.table(a = 1:3)
@@ -11795,6 +11784,10 @@ test(1909.4, names(ans<-fread(testDir("genotypes_genome.txt"), skip="POP1:", sep
 test(1909.5, ans$V1, c("POP1:","POP1:","POP1:"))
 test(1909.6, nchar(ans$V2), INT(3287,3287,3287))
 
+# possible regression suggested in PR#2843
+DT = data.table(x=1:10, y=1:2)
+test(1910, DT[, v:=cumsum(x), by="y"], data.table(x=1:10, y=1:2, v=INT(1,2,4,6,9,12,16,20,25,30)))
+
 
 ###################################
 #  Add new tests above this line  #
@@ -11805,7 +11798,9 @@ options(oldOptions)  # set at top of this file
 setDTthreads(0)
 plat = paste0("endian==", .Platform$endian,
               ", sizeof(long double)==", .Machine$sizeof.longdouble,
-              ", sizeof(pointer)==", .Machine$sizeof.pointer)
+              ", sizeof(pointer)==", .Machine$sizeof.pointer,
+              ", TZ=", suppressWarnings(Sys.timezone()),
+              ", locale='", Sys.getlocale(), "'")
 DT = head(timings[-1L][order(-time)],10)   # exclude id 1 as in dev that includes JIT
 if ((x<-timings[,sum(nTest)]) != ntest) warning("Timings count mismatch:",x,"vs",ntest)
 cat("\n10 longest running tests took ", as.integer(tt<-DT[, sum(time)]), "s (", as.integer(100*tt/(ss<-timings[,sum(time)])), "% of ", as.integer(ss), "s)\n", sep="")
