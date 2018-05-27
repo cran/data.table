@@ -121,7 +121,7 @@ data.table <-function(..., keep.rownames=FALSE, check.names=FALSE, key=NULL, str
       x[[i]] = vector("list", nr)
       next
     }
-    if (nrows[i]==0L) stop("Item ",i," has no length. Provide at least one item (such as NA, NA_integer_ etc) to be repeated to match the ",nr," rows in the longest column. Or, all columns can be 0 length, for insert()ing rows into.")
+    if (nrows[i]==0L) stop("Item ",i," has no length. Provide at least one item (such as NA, NA_integer_ etc) to be repeated to match the ",nr," row", if (nr > 1L) "s", " in the longest column. Or, all columns can be 0 length, for insert()ing rows into.")
     # Implementing FR #4813 - recycle with warning when nr %% nrows[i] != 0L
     if (nr%%nrows[i] != 0L) warning("Item ", i, " is of size ", nrows[i], " but maximum size is ", nr, " (recycled leaving remainder of ", nr%%nrows[i], " items)")
     if (is.data.frame(xi)) {   # including data.table
@@ -2776,6 +2776,7 @@ setDT <- function(x, keep.rownames=FALSE, key=NULL, check.names=FALSE) {
       assign(as.character(name[[3L]]), x, k, inherits=FALSE)
     }
   }
+  .Call(CexpandAltRep, x)  # issue#2866 and PR#2882
   invisible(x)
 }
 
