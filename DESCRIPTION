@@ -1,5 +1,5 @@
 Package: data.table
-Version: 1.11.6
+Version: 1.11.8
 Title: Extension of `data.frame`
 Authors@R: c(
   person("Matt","Dowle",      role=c("aut","cre"), email="mattjdowle@gmail.com"),
@@ -14,7 +14,7 @@ Authors@R: c(
   person("Hugh","Parsonage",  role="ctb"))
 Depends: R (>= 3.1.0)
 Imports: methods
-Suggests: bit64, curl, knitr, xts, nanotime, zoo, reshape2
+Suggests: bit64, curl, R.utils, knitr, xts, nanotime, zoo
 Description: Fast aggregation of large data (e.g. 100GB in RAM), fast ordered joins, fast add/modify/delete of columns by group using no copies at all, list columns, friendly and fast character-separated-value read/write. Offers a natural and flexible syntax, for faster development.
 License: MPL-2.0 | file LICENSE
 URL: http://r-datatable.com
@@ -22,7 +22,7 @@ BugReports: https://github.com/Rdatatable/data.table/issues
 VignetteBuilder: knitr
 ByteCompile: TRUE
 NeedsCompilation: yes
-Packaged: 2018-09-15 09:27:38.157 UTC; mdowle
+Packaged: 2018-09-29 08:30:08.301 UTC; mdowle
 Author: Matt Dowle [aut, cre],
   Arun Srinivasan [aut],
   Jan Gorecki [ctb],
@@ -35,4 +35,4 @@ Author: Matt Dowle [aut, cre],
   Hugh Parsonage [ctb]
 Maintainer: Matt Dowle <mattjdowle@gmail.com>
 Repository: CRAN
-Date/Publication: 2018-09-19 22:10:03 UTC
+Date/Publication: 2018-09-30 13:30:03 UTC
