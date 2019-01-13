@@ -26,7 +26,7 @@ as.IDate.Date <- function(x, ...) {
 
 as.IDate.POSIXct <- function(x, tz = attr(x, "tzone"), ...) {
   if (is.null(tz)) tz = "UTC"
-  if (tz %in% c("UTC", "GMT"))
+  if (tz %chin% c("UTC", "GMT"))
     structure(as.integer(x) %/% 86400L, class=c("IDate","Date"))
   else
     as.IDate(as.Date(x, tz = tz, ...))
@@ -72,7 +72,7 @@ round.IDate <- function (x, digits=c("weeks", "months", "quarters", "years"), ..
   if (inherits(e1, "difftime") || inherits(e2, "difftime"))
     stop("difftime objects may not be added to IDate. Use plain integer instead of difftime.")
   if (isReallyReal(e1) || isReallyReal(e2)) {
-    return(`+.Date`(e1,e2))
+    return(`+.Date`(e1, e2))
     # IDate doesn't support fractional days; revert to base Date
   }
   if (inherits(e1, "Date") && inherits(e2, "Date"))
@@ -84,14 +84,18 @@ round.IDate <- function (x, digits=c("weeks", "months", "quarters", "years"), ..
   if (!inherits(e1, "IDate"))
     stop("can only subtract from \"IDate\" objects")
   if (storage.mode(e1) != "integer")
-    stop("Internal error: storage mode of IDate is somehow no longer integer")
+    stop("Internal error: storage mode of IDate is somehow no longer integer") # nocov
   if (nargs() == 1L)
     stop("unary - is not defined for \"IDate\" objects")
   if (inherits(e2, "difftime"))
     stop("difftime objects may not be subtracted from IDate. Use plain integer instead of difftime.")
+
   if ( isReallyReal(e2) ) {
-    return(`-.Date`(as.Date(e1),as.Date(e2)))
-    # IDate doesn't support fractional days so revert to base Date
+    # IDate deliberately doesn't support fractional days so revert to base Date
+    return(base::`-.Date`(as.Date(e1), e2))
+    # can't call base::.Date directly (last line of base::`-.Date`) as tried in PR#3168 because
+    # i) ?.Date states "Internal objects in the base package most of which are only user-visible because of the special nature of the base namespace."
+    # ii) .Date was newly exposed in R some time after 3.4.4
   }
   ans = as.integer(unclass(e1) - unclass(e2))
   if (!inherits(e2, "Date")) class(ans) = c("IDate","Date")
@@ -113,7 +117,7 @@ as.ITime.default <- function(x, ...) {
 
 as.ITime.POSIXct <- function(x, tz = attr(x, "tzone"), ...) {
   if (is.null(tz)) tz = "UTC"
-  if (tz %in% c("UTC", "GMT")) as.ITime(unclass(x), ...) else as.ITime(as.POSIXlt(x, tz = tz, ...), ...)
+  if (tz %chin% c("UTC", "GMT")) as.ITime(unclass(x), ...) else as.ITime(as.POSIXlt(x, tz = tz, ...), ...)
 }
 
 as.ITime.numeric <- function(x, ms = 'truncate', ...) {
@@ -250,8 +254,8 @@ as.POSIXct.IDate <- function(x, tz = "UTC", time = 0, ...) {
   as.POSIXct(as.POSIXlt(x, ...), tz, ...) + time
 }
 
-as.POSIXct.ITime <- function(x, tz = "UTC", date = as.Date(Sys.time()), ...) {
-  if (missing(date) && any(class(tz) %in% c("Date", "IDate", "POSIXt", "dates"))) {
+as.POSIXct.ITime <- function(x, tz = "UTC", date = Sys.Date(), ...) {
+  if (missing(date) && inherits(tz, c("Date", "IDate", "POSIXt", "dates"))) {
     date <- tz # allows you to use date as the 2nd argument
     tz <- "UTC"
   }

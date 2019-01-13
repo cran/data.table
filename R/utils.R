@@ -86,3 +86,30 @@ name_dots <- function(...) {
   list(vnames=vnames, novname=novname)
 }
 
+# convert a vector like c(1, 4, 3, 2) into a string like [1, 4, 3, 2]
+#   (common aggregation method for error messages)
+brackify = function(x) {
+  # arbitrary cutoff
+  if (length(x) > 10L) x = c(x[1:10], '...')
+  sprintf('[%s]', paste(x, collapse = ', '))
+}
+
+# patterns done via NSE in melt.data.table and .SDcols in `[.data.table`
+do_patterns = function(pat_sub, all_cols) {
+  # received as substitute(patterns(...))
+  pat_sub = as.list(pat_sub)[-1L]
+  # identify cols = argument if present
+  idx = which(names(pat_sub) == "cols")
+  if (length(idx)) {
+    cols = eval(pat_sub[["cols"]], parent.frame(2L))
+    pat_sub = pat_sub[-idx]
+  } else cols = all_cols
+  pats = lapply(pat_sub, eval, parent.frame(2L))
+  matched = patterns(pats, cols=cols)
+  # replace with lengths when R 3.2.0 dependency arrives
+  if (length(idx <- which(sapply(matched, length) == 0L)))
+    stop('Pattern', if (length(idx) > 1L) 's', ' not found: [',
+         paste(pats[idx], collapse = ', '), ']')
+
+  return(matched)
+}

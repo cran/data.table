@@ -25,23 +25,24 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
 {
   R_len_t i, j, k, rownum, ngrp, nrowgroups, njval=0, ngrpcols, ansloc=0, maxn, estn=-1, r, thisansloc, grpn, thislen, igrp, vlen, origIlen=0, origSDnrow=0;
   int protecti=0;
-  SEXP names, names2, xknames, bynames, dtnames, ans=NULL, jval, thiscol, SDall, BY, N, I, GRP, iSD, xSD, rownames, s, RHS, listwrap, target, source, tmp;
+  SEXP names, names2, xknames, bynames, dtnames, ans=NULL, jval, thiscol, BY, N, I, GRP, iSD, xSD, rownames, s, RHS, listwrap, target, source, tmp;
   Rboolean wasvector, firstalloc=FALSE, NullWarnDone=FALSE, recycleWarn=TRUE;
   size_t size; // must be size_t, otherwise bug #5305 (integer overflow in memcpy)
   clock_t tstart=0, tblock[10]={0}; int nblock[10]={0};
 
-  if (!isInteger(order)) error("Internal error: order not integer vector");
-  if (TYPEOF(starts) != INTSXP) error("Internal error: starts not integer");
-  if (TYPEOF(lens) != INTSXP) error("Internal error: lens not integer");
+  if (!isInteger(order)) error("Internal error: order not integer vector"); // # nocov
+  if (TYPEOF(starts) != INTSXP) error("Internal error: starts not integer"); // # nocov
+  if (TYPEOF(lens) != INTSXP) error("Internal error: lens not integer"); // # nocov
   // starts can now be NA (<0): if (INTEGER(starts)[0]<0 || INTEGER(lens)[0]<0) error("starts[1]<0 or lens[1]<0");
-  if (!isNull(jiscols) && LENGTH(order) && !LOGICAL(on)[0]) error("Internal error: jiscols not NULL but o__ has length");
-  if (!isNull(xjiscols) && LENGTH(order) && !LOGICAL(on)[0]) error("Internal error: xjiscols not NULL but o__ has length");
+  if (!isNull(jiscols) && LENGTH(order) && !LOGICAL(on)[0]) error("Internal error: jiscols not NULL but o__ has length"); // # nocov
+  if (!isNull(xjiscols) && LENGTH(order) && !LOGICAL(on)[0]) error("Internal error: xjiscols not NULL but o__ has length"); // # nocov
   if(!isEnvironment(env)) error("’env’ should be an environment");
   ngrp = length(starts);  // the number of groups  (nrow(groups) will be larger when by)
   ngrpcols = length(grpcols);
   nrowgroups = length(VECTOR_ELT(groups,0));
   // fix for longstanding FR/bug, #495. E.g., DT[, c(sum(v1), lapply(.SD, mean)), by=grp, .SDcols=v2:v3] resulted in error.. the idea is, 1) we create .SDall, which is normally == .SD. But if extra vars are detected in jexp other than .SD, then .SD becomes a shallow copy of .SDall with only .SDcols in .SD. Since internally, we don't make a copy, changing .SDall will reflect in .SD. Hopefully this'll workout :-).
-  SDall = PROTECT(findVar(install(".SDall"), env)); protecti++;  // PROTECT for rchk
+  SEXP SDall = PROTECT(findVar(install(".SDall"), env)); protecti++;  // PROTECT for rchk
+  SEXP SD = PROTECT(findVar(install(".SD"), env)); protecti++;
 
   defineVar(sym_BY, BY = PROTECT(allocVector(VECSXP, ngrpcols)), env); protecti++;  // PROTECT for rchk
   bynames = PROTECT(allocVector(STRSXP, ngrpcols));  protecti++;   // TO DO: do we really need bynames, can we assign names afterwards in one step?
@@ -75,8 +76,7 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
   dtnames = PROTECT(getAttrib(dt, R_NamesSymbol)); protecti++; // added here to fix #4990 - `:=` did not issue recycling warning during "by"
   // fetch rownames of .SD.  rownames[1] is set to -thislen for each group, in case .SD is passed to
   // non data.table aware package that uses rownames
-  for (s = ATTRIB(SDall); s != R_NilValue && TAG(s)!=R_RowNamesSymbol; s = CDR(s));
-  // getAttrib0 basically but that's hidden in attrib.c
+  for (s = ATTRIB(SD); s != R_NilValue && TAG(s)!=R_RowNamesSymbol; s = CDR(s));  // getAttrib0 basically but that's hidden in attrib.c
   if (s==R_NilValue) error("row.names attribute of .SD not found");
   rownames = CAR(s);
   if (!isInteger(rownames) || LENGTH(rownames)!=2 || INTEGER(rownames)[0]!=NA_INTEGER) error("row.names of .SD isn't integer length 2 with NA as first item; i.e., .set_row_names(). [%s %d %d]",type2char(TYPEOF(rownames)),LENGTH(rownames),INTEGER(rownames)[0]);
@@ -285,7 +285,7 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
         if (isNull(target)) {
           // first time adding to new column
           if (isNull(RHS)) error("RHS is NULL when grouping :=. Makes no sense to delete a column by group. Perhaps use an empty vector instead.");
-          if (TRUELENGTH(dt) < INTEGER(lhs)[j]) error("Internal error: Trying to add new column by reference but tl is full; alloc.col should have run first at R level before getting to this point in dogroups");
+          if (TRUELENGTH(dt) < INTEGER(lhs)[j]) error("Internal error: Trying to add new column by reference but tl is full; alloc.col should have run first at R level before getting to this point in dogroups"); // # nocov
           tmp = PROTECT(allocNAVector(TYPEOF(RHS), LENGTH(VECTOR_ELT(dt,0))));
           // increment length only if the allocation passes, #1676
           SETLENGTH(dtnames, LENGTH(dtnames)+1);
@@ -455,7 +455,7 @@ SEXP dogroups(SEXP dt, SEXP dtcols, SEXP groups, SEXP grpcols, SEXP jiscols, SEX
   for (j=0; j<length(SDall); j++) SETLENGTH(VECTOR_ELT(SDall,j), origSDnrow);
   SETLENGTH(I, origIlen);
   if (LOGICAL(verbose)[0]) {
-    if (nblock[0] && nblock[1]) error("Internal error: block 0 [%d] and block 1 [%d] have both run", nblock[0], nblock[1]);
+    if (nblock[0] && nblock[1]) error("Internal error: block 0 [%d] and block 1 [%d] have both run", nblock[0], nblock[1]); // # nocov
     int w = nblock[1]>0;
     Rprintf("\n  %s took %.3fs for %d groups\n", w ? "collecting discontiguous groups" : "memcpy contiguous groups",
                           1.0*tblock[w]/CLOCKS_PER_SEC, nblock[w]);

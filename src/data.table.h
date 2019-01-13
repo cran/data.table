@@ -6,6 +6,7 @@
 #include <stdint.h> // for uint64_t rather than unsigned long long
 #include <stdbool.h>
 #include "myomp.h"
+#include "types.h"
 
 // data.table depends on R>=3.0.0 when R_xlen_t was introduced
 // Before R 3.0.0, RLEN used to be switched to R_len_t as R_xlen_t wasn't available.
@@ -71,7 +72,7 @@ SEXP sym_index;
 SEXP sym_BY;
 SEXP sym_starts, char_starts;
 SEXP sym_maxgrpn;
-Rboolean INHERITS(SEXP x, SEXP char_);
+bool INHERITS(SEXP x, SEXP char_);
 long long DtoLL(double x);
 double LLtoD(long long x);
 double NA_INT64_D;
@@ -87,12 +88,11 @@ SEXP SelfRefSymbol;
 SEXP allocNAVector(SEXPTYPE type, R_len_t n);
 void savetl_init(), savetl(SEXP s), savetl_end();
 Rboolean isDatatable(SEXP x);
+int checkOverAlloc(SEXP x);
 
 // forder.c
 int StrCmp(SEXP x, SEXP y);
-unsigned long long dtwiddle(void *p, int i, int order);
-unsigned long long i64twiddle(void *p, int i, int order);
-unsigned long long (*twiddle)(void *, int, int);
+uint64_t dtwiddle(void *p, int i);
 SEXP forder(SEXP DT, SEXP by, SEXP retGrp, SEXP sortStrArg, SEXP orderArg, SEXP naArg);
 bool need2utf8(SEXP x, int n);
 SEXP isReallyReal(SEXP);
@@ -154,3 +154,15 @@ double wallclock();
 int getDTthreads();
 void avoid_openmp_hang_within_fork();
 
+// froll.c
+void frollmean(unsigned int algo, double *x, uint_fast64_t nx, double_ans_t *ans, int k, int align, double fill, bool narm, int hasna, bool verbose);
+void frollmeanFast(double *x, uint_fast64_t nx, double_ans_t *ans, int k, double fill, bool narm, int hasna, bool verbose);
+void frollmeanExact(double *x, uint_fast64_t nx, double_ans_t *ans, int k, double fill, bool narm, int hasna, bool verbose);
+
+// frolladaptive.c
+void fadaptiverollmean(unsigned int algo, double *x, uint_fast64_t nx, double_ans_t *ans, int *k, double fill, bool narm, int hasna, bool verbose);
+void fadaptiverollmeanFast(double *x, uint_fast64_t nx, double_ans_t *ans, int *k, double fill, bool narm, int hasna, bool verbose);
+void fadaptiverollmeanExact(double *x, uint_fast64_t nx, double_ans_t *ans, int *k, double fill, bool narm, int hasna, bool verbose);
+
+// frollR.c
+SEXP frollfunR(SEXP fun, SEXP obj, SEXP k, SEXP fill, SEXP algo, SEXP align, SEXP narm, SEXP hasNA, SEXP adaptive, SEXP verbose);

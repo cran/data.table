@@ -34,14 +34,7 @@ melt.data.table <- function(data, id.vars, measure.vars, variable.name = "variab
   if (missing(measure.vars)) measure.vars = NULL
   measure.sub = substitute(measure.vars)
   if (is.call(measure.sub) && measure.sub[[1L]] == "patterns") {
-    measure.sub = as.list(measure.sub)[-1L]
-    idx = which(names(measure.sub) %in% "cols")
-    if (length(idx)) {
-      cols = eval(measure.sub[["cols"]], parent.frame())
-      measure.sub = measure.sub[-idx]
-    } else cols = names(data)
-    pats = lapply(measure.sub, eval, parent.frame())
-    measure.vars = patterns(pats, cols=cols)
+    measure.vars = do_patterns(measure.sub, names(data))
   }
   if (is.list(measure.vars) && length(measure.vars) > 1L) {
     meas.nm = names(measure.vars)
