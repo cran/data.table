@@ -77,7 +77,6 @@ static void subsetVectorRaw(SEXP ans, SEXP source, SEXP idx, const bool anyNA)
   case CPLXSXP : {
     Rcomplex *sp = COMPLEX(source);
     Rcomplex *ap = COMPLEX(ans);
-    Rcomplex NA_CPLX = { NA_REAL, NA_REAL };
     PARLOOP(NA_CPLX)
   } break;
   case RAWSXP : {
@@ -282,7 +281,7 @@ SEXP subsetDT(SEXP x, SEXP rows, SEXP cols) {
     for (int i=0; i<LENGTH(cols); i++) {
       SEXP thisCol = VECTOR_ELT(x, colD[i]-1);
       checkCol(thisCol, colD[i], nrow, x);
-      SET_VECTOR_ELT(ans, i, duplicate(thisCol));
+      SET_VECTOR_ELT(ans, i, copyAsPlain(thisCol));
       // materialize the column subset as we have always done for now, until REFCNT is on by default in R (TODO)
     }
   } else {
@@ -325,7 +324,7 @@ SEXP subsetDT(SEXP x, SEXP rows, SEXP cols) {
       for (int j=0; j<i; j++) SET_STRING_ELT(tmp, j, STRING_ELT(key, j));
     }
   }
-  setAttrib(ans, install(".data.table.locked"), R_NilValue);
+  unlock(ans);
   setselfref(ans);
   UNPROTECT(nprotect);
   return ans;
