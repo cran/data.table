@@ -2531,14 +2531,13 @@ chgroup = function(x) {
   if (length(o)) as.vector(o) else seq_along(x)  # as.vector removes the attributes
 }
 
-.rbind.data.table = function(..., use.names=TRUE, fill=FALSE, idcol=NULL) {
-  # See FAQ 2.23
-  # Called from base::rbind.data.frame
-  # fix for #1626.. because some packages (like psych) bind an input
-  # data.frame/data.table with a matrix..
-  l = lapply(list(...), function(x) if (is.list(x)) x else as.data.table(x))
+# plain rbind and cbind methods are registered using S3method() in NAMESPACE only from R>=4.0.0; #3948
+rbind.data.table = function(..., use.names=TRUE, fill=FALSE, idcol=NULL) {
+  l = lapply(list(...), function(x) if (is.list(x)) x else as.data.table(x))  #1626; e.g. psych binds a data.frame|table with a matrix
   rbindlist(l, use.names, fill, idcol)
 }
+cbind.data.table = data.table
+.rbind.data.table = rbind.data.table  # the workaround using this in FAQ 2.24 is still applied to support R < 4.0.0
 
 rbindlist = function(l, use.names="check", fill=FALSE, idcol=NULL) {
   if (is.null(l)) return(null.data.table())
