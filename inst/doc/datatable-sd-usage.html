@@ -1,18 +1,17 @@
 <!DOCTYPE html>
 
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html>
 
 <head>
 
 <meta charset="utf-8" />
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 <meta name="generator" content="pandoc" />
 <meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
 
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 
-<meta name="date" content="2019-10-17" />
+<meta name="date" content="2019-12-08" />
 
 <title>Using .SD for Data Analysis</title>
 
@@ -94,7 +93,7 @@ code > span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Inf
 
 
 <h1 class="title toc-ignore">Using .SD for Data Analysis</h1>
-<h4 class="date">2019-10-17</h4>
+<h4 class="date">2019-12-08</h4>
 
 
 <div id="TOC">
@@ -127,94 +126,82 @@ code > span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Inf
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">load</span>(<span class="st">'Teams.RData'</span>)
 <span class="kw">setDT</span>(Teams)
 Teams
-<span class="co">#       yearID lgID teamID franchID divID Rank   G Ghome  W  L DivWin WCWin</span>
-<span class="co">#    1:   1871   NA    BS1      BNA  &lt;NA&gt;    3  31    NA 20 10   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#    2:   1871   NA    CH1      CNA  &lt;NA&gt;    2  28    NA 19  9   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#    3:   1871   NA    CL1      CFC  &lt;NA&gt;    8  29    NA 10 19   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#    4:   1871   NA    FW1      KEK  &lt;NA&gt;    7  19    NA  7 12   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#    5:   1871   NA    NY2      NNA  &lt;NA&gt;    5  33    NA 16 17   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#   ---                                                                    </span>
-<span class="co"># 2891:   2018   NL    SLN      STL     C    3 162    81 88 74      N     N</span>
-<span class="co"># 2892:   2018   AL    TBA      </span><span class="al">TBD</span><span class="co">     E    3 162    81 90 72      N     N</span>
-<span class="co"># 2893:   2018   AL    TEX      TEX     W    5 162    81 67 95      N     N</span>
-<span class="co"># 2894:   2018   AL    TOR      TOR     E    4 162    81 73 89      N     N</span>
-<span class="co"># 2895:   2018   NL    WAS      WSN     E    2 162    81 82 80      N     N</span>
-<span class="co">#       LgWin WSWin   R   AB    H X2B X3B  HR  BB   SO  SB CS HBP SF  RA  ER</span>
-<span class="co">#    1:     N  &lt;NA&gt; 401 1372  426  70  37   3  60   19  73 16  NA NA 303 109</span>
-<span class="co">#    2:     N  &lt;NA&gt; 302 1196  323  52  21  10  60   22  69 21  NA NA 241  77</span>
-<span class="co">#    3:     N  &lt;NA&gt; 249 1186  328  35  40   7  26   25  18  8  NA NA 341 116</span>
-<span class="co">#    4:     N  &lt;NA&gt; 137  746  178  19   8   2  33    9  16  4  NA NA 243  97</span>
-<span class="co">#    5:     N  &lt;NA&gt; 302 1404  403  43  21   1  33   15  46 15  NA NA 313 121</span>
-<span class="co">#   ---                                                                     </span>
-<span class="co"># 2891:     N     N 759 5498 1369 248   9 205 525 1380  63 32  80 48 691 622</span>
-<span class="co"># 2892:     N     N 716 5475 1415 274  43 150 540 1388 128 51 101 50 646 602</span>
-<span class="co"># 2893:     N     N 737 5453 1308 266  24 194 555 1484  74 35  88 34 848 783</span>
-<span class="co"># 2894:     N     N 709 5477 1336 320  16 217 499 1387  47 30  58 37 832 772</span>
-<span class="co"># 2895:     N     N 771 5517 1402 284  25 191 631 1289 119 33  59 40 682 649</span>
-<span class="co">#        ERA CG SHO SV IPouts   HA HRA BBA  SOA   E  DP    FP</span>
-<span class="co">#    1: 3.55 22   1  3    828  367   2  42   23 243  24 0.834</span>
-<span class="co">#    2: 2.76 25   0  1    753  308   6  28   22 229  16 0.829</span>
-<span class="co">#    3: 4.11 23   0  0    762  346  13  53   34 234  15 0.818</span>
-<span class="co">#    4: 5.17 19   1  0    507  261   5  21   17 163   8 0.803</span>
-<span class="co">#    5: 3.72 32   1  0    879  373   7  42   22 235  14 0.840</span>
-<span class="co">#   ---                                                      </span>
-<span class="co"># 2891: 3.85  1   8 43   4366 1354 144 593 1337 133 151 0.978</span>
-<span class="co"># 2892: 3.74  0  14 52   4345 1236 164 501 1421  85 136 0.986</span>
-<span class="co"># 2893: 4.92  1   5 42   4293 1516 222 491 1121 120 168 0.980</span>
-<span class="co"># 2894: 4.85  0   3 39   4301 1476 208 551 1298 101 138 0.983</span>
-<span class="co"># 2895: 4.04  2   7 40   4338 1320 198 487 1417  64 115 0.989</span>
-<span class="co">#                          name                          park attendance BPF</span>
-<span class="co">#    1:    Boston Red Stockings           South End Grounds I         NA 103</span>
-<span class="co">#    2: Chicago White Stockings       Union Base-Ball Grounds         NA 104</span>
-<span class="co">#    3:  Cleveland Forest Citys  National Association Grounds         NA  96</span>
-<span class="co">#    4:    Fort Wayne Kekiongas                Hamilton Field         NA 101</span>
-<span class="co">#    5:        New York Mutuals      Union Grounds (Brooklyn)         NA  90</span>
-<span class="co">#   ---                                                                     </span>
-<span class="co"># 2891:     St. Louis Cardinals             Busch Stadium III    3403587  97</span>
-<span class="co"># 2892:          Tampa Bay Rays               Tropicana Field    1154973  97</span>
-<span class="co"># 2893:           Texas Rangers Rangers Ballpark in Arlington    2107107 112</span>
-<span class="co"># 2894:       Toronto Blue Jays                 Rogers Centre    2325281  97</span>
-<span class="co"># 2895:    Washington Nationals                Nationals Park    2529604 106</span>
-<span class="co">#       PPF teamIDBR teamIDlahman45 teamIDretro</span>
-<span class="co">#    1:  98      BOS            BS1         BS1</span>
-<span class="co">#    2: 102      CHI            CH1         CH1</span>
-<span class="co">#    3: 100      CLE            CL1         CL1</span>
-<span class="co">#    4: 107      KEK            FW1         FW1</span>
-<span class="co">#    5:  88      NYU            NY2         NY2</span>
-<span class="co">#   ---                                        </span>
-<span class="co"># 2891:  96      STL            SLN         SLN</span>
-<span class="co"># 2892:  97      TBR            TBA         TBA</span>
-<span class="co"># 2893: 113      TEX            TEX         TEX</span>
-<span class="co"># 2894:  98      TOR            TOR         TOR</span>
-<span class="co"># 2895: 105      WSN            MON         WAS</span>
+<span class="co">#       yearID lgID teamID franchID divID Rank   G Ghome  W  L DivWin WCWin LgWin WSWin   R   AB    H</span>
+<span class="co">#    1:   1871   NA    BS1      BNA  &lt;NA&gt;    3  31    NA 20 10   &lt;NA&gt;  &lt;NA&gt;     N  &lt;NA&gt; 401 1372  426</span>
+<span class="co">#    2:   1871   NA    CH1      CNA  &lt;NA&gt;    2  28    NA 19  9   &lt;NA&gt;  &lt;NA&gt;     N  &lt;NA&gt; 302 1196  323</span>
+<span class="co">#    3:   1871   NA    CL1      CFC  &lt;NA&gt;    8  29    NA 10 19   &lt;NA&gt;  &lt;NA&gt;     N  &lt;NA&gt; 249 1186  328</span>
+<span class="co">#    4:   1871   NA    FW1      KEK  &lt;NA&gt;    7  19    NA  7 12   &lt;NA&gt;  &lt;NA&gt;     N  &lt;NA&gt; 137  746  178</span>
+<span class="co">#    5:   1871   NA    NY2      NNA  &lt;NA&gt;    5  33    NA 16 17   &lt;NA&gt;  &lt;NA&gt;     N  &lt;NA&gt; 302 1404  403</span>
+<span class="co">#   ---                                                                                              </span>
+<span class="co"># 2891:   2018   NL    SLN      STL     C    3 162    81 88 74      N     N     N     N 759 5498 1369</span>
+<span class="co"># 2892:   2018   AL    TBA      </span><span class="al">TBD</span><span class="co">     E    3 162    81 90 72      N     N     N     N 716 5475 1415</span>
+<span class="co"># 2893:   2018   AL    TEX      TEX     W    5 162    81 67 95      N     N     N     N 737 5453 1308</span>
+<span class="co"># 2894:   2018   AL    TOR      TOR     E    4 162    81 73 89      N     N     N     N 709 5477 1336</span>
+<span class="co"># 2895:   2018   NL    WAS      WSN     E    2 162    81 82 80      N     N     N     N 771 5517 1402</span>
+<span class="co">#       X2B X3B  HR  BB   SO  SB CS HBP SF  RA  ER  ERA CG SHO SV IPouts   HA HRA BBA  SOA   E  DP</span>
+<span class="co">#    1:  70  37   3  60   19  73 16  NA NA 303 109 3.55 22   1  3    828  367   2  42   23 243  24</span>
+<span class="co">#    2:  52  21  10  60   22  69 21  NA NA 241  77 2.76 25   0  1    753  308   6  28   22 229  16</span>
+<span class="co">#    3:  35  40   7  26   25  18  8  NA NA 341 116 4.11 23   0  0    762  346  13  53   34 234  15</span>
+<span class="co">#    4:  19   8   2  33    9  16  4  NA NA 243  97 5.17 19   1  0    507  261   5  21   17 163   8</span>
+<span class="co">#    5:  43  21   1  33   15  46 15  NA NA 313 121 3.72 32   1  0    879  373   7  42   22 235  14</span>
+<span class="co">#   ---                                                                                           </span>
+<span class="co"># 2891: 248   9 205 525 1380  63 32  80 48 691 622 3.85  1   8 43   4366 1354 144 593 1337 133 151</span>
+<span class="co"># 2892: 274  43 150 540 1388 128 51 101 50 646 602 3.74  0  14 52   4345 1236 164 501 1421  85 136</span>
+<span class="co"># 2893: 266  24 194 555 1484  74 35  88 34 848 783 4.92  1   5 42   4293 1516 222 491 1121 120 168</span>
+<span class="co"># 2894: 320  16 217 499 1387  47 30  58 37 832 772 4.85  0   3 39   4301 1476 208 551 1298 101 138</span>
+<span class="co"># 2895: 284  25 191 631 1289 119 33  59 40 682 649 4.04  2   7 40   4338 1320 198 487 1417  64 115</span>
+<span class="co">#          FP                    name                          park attendance BPF PPF teamIDBR</span>
+<span class="co">#    1: 0.834    Boston Red Stockings           South End Grounds I         NA 103  98      BOS</span>
+<span class="co">#    2: 0.829 Chicago White Stockings       Union Base-Ball Grounds         NA 104 102      CHI</span>
+<span class="co">#    3: 0.818  Cleveland Forest Citys  National Association Grounds         NA  96 100      CLE</span>
+<span class="co">#    4: 0.803    Fort Wayne Kekiongas                Hamilton Field         NA 101 107      KEK</span>
+<span class="co">#    5: 0.840        New York Mutuals      Union Grounds (Brooklyn)         NA  90  88      NYU</span>
+<span class="co">#   ---                                                                                        </span>
+<span class="co"># 2891: 0.978     St. Louis Cardinals             Busch Stadium III    3403587  97  96      STL</span>
+<span class="co"># 2892: 0.986          Tampa Bay Rays               Tropicana Field    1154973  97  97      TBR</span>
+<span class="co"># 2893: 0.980           Texas Rangers Rangers Ballpark in Arlington    2107107 112 113      TEX</span>
+<span class="co"># 2894: 0.983       Toronto Blue Jays                 Rogers Centre    2325281  97  98      TOR</span>
+<span class="co"># 2895: 0.989    Washington Nationals                Nationals Park    2529604 106 105      WSN</span>
+<span class="co">#       teamIDlahman45 teamIDretro</span>
+<span class="co">#    1:            BS1         BS1</span>
+<span class="co">#    2:            CH1         CH1</span>
+<span class="co">#    3:            CL1         CL1</span>
+<span class="co">#    4:            FW1         FW1</span>
+<span class="co">#    5:            NY2         NY2</span>
+<span class="co">#   ---                           </span>
+<span class="co"># 2891:            SLN         SLN</span>
+<span class="co"># 2892:            TBA         TBA</span>
+<span class="co"># 2893:            TEX         TEX</span>
+<span class="co"># 2894:            TOR         TOR</span>
+<span class="co"># 2895:            MON         WAS</span>
 
 <span class="kw">load</span>(<span class="st">'Pitching.RData'</span>)
 <span class="kw">setDT</span>(Pitching)
 Pitching
-<span class="co">#         playerID yearID stint teamID lgID  W  L  G GS CG SHO SV IPouts   H</span>
-<span class="co">#     1: bechtge01   1871     1    PH1   NA  1  2  3  3  2   0  0     78  43</span>
-<span class="co">#     2: brainas01   1871     1    WS3   NA 12 15 30 30 30   0  0    792 361</span>
-<span class="co">#     3: fergubo01   1871     1    NY2   NA  0  0  1  0  0   0  0      3   8</span>
-<span class="co">#     4: fishech01   1871     1    RC1   NA  4 16 24 24 22   1  0    639 295</span>
-<span class="co">#     5: fleetfr01   1871     1    NY2   NA  0  1  1  1  1   0  0     27  20</span>
-<span class="co">#    ---                                                                    </span>
-<span class="co"># 46695: zamorda01   2018     1    NYN   NL  1  0 16  0  0   0  0     27   6</span>
-<span class="co"># 46696: zastrro01   2018     1    CHN   NL  1  0  6  0  0   0  0     17   6</span>
-<span class="co"># 46697: zieglbr01   2018     1    MIA   NL  1  5 53  0  0   0 10    156  49</span>
-<span class="co"># 46698: zieglbr01   2018     2    ARI   NL  1  1 29  0  0   0  0     65  22</span>
-<span class="co"># 46699: zimmejo02   2018     1    DET   AL  7  8 25 25  0   0  0    394 140</span>
-<span class="co">#         ER HR BB  SO BAOpp   ERA IBB WP HBP BK  BFP GF   R SH SF GIDP</span>
-<span class="co">#     1:  23  0 11   1    NA  7.96  NA  7  NA  0  146  0  42 NA NA   NA</span>
-<span class="co">#     2: 132  4 37  13    NA  4.50  NA  7  NA  0 1291  0 292 NA NA   NA</span>
-<span class="co">#     3:   3  0  0   0    NA 27.00  NA  2  NA  0   14  0   9 NA NA   NA</span>
-<span class="co">#     4: 103  3 31  15    NA  4.35  NA 20  NA  0 1080  1 257 NA NA   NA</span>
-<span class="co">#     5:  10  0  3   0    NA 10.00  NA  0  NA  0   57  0  21 NA NA   NA</span>
-<span class="co">#    ---                                                               </span>
-<span class="co"># 46695:   3  1  3  16 0.194  3.00   1  0   1  0   36  4   3  1  0    1</span>
-<span class="co"># 46696:   3  0  4   3 0.286  4.76   0  0   1  0   26  2   3  0  0    0</span>
-<span class="co"># 46697:  23  7 17  37 0.254  3.98   4  1   2  0  213 23  25  0  1   11</span>
-<span class="co"># 46698:   9  1  8  13 0.265  3.74   2  0   0  0   92  1   9  0  1    3</span>
-<span class="co"># 46699:  66 28 26 111 0.269  4.52   0  1   2  0  556  0  76  2  5    4</span></code></pre></div>
+<span class="co">#         playerID yearID stint teamID lgID  W  L  G GS CG SHO SV IPouts   H  ER HR BB  SO BAOpp</span>
+<span class="co">#     1: bechtge01   1871     1    PH1   NA  1  2  3  3  2   0  0     78  43  23  0 11   1    NA</span>
+<span class="co">#     2: brainas01   1871     1    WS3   NA 12 15 30 30 30   0  0    792 361 132  4 37  13    NA</span>
+<span class="co">#     3: fergubo01   1871     1    NY2   NA  0  0  1  0  0   0  0      3   8   3  0  0   0    NA</span>
+<span class="co">#     4: fishech01   1871     1    RC1   NA  4 16 24 24 22   1  0    639 295 103  3 31  15    NA</span>
+<span class="co">#     5: fleetfr01   1871     1    NY2   NA  0  1  1  1  1   0  0     27  20  10  0  3   0    NA</span>
+<span class="co">#    ---                                                                                        </span>
+<span class="co"># 46695: zamorda01   2018     1    NYN   NL  1  0 16  0  0   0  0     27   6   3  1  3  16 0.194</span>
+<span class="co"># 46696: zastrro01   2018     1    CHN   NL  1  0  6  0  0   0  0     17   6   3  0  4   3 0.286</span>
+<span class="co"># 46697: zieglbr01   2018     1    MIA   NL  1  5 53  0  0   0 10    156  49  23  7 17  37 0.254</span>
+<span class="co"># 46698: zieglbr01   2018     2    ARI   NL  1  1 29  0  0   0  0     65  22   9  1  8  13 0.265</span>
+<span class="co"># 46699: zimmejo02   2018     1    DET   AL  7  8 25 25  0   0  0    394 140  66 28 26 111 0.269</span>
+<span class="co">#          ERA IBB WP HBP BK  BFP GF   R SH SF GIDP</span>
+<span class="co">#     1:  7.96  NA  7  NA  0  146  0  42 NA NA   NA</span>
+<span class="co">#     2:  4.50  NA  7  NA  0 1291  0 292 NA NA   NA</span>
+<span class="co">#     3: 27.00  NA  2  NA  0   14  0   9 NA NA   NA</span>
+<span class="co">#     4:  4.35  NA 20  NA  0 1080  1 257 NA NA   NA</span>
+<span class="co">#     5: 10.00  NA  0  NA  0   57  0  21 NA NA   NA</span>
+<span class="co">#    ---                                           </span>
+<span class="co"># 46695:  3.00   1  0   1  0   36  4   3  1  0    1</span>
+<span class="co"># 46696:  4.76   0  0   1  0   26  2   3  0  0    0</span>
+<span class="co"># 46697:  3.98   4  1   2  0  213 23  25  0  1   11</span>
+<span class="co"># 46698:  3.74   2  0   0  0   92  1   9  0  1    3</span>
+<span class="co"># 46699:  4.52   0  1   2  0  556  0  76  2  5    4</span></code></pre></div>
 <p>Readers up on baseball lingo should find the tables’ contents familiar; <code>Teams</code> records some statistics for a given team in a given year, while <code>Pitching</code> records statistics for a given pitcher in a given year. Please do check out the <a href="http://www.seanlahman.com/files/database/readme2017.txt">documentation</a> and explore the data yourself a bit before proceeding to familiarize yourself with their structure.</p>
 </div>
 </div>
@@ -222,30 +209,30 @@ Pitching
 <h1><span class="header-section-number">2</span> <code>.SD</code> on Ungrouped Data</h1>
 <p>To illustrate what I mean about the reflexive nature of <code>.SD</code>, consider its most banal usage:</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">Pitching[ , .SD]
-<span class="co">#         playerID yearID stint teamID lgID  W  L  G GS CG SHO SV IPouts   H</span>
-<span class="co">#     1: bechtge01   1871     1    PH1   NA  1  2  3  3  2   0  0     78  43</span>
-<span class="co">#     2: brainas01   1871     1    WS3   NA 12 15 30 30 30   0  0    792 361</span>
-<span class="co">#     3: fergubo01   1871     1    NY2   NA  0  0  1  0  0   0  0      3   8</span>
-<span class="co">#     4: fishech01   1871     1    RC1   NA  4 16 24 24 22   1  0    639 295</span>
-<span class="co">#     5: fleetfr01   1871     1    NY2   NA  0  1  1  1  1   0  0     27  20</span>
-<span class="co">#    ---                                                                    </span>
-<span class="co"># 46695: zamorda01   2018     1    NYN   NL  1  0 16  0  0   0  0     27   6</span>
-<span class="co"># 46696: zastrro01   2018     1    CHN   NL  1  0  6  0  0   0  0     17   6</span>
-<span class="co"># 46697: zieglbr01   2018     1    MIA   NL  1  5 53  0  0   0 10    156  49</span>
-<span class="co"># 46698: zieglbr01   2018     2    ARI   NL  1  1 29  0  0   0  0     65  22</span>
-<span class="co"># 46699: zimmejo02   2018     1    DET   AL  7  8 25 25  0   0  0    394 140</span>
-<span class="co">#         ER HR BB  SO BAOpp   ERA IBB WP HBP BK  BFP GF   R SH SF GIDP</span>
-<span class="co">#     1:  23  0 11   1    NA  7.96  NA  7  NA  0  146  0  42 NA NA   NA</span>
-<span class="co">#     2: 132  4 37  13    NA  4.50  NA  7  NA  0 1291  0 292 NA NA   NA</span>
-<span class="co">#     3:   3  0  0   0    NA 27.00  NA  2  NA  0   14  0   9 NA NA   NA</span>
-<span class="co">#     4: 103  3 31  15    NA  4.35  NA 20  NA  0 1080  1 257 NA NA   NA</span>
-<span class="co">#     5:  10  0  3   0    NA 10.00  NA  0  NA  0   57  0  21 NA NA   NA</span>
-<span class="co">#    ---                                                               </span>
-<span class="co"># 46695:   3  1  3  16 0.194  3.00   1  0   1  0   36  4   3  1  0    1</span>
-<span class="co"># 46696:   3  0  4   3 0.286  4.76   0  0   1  0   26  2   3  0  0    0</span>
-<span class="co"># 46697:  23  7 17  37 0.254  3.98   4  1   2  0  213 23  25  0  1   11</span>
-<span class="co"># 46698:   9  1  8  13 0.265  3.74   2  0   0  0   92  1   9  0  1    3</span>
-<span class="co"># 46699:  66 28 26 111 0.269  4.52   0  1   2  0  556  0  76  2  5    4</span></code></pre></div>
+<span class="co">#         playerID yearID stint teamID lgID  W  L  G GS CG SHO SV IPouts   H  ER HR BB  SO BAOpp</span>
+<span class="co">#     1: bechtge01   1871     1    PH1   NA  1  2  3  3  2   0  0     78  43  23  0 11   1    NA</span>
+<span class="co">#     2: brainas01   1871     1    WS3   NA 12 15 30 30 30   0  0    792 361 132  4 37  13    NA</span>
+<span class="co">#     3: fergubo01   1871     1    NY2   NA  0  0  1  0  0   0  0      3   8   3  0  0   0    NA</span>
+<span class="co">#     4: fishech01   1871     1    RC1   NA  4 16 24 24 22   1  0    639 295 103  3 31  15    NA</span>
+<span class="co">#     5: fleetfr01   1871     1    NY2   NA  0  1  1  1  1   0  0     27  20  10  0  3   0    NA</span>
+<span class="co">#    ---                                                                                        </span>
+<span class="co"># 46695: zamorda01   2018     1    NYN   NL  1  0 16  0  0   0  0     27   6   3  1  3  16 0.194</span>
+<span class="co"># 46696: zastrro01   2018     1    CHN   NL  1  0  6  0  0   0  0     17   6   3  0  4   3 0.286</span>
+<span class="co"># 46697: zieglbr01   2018     1    MIA   NL  1  5 53  0  0   0 10    156  49  23  7 17  37 0.254</span>
+<span class="co"># 46698: zieglbr01   2018     2    ARI   NL  1  1 29  0  0   0  0     65  22   9  1  8  13 0.265</span>
+<span class="co"># 46699: zimmejo02   2018     1    DET   AL  7  8 25 25  0   0  0    394 140  66 28 26 111 0.269</span>
+<span class="co">#          ERA IBB WP HBP BK  BFP GF   R SH SF GIDP</span>
+<span class="co">#     1:  7.96  NA  7  NA  0  146  0  42 NA NA   NA</span>
+<span class="co">#     2:  4.50  NA  7  NA  0 1291  0 292 NA NA   NA</span>
+<span class="co">#     3: 27.00  NA  2  NA  0   14  0   9 NA NA   NA</span>
+<span class="co">#     4:  4.35  NA 20  NA  0 1080  1 257 NA NA   NA</span>
+<span class="co">#     5: 10.00  NA  0  NA  0   57  0  21 NA NA   NA</span>
+<span class="co">#    ---                                           </span>
+<span class="co"># 46695:  3.00   1  0   1  0   36  4   3  1  0    1</span>
+<span class="co"># 46696:  4.76   0  0   1  0   26  2   3  0  0    0</span>
+<span class="co"># 46697:  3.98   4  1   2  0  213 23  25  0  1   11</span>
+<span class="co"># 46698:  3.74   2  0   0  0   92  1   9  0  1    3</span>
+<span class="co"># 46699:  4.52   0  1   2  0  556  0  76  2  5    4</span></code></pre></div>
 <p>That is, <code>Pitching[ , .SD]</code> has simply returned the whole table, i.e., this was an overly verbose way of writing <code>Pitching</code> or <code>Pitching[]</code>:</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">identical</span>(Pitching, Pitching[ , .SD])
 <span class="co"># [1] TRUE</span></code></pre></div>
@@ -293,7 +280,7 @@ Teams[ , <span class="kw">sapply</span>(.SD, is.character), .SDcols =<span class
 <span class="co"># print out the first column to demonstrate success</span>
 <span class="kw">head</span>(<span class="kw">unique</span>(Teams[[fkt[1L]]]))
 <span class="co"># [1] BOS CHI CLE KEK NYU ATH</span>
-<span class="co"># 101 Levels: ALT ANA ARI ATH ATL BAL BLA BLN BLU BOS BRA BRG BRO BSN ... WSN</span></code></pre></div>
+<span class="co"># 101 Levels: ALT ANA ARI ATH ATL BAL BLA BLN BLU BOS BRA BRG BRO BSN BTT BUF BWW CAL CEN CHC ... WSN</span></code></pre></div>
 <p>Note that we must wrap <code>fkt</code> in parentheses <code>()</code> to force <code>data.table</code> to interpret this as column names, instead of trying to assign a column named <code>'fkt'</code>.</p>
 <p>Actually, the <code>.SDcols</code> argument is quite flexible; above, we supplied a <code>character</code> vector of column names. In other situations, it is more convenient to supply an <code>integer</code> vector of column <em>positions</em> or a <code>logical</code> vector dictating include/exclude for each column. <code>.SDcols</code> even accepts regular expression-based pattern matching.</p>
 <p>For example, we could do the following to convert all <code>factor</code> columns to <code>character</code>:</p>
@@ -391,66 +378,54 @@ Grouping, Illustrated
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># the data is already sorted by year; if it weren't</span>
 <span class="co">#   we could do Teams[order(yearID), .SD[.N], by = teamID]</span>
 Teams[ , .SD[.N], by =<span class="st"> </span>teamID]
-<span class="co">#      teamID yearID lgID franchID divID Rank   G Ghome  W  L DivWin WCWin</span>
-<span class="co">#   1:    BS1   1875   NA      BNA  &lt;NA&gt;    1  82    NA 71  8   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#   2:    CH1   1871   NA      CNA  &lt;NA&gt;    2  28    NA 19  9   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#   3:    CL1   1872   NA      CFC  &lt;NA&gt;    7  22    NA  6 16   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#   4:    FW1   1871   NA      KEK  &lt;NA&gt;    7  19    NA  7 12   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#   5:    NY2   1875   NA      NNA  &lt;NA&gt;    6  71    NA 30 38   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#  ---                                                                    </span>
-<span class="co"># 145:    ANA   2004   AL      ANA     W    1 162    81 92 70      Y     N</span>
-<span class="co"># 146:    ARI   2018   NL      ARI     W    3 162    81 82 80      N     N</span>
-<span class="co"># 147:    MIL   2018   NL      MIL     C    1 163    81 96 67      Y     N</span>
-<span class="co"># 148:    TBA   2018   AL      </span><span class="al">TBD</span><span class="co">     E    3 162    81 90 72      N     N</span>
-<span class="co"># 149:    MIA   2018   NL      FLA     E    5 161    81 63 98      N     N</span>
-<span class="co">#      LgWin WSWin   R   AB    H X2B X3B  HR  BB   SO  SB CS HBP SF  RA  ER</span>
-<span class="co">#   1:     Y  &lt;NA&gt; 831 3515 1128 167  51  15  33   52  93 37  NA NA 343 152</span>
-<span class="co">#   2:     N  &lt;NA&gt; 302 1196  323  52  21  10  60   22  69 21  NA NA 241  77</span>
-<span class="co">#   3:     N  &lt;NA&gt; 174  943  272  28   5   0  17   13  12  3  NA NA 254 126</span>
-<span class="co">#   4:     N  &lt;NA&gt; 137  746  178  19   8   2  33    9  16  4  NA NA 243  97</span>
-<span class="co">#   5:     N  &lt;NA&gt; 328 2685  633  82  21   7  19   47  20 24  NA NA 425 174</span>
-<span class="co">#  ---                                                                     </span>
-<span class="co"># 145:     N     N 836 5675 1603 272  37 162 450  942 143 46  73 41 734 692</span>
-<span class="co"># 146:     N     N 693 5460 1283 259  50 176 560 1460  79 25  52 45 644 605</span>
-<span class="co"># 147:     N     N 754 5542 1398 252  24 218 537 1458 124 32  58 41 659 606</span>
-<span class="co"># 148:     N     N 716 5475 1415 274  43 150 540 1388 128 51 101 50 646 602</span>
-<span class="co"># 149:     N     N 589 5488 1303 222  24 128 455 1384  45 31  73 31 809 762</span>
-<span class="co">#       ERA CG SHO SV IPouts   HA HRA BBA  SOA   E  DP    FP</span>
-<span class="co">#   1: 1.87 60  10 17   2196  751   2  33  110 483  56 0.870</span>
-<span class="co">#   2: 2.76 25   0  1    753  308   6  28   22 229  16 0.829</span>
-<span class="co">#   3: 5.70 15   0  0    597  285   6  24   11 184  17 0.816</span>
-<span class="co">#   4: 5.17 19   1  0    507  261   5  21   17 163   8 0.803</span>
-<span class="co">#   5: 2.46 70   3  0   1910  718   4  21   77 526  30 0.838</span>
-<span class="co">#  ---                                                      </span>
-<span class="co"># 145: 4.28  2  11 50   4363 1476 170 502 1164  90 126 0.985</span>
-<span class="co"># 146: 3.72  2   9 39   4389 1313 174 522 1448  75 152 0.988</span>
-<span class="co"># 147: 3.73  0  14 49   4383 1259 173 553 1428 108 141 0.982</span>
-<span class="co"># 148: 3.74  0  14 52   4345 1236 164 501 1421  85 136 0.986</span>
-<span class="co"># 149: 4.76  1  12 30   4326 1388 192 605 1249  83 133 0.986</span>
-<span class="co">#                         name                         park attendance BPF</span>
-<span class="co">#   1:    Boston Red Stockings          South End Grounds I         NA 103</span>
-<span class="co">#   2: Chicago White Stockings      Union Base-Ball Grounds         NA 104</span>
-<span class="co">#   3:  Cleveland Forest Citys National Association Grounds         NA  96</span>
-<span class="co">#   4:    Fort Wayne Kekiongas               Hamilton Field         NA 101</span>
-<span class="co">#   5:        New York Mutuals     Union Grounds (Brooklyn)         NA  99</span>
-<span class="co">#  ---                                                                    </span>
-<span class="co"># 145:          Anaheim Angels    Angels Stadium of Anaheim    3375677  97</span>
-<span class="co"># 146:    Arizona Diamondbacks                  Chase Field    2242695 108</span>
-<span class="co"># 147:       Milwaukee Brewers                  Miller Park    2850875 102</span>
-<span class="co"># 148:          Tampa Bay Rays              Tropicana Field    1154973  97</span>
-<span class="co"># 149:           Miami Marlins                 Marlins Park     811104  89</span>
-<span class="co">#      PPF teamIDBR teamIDlahman45 teamIDretro</span>
-<span class="co">#   1:  96      BOS            BS1         BS1</span>
-<span class="co">#   2: 102      CHI            CH1         CH1</span>
-<span class="co">#   3: 100      CLE            CL1         CL1</span>
-<span class="co">#   4: 107      KEK            FW1         FW1</span>
-<span class="co">#   5: 100      NYU            NY2         NY2</span>
-<span class="co">#  ---                                        </span>
-<span class="co"># 145:  97      ANA            ANA         ANA</span>
-<span class="co"># 146: 107      ARI            ARI         ARI</span>
-<span class="co"># 147: 101      MIL            ML4         MIL</span>
-<span class="co"># 148:  97      TBR            TBA         TBA</span>
-<span class="co"># 149:  90      MIA            FLO         MIA</span></code></pre></div>
+<span class="co">#      teamID yearID lgID franchID divID Rank   G Ghome  W  L DivWin WCWin LgWin WSWin   R   AB    H</span>
+<span class="co">#   1:    BS1   1875   NA      BNA  &lt;NA&gt;    1  82    NA 71  8   &lt;NA&gt;  &lt;NA&gt;     Y  &lt;NA&gt; 831 3515 1128</span>
+<span class="co">#   2:    CH1   1871   NA      CNA  &lt;NA&gt;    2  28    NA 19  9   &lt;NA&gt;  &lt;NA&gt;     N  &lt;NA&gt; 302 1196  323</span>
+<span class="co">#   3:    CL1   1872   NA      CFC  &lt;NA&gt;    7  22    NA  6 16   &lt;NA&gt;  &lt;NA&gt;     N  &lt;NA&gt; 174  943  272</span>
+<span class="co">#   4:    FW1   1871   NA      KEK  &lt;NA&gt;    7  19    NA  7 12   &lt;NA&gt;  &lt;NA&gt;     N  &lt;NA&gt; 137  746  178</span>
+<span class="co">#   5:    NY2   1875   NA      NNA  &lt;NA&gt;    6  71    NA 30 38   &lt;NA&gt;  &lt;NA&gt;     N  &lt;NA&gt; 328 2685  633</span>
+<span class="co">#  ---                                                                                              </span>
+<span class="co"># 145:    ANA   2004   AL      ANA     W    1 162    81 92 70      Y     N     N     N 836 5675 1603</span>
+<span class="co"># 146:    ARI   2018   NL      ARI     W    3 162    81 82 80      N     N     N     N 693 5460 1283</span>
+<span class="co"># 147:    MIL   2018   NL      MIL     C    1 163    81 96 67      Y     N     N     N 754 5542 1398</span>
+<span class="co"># 148:    TBA   2018   AL      </span><span class="al">TBD</span><span class="co">     E    3 162    81 90 72      N     N     N     N 716 5475 1415</span>
+<span class="co"># 149:    MIA   2018   NL      FLA     E    5 161    81 63 98      N     N     N     N 589 5488 1303</span>
+<span class="co">#      X2B X3B  HR  BB   SO  SB CS HBP SF  RA  ER  ERA CG SHO SV IPouts   HA HRA BBA  SOA   E  DP</span>
+<span class="co">#   1: 167  51  15  33   52  93 37  NA NA 343 152 1.87 60  10 17   2196  751   2  33  110 483  56</span>
+<span class="co">#   2:  52  21  10  60   22  69 21  NA NA 241  77 2.76 25   0  1    753  308   6  28   22 229  16</span>
+<span class="co">#   3:  28   5   0  17   13  12  3  NA NA 254 126 5.70 15   0  0    597  285   6  24   11 184  17</span>
+<span class="co">#   4:  19   8   2  33    9  16  4  NA NA 243  97 5.17 19   1  0    507  261   5  21   17 163   8</span>
+<span class="co">#   5:  82  21   7  19   47  20 24  NA NA 425 174 2.46 70   3  0   1910  718   4  21   77 526  30</span>
+<span class="co">#  ---                                                                                           </span>
+<span class="co"># 145: 272  37 162 450  942 143 46  73 41 734 692 4.28  2  11 50   4363 1476 170 502 1164  90 126</span>
+<span class="co"># 146: 259  50 176 560 1460  79 25  52 45 644 605 3.72  2   9 39   4389 1313 174 522 1448  75 152</span>
+<span class="co"># 147: 252  24 218 537 1458 124 32  58 41 659 606 3.73  0  14 49   4383 1259 173 553 1428 108 141</span>
+<span class="co"># 148: 274  43 150 540 1388 128 51 101 50 646 602 3.74  0  14 52   4345 1236 164 501 1421  85 136</span>
+<span class="co"># 149: 222  24 128 455 1384  45 31  73 31 809 762 4.76  1  12 30   4326 1388 192 605 1249  83 133</span>
+<span class="co">#         FP                    name                         park attendance BPF PPF teamIDBR</span>
+<span class="co">#   1: 0.870    Boston Red Stockings          South End Grounds I         NA 103  96      BOS</span>
+<span class="co">#   2: 0.829 Chicago White Stockings      Union Base-Ball Grounds         NA 104 102      CHI</span>
+<span class="co">#   3: 0.816  Cleveland Forest Citys National Association Grounds         NA  96 100      CLE</span>
+<span class="co">#   4: 0.803    Fort Wayne Kekiongas               Hamilton Field         NA 101 107      KEK</span>
+<span class="co">#   5: 0.838        New York Mutuals     Union Grounds (Brooklyn)         NA  99 100      NYU</span>
+<span class="co">#  ---                                                                                       </span>
+<span class="co"># 145: 0.985          Anaheim Angels    Angels Stadium of Anaheim    3375677  97  97      ANA</span>
+<span class="co"># 146: 0.988    Arizona Diamondbacks                  Chase Field    2242695 108 107      ARI</span>
+<span class="co"># 147: 0.982       Milwaukee Brewers                  Miller Park    2850875 102 101      MIL</span>
+<span class="co"># 148: 0.986          Tampa Bay Rays              Tropicana Field    1154973  97  97      TBR</span>
+<span class="co"># 149: 0.986           Miami Marlins                 Marlins Park     811104  89  90      MIA</span>
+<span class="co">#      teamIDlahman45 teamIDretro</span>
+<span class="co">#   1:            BS1         BS1</span>
+<span class="co">#   2:            CH1         CH1</span>
+<span class="co">#   3:            CL1         CL1</span>
+<span class="co">#   4:            FW1         FW1</span>
+<span class="co">#   5:            NY2         NY2</span>
+<span class="co">#  ---                           </span>
+<span class="co"># 145:            ANA         ANA</span>
+<span class="co"># 146:            ARI         ARI</span>
+<span class="co"># 147:            ML4         MIL</span>
+<span class="co"># 148:            TBA         TBA</span>
+<span class="co"># 149:            FLO         MIA</span></code></pre></div>
 <p>Recall that <code>.SD</code> is itself a <code>data.table</code>, and that <code>.N</code> refers to the total number of rows in a group (it’s equal to <code>nrow(.SD)</code> within each group), so <code>.SD[.N]</code> returns the <em>entirety of <code>.SD</code></em> for the final row associated with each <code>teamID</code>.</p>
 <p>Another common version of this is to use <code>.SD[1L]</code> instead to get the <em>first</em> observation for each group, or <code>.SD[sample(.N, 1L)]</code> to return a <em>random</em> row for each group.</p>
 </div>
@@ -458,66 +433,54 @@ Teams[ , .SD[.N], by =<span class="st"> </span>teamID]
 <h2><span class="header-section-number">3.2</span> Group Optima</h2>
 <p>Suppose we wanted to return the <em>best</em> year for each team, as measured by their total number of runs scored (<code>R</code>; we could easily adjust this to refer to other metrics, of course). Instead of taking a <em>fixed</em> element from each sub-<code>data.table</code>, we now define the desired index <em>dynamically</em> as follows:</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">Teams[ , .SD[<span class="kw">which.max</span>(R)], by =<span class="st"> </span>teamID]
-<span class="co">#      teamID yearID lgID franchID divID Rank   G Ghome   W  L DivWin WCWin</span>
-<span class="co">#   1:    BS1   1875   NA      BNA  &lt;NA&gt;    1  82    NA  71  8   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#   2:    CH1   1871   NA      CNA  &lt;NA&gt;    2  28    NA  19  9   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#   3:    CL1   1871   NA      CFC  &lt;NA&gt;    8  29    NA  10 19   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#   4:    FW1   1871   NA      KEK  &lt;NA&gt;    7  19    NA   7 12   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#   5:    NY2   1872   NA      NNA  &lt;NA&gt;    3  56    NA  34 20   &lt;NA&gt;  &lt;NA&gt;</span>
-<span class="co">#  ---                                                                     </span>
-<span class="co"># 145:    ANA   2000   AL      ANA     W    3 162    81  82 80      N     N</span>
-<span class="co"># 146:    ARI   1999   NL      ARI     W    1 162    81 100 62      Y     N</span>
-<span class="co"># 147:    MIL   1999   NL      MIL     C    5 161    80  74 87      N     N</span>
-<span class="co"># 148:    TBA   2009   AL      </span><span class="al">TBD</span><span class="co">     E    3 162    81  84 78      N     N</span>
-<span class="co"># 149:    MIA   2017   NL      FLA     E    2 162    78  77 85      N     N</span>
-<span class="co">#      LgWin WSWin   R   AB    H X2B X3B  HR  BB   SO  SB CS HBP SF  RA  ER</span>
-<span class="co">#   1:     Y  &lt;NA&gt; 831 3515 1128 167  51  15  33   52  93 37  NA NA 343 152</span>
-<span class="co">#   2:     N  &lt;NA&gt; 302 1196  323  52  21  10  60   22  69 21  NA NA 241  77</span>
-<span class="co">#   3:     N  &lt;NA&gt; 249 1186  328  35  40   7  26   25  18  8  NA NA 341 116</span>
-<span class="co">#   4:     N  &lt;NA&gt; 137  746  178  19   8   2  33    9  16  4  NA NA 243  97</span>
-<span class="co">#   5:     N  &lt;NA&gt; 523 2426  670  87  14   4  58   52  59 22  NA NA 362 172</span>
-<span class="co">#  ---                                                                     </span>
-<span class="co"># 145:     N     N 864 5628 1574 309  34 236 608 1024  93 52  47 43 869 805</span>
-<span class="co"># 146:     N     N 908 5658 1566 289  46 216 588 1045 137 39  48 60 676 615</span>
-<span class="co"># 147:     N     N 815 5582 1524 299  30 165 658 1065  81 33  55 51 886 813</span>
-<span class="co"># 148:     N     N 803 5462 1434 297  36 199 642 1229 194 61  49 45 754 686</span>
-<span class="co"># 149:     N     N 778 5602 1497 271  31 194 486 1282  91 30  67 41 822 772</span>
-<span class="co">#       ERA CG SHO SV IPouts   HA HRA BBA  SOA   E  DP    FP</span>
-<span class="co">#   1: 1.87 60  10 17   2196  751   2  33  110 483  56 0.870</span>
-<span class="co">#   2: 2.76 25   0  1    753  308   6  28   22 229  16 0.829</span>
-<span class="co">#   3: 4.11 23   0  0    762  346  13  53   34 234  15 0.818</span>
-<span class="co">#   4: 5.17 19   1  0    507  261   5  21   17 163   8 0.803</span>
-<span class="co">#   5: 3.02 54   3  1   1536  622   2  33   46 323  33 0.868</span>
-<span class="co">#  ---                                                      </span>
-<span class="co"># 145: 5.00  5   3 46   4344 1534 228 662  846 134 182 0.978</span>
-<span class="co"># 146: 3.77 16   9 42   4402 1387 176 543 1198 104 132 0.983</span>
-<span class="co"># 147: 5.07  2   5 40   4328 1618 213 616  987 127 146 0.979</span>
-<span class="co"># 148: 4.33  3   5 41   4282 1421 183 515 1125  98 135 0.983</span>
-<span class="co"># 149: 4.82  1   7 34   4328 1450 193 627 1202  73 156 0.988</span>
-<span class="co">#                         name                         park attendance BPF</span>
-<span class="co">#   1:    Boston Red Stockings          South End Grounds I         NA 103</span>
-<span class="co">#   2: Chicago White Stockings      Union Base-Ball Grounds         NA 104</span>
-<span class="co">#   3:  Cleveland Forest Citys National Association Grounds         NA  96</span>
-<span class="co">#   4:    Fort Wayne Kekiongas               Hamilton Field         NA 101</span>
-<span class="co">#   5:        New York Mutuals     Union Grounds (Brooklyn)         NA  93</span>
-<span class="co">#  ---                                                                    </span>
-<span class="co"># 145:          Anaheim Angels   Edison International Field    2066982 102</span>
-<span class="co"># 146:    Arizona Diamondbacks            Bank One Ballpark    3019654 101</span>
-<span class="co"># 147:       Milwaukee Brewers               County Stadium    1701796  99</span>
-<span class="co"># 148:          Tampa Bay Rays              Tropicana Field    1874962  98</span>
-<span class="co"># 149:           Miami Marlins                 Marlins Park    1583014  93</span>
-<span class="co">#      PPF teamIDBR teamIDlahman45 teamIDretro</span>
-<span class="co">#   1:  96      BOS            BS1         BS1</span>
-<span class="co">#   2: 102      CHI            CH1         CH1</span>
-<span class="co">#   3: 100      CLE            CL1         CL1</span>
-<span class="co">#   4: 107      KEK            FW1         FW1</span>
-<span class="co">#   5:  92      NYU            NY2         NY2</span>
-<span class="co">#  ---                                        </span>
-<span class="co"># 145: 103      ANA            ANA         ANA</span>
-<span class="co"># 146: 101      ARI            ARI         ARI</span>
-<span class="co"># 147:  99      MIL            ML4         MIL</span>
-<span class="co"># 148:  97      TBR            TBA         TBA</span>
-<span class="co"># 149:  93      MIA            FLO         MIA</span></code></pre></div>
+<span class="co">#      teamID yearID lgID franchID divID Rank   G Ghome   W  L DivWin WCWin LgWin WSWin   R   AB    H</span>
+<span class="co">#   1:    BS1   1875   NA      BNA  &lt;NA&gt;    1  82    NA  71  8   &lt;NA&gt;  &lt;NA&gt;     Y  &lt;NA&gt; 831 3515 1128</span>
+<span class="co">#   2:    CH1   1871   NA      CNA  &lt;NA&gt;    2  28    NA  19  9   &lt;NA&gt;  &lt;NA&gt;     N  &lt;NA&gt; 302 1196  323</span>
+<span class="co">#   3:    CL1   1871   NA      CFC  &lt;NA&gt;    8  29    NA  10 19   &lt;NA&gt;  &lt;NA&gt;     N  &lt;NA&gt; 249 1186  328</span>
+<span class="co">#   4:    FW1   1871   NA      KEK  &lt;NA&gt;    7  19    NA   7 12   &lt;NA&gt;  &lt;NA&gt;     N  &lt;NA&gt; 137  746  178</span>
+<span class="co">#   5:    NY2   1872   NA      NNA  &lt;NA&gt;    3  56    NA  34 20   &lt;NA&gt;  &lt;NA&gt;     N  &lt;NA&gt; 523 2426  670</span>
+<span class="co">#  ---                                                                                               </span>
+<span class="co"># 145:    ANA   2000   AL      ANA     W    3 162    81  82 80      N     N     N     N 864 5628 1574</span>
+<span class="co"># 146:    ARI   1999   NL      ARI     W    1 162    81 100 62      Y     N     N     N 908 5658 1566</span>
+<span class="co"># 147:    MIL   1999   NL      MIL     C    5 161    80  74 87      N     N     N     N 815 5582 1524</span>
+<span class="co"># 148:    TBA   2009   AL      </span><span class="al">TBD</span><span class="co">     E    3 162    81  84 78      N     N     N     N 803 5462 1434</span>
+<span class="co"># 149:    MIA   2017   NL      FLA     E    2 162    78  77 85      N     N     N     N 778 5602 1497</span>
+<span class="co">#      X2B X3B  HR  BB   SO  SB CS HBP SF  RA  ER  ERA CG SHO SV IPouts   HA HRA BBA  SOA   E  DP</span>
+<span class="co">#   1: 167  51  15  33   52  93 37  NA NA 343 152 1.87 60  10 17   2196  751   2  33  110 483  56</span>
+<span class="co">#   2:  52  21  10  60   22  69 21  NA NA 241  77 2.76 25   0  1    753  308   6  28   22 229  16</span>
+<span class="co">#   3:  35  40   7  26   25  18  8  NA NA 341 116 4.11 23   0  0    762  346  13  53   34 234  15</span>
+<span class="co">#   4:  19   8   2  33    9  16  4  NA NA 243  97 5.17 19   1  0    507  261   5  21   17 163   8</span>
+<span class="co">#   5:  87  14   4  58   52  59 22  NA NA 362 172 3.02 54   3  1   1536  622   2  33   46 323  33</span>
+<span class="co">#  ---                                                                                           </span>
+<span class="co"># 145: 309  34 236 608 1024  93 52  47 43 869 805 5.00  5   3 46   4344 1534 228 662  846 134 182</span>
+<span class="co"># 146: 289  46 216 588 1045 137 39  48 60 676 615 3.77 16   9 42   4402 1387 176 543 1198 104 132</span>
+<span class="co"># 147: 299  30 165 658 1065  81 33  55 51 886 813 5.07  2   5 40   4328 1618 213 616  987 127 146</span>
+<span class="co"># 148: 297  36 199 642 1229 194 61  49 45 754 686 4.33  3   5 41   4282 1421 183 515 1125  98 135</span>
+<span class="co"># 149: 271  31 194 486 1282  91 30  67 41 822 772 4.82  1   7 34   4328 1450 193 627 1202  73 156</span>
+<span class="co">#         FP                    name                         park attendance BPF PPF teamIDBR</span>
+<span class="co">#   1: 0.870    Boston Red Stockings          South End Grounds I         NA 103  96      BOS</span>
+<span class="co">#   2: 0.829 Chicago White Stockings      Union Base-Ball Grounds         NA 104 102      CHI</span>
+<span class="co">#   3: 0.818  Cleveland Forest Citys National Association Grounds         NA  96 100      CLE</span>
+<span class="co">#   4: 0.803    Fort Wayne Kekiongas               Hamilton Field         NA 101 107      KEK</span>
+<span class="co">#   5: 0.868        New York Mutuals     Union Grounds (Brooklyn)         NA  93  92      NYU</span>
+<span class="co">#  ---                                                                                       </span>
+<span class="co"># 145: 0.978          Anaheim Angels   Edison International Field    2066982 102 103      ANA</span>
+<span class="co"># 146: 0.983    Arizona Diamondbacks            Bank One Ballpark    3019654 101 101      ARI</span>
+<span class="co"># 147: 0.979       Milwaukee Brewers               County Stadium    1701796  99  99      MIL</span>
+<span class="co"># 148: 0.983          Tampa Bay Rays              Tropicana Field    1874962  98  97      TBR</span>
+<span class="co"># 149: 0.988           Miami Marlins                 Marlins Park    1583014  93  93      MIA</span>
+<span class="co">#      teamIDlahman45 teamIDretro</span>
+<span class="co">#   1:            BS1         BS1</span>
+<span class="co">#   2:            CH1         CH1</span>
+<span class="co">#   3:            CL1         CL1</span>
+<span class="co">#   4:            FW1         FW1</span>
+<span class="co">#   5:            NY2         NY2</span>
+<span class="co">#  ---                           </span>
+<span class="co"># 145:            ANA         ANA</span>
+<span class="co"># 146:            ARI         ARI</span>
+<span class="co"># 147:            ML4         MIL</span>
+<span class="co"># 148:            TBA         TBA</span>
+<span class="co"># 149:            FLO         MIA</span></code></pre></div>
 <p>Note that this approach can of course be combined with <code>.SDcols</code> to return only portions of the <code>data.table</code> for each <code>.SD</code> (with the caveat that <code>.SDcols</code> should be fixed across the various subsets)</p>
 <p><em>NB</em>: <code>.SD[1L]</code> is currently optimized by <a href="https://Rdatatable.gitlab.io/data.table/library/data.table/html/datatable-optimize.html"><em><code>GForce</code></em></a> (<a href="https://stackoverflow.com/questions/22137591/about-gforce-in-data-table-1-9-2">see also</a>), <code>data.table</code> internals which massively speed up the most common grouped operations like <code>sum</code> or <code>mean</code> – see <code>?GForce</code> for more details and keep an eye on/voice support for feature improvement requests for updates on this front: <a href="https://github.com/Rdatatable/data.table/issues/735">1</a>, <a href="https://github.com/Rdatatable/data.table/issues/2778">2</a>, <a href="https://github.com/Rdatatable/data.table/issues/523">3</a>, <a href="https://github.com/Rdatatable/data.table/issues/971">4</a>, <a href="https://github.com/Rdatatable/data.table/issues/1197">5</a>, <a href="https://github.com/Rdatatable/data.table/issues/1414">6</a></p>
 </div>
