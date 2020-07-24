@@ -59,7 +59,7 @@
     if (class(ss)[1L]!="{") ss = as.call(c(as.name("{"), ss))
     if (!length(grep("data.table", ss[[2L]], fixed = TRUE))) {
       ss = ss[c(1L, NA, 2L:length(ss))]
-      ss[[2L]] = parse(text=paste0("for (x in list(...)) { if (inherits(x,'data.table')) return(",prefix,".rbind.data.table(...)) }"))[[1L]] # fix for #4995
+      ss[[2L]] = parse(text=paste0("for (x in list(...)) { if (inherits(x,'data.table')) return(",prefix,".rbind.data.table(...)) }"))[[1L]] # fix for #89
       body(tt)=ss
       (unlockBinding)("rbind.data.frame",baseenv())
       assign("rbind.data.frame",tt,envir=asNamespace("base"),inherits=FALSE)
@@ -71,22 +71,22 @@
   # In fread and fwrite we have moved back to using getOption's default argument since it is unlikely fread and fread will be called in a loop many times, plus they
   # are relatively heavy functions where the overhead in getOption() would not be noticed.  It's only really [.data.table where getOption default bit.
   # Improvement to base::getOption() now submitted (100x; 5s down to 0.05s):  https://bugs.r-project.org/bugzilla/show_bug.cgi?id=17394
-  opts = c("datatable.verbose"="FALSE",            # datatable.<argument name>
+  opts = c("datatable.verbose"="FALSE",        # datatable.<argument name>
        "datatable.optimize"="Inf",             # datatable.<argument name>
        "datatable.print.nrows"="100L",         # datatable.<argument name>
        "datatable.print.topn"="5L",            # datatable.<argument name>
        "datatable.print.class"="FALSE",        # for print.data.table
        "datatable.print.rownames"="TRUE",      # for print.data.table
-       "datatable.print.colnames"="'auto'",      # for print.data.table
+       "datatable.print.colnames"="'auto'",    # for print.data.table
        "datatable.print.keys"="FALSE",         # for print.data.table
+       "datatable.print.trunc.cols"="FALSE",   # for print.data.table
        "datatable.allow.cartesian"="FALSE",    # datatable.<argument name>
        "datatable.dfdispatchwarn"="TRUE",                   # not a function argument
        "datatable.warnredundantby"="TRUE",                  # not a function argument
        "datatable.alloccol"="1024L",           # argument 'n' of alloc.col. Over-allocate 1024 spare column slots
        "datatable.auto.index"="TRUE",          # DT[col=="val"] to auto add index so 2nd time faster
        "datatable.use.index"="TRUE",           # global switch to address #1422
-       "datatable.prettyprint.char" = NULL,     # FR #1091
-       "datatable.old.unique.by.key" = "FALSE"  # TODO: remove in May 2020
+       "datatable.prettyprint.char" = NULL     # FR #1091
        )
   for (i in setdiff(names(opts),names(options()))) {
     eval(parse(text=paste0("options(",i,"=",opts[i],")")))
@@ -94,6 +94,8 @@
 
   if (!is.null(getOption("datatable.old.bywithoutby")))
     warning("Option 'datatable.old.bywithoutby' has been removed as warned for 2 years. It is now ignored. Please use by=.EACHI instead and stop using this option.")
+  if (!is.null(getOption("datatable.old.unique.by.key")))
+    warning("Option 'datatable.old.unique.by.key' has been removed as warned for 4 years. It is now ignored. Please use by=key(DT) instead and stop using this option.")
 
   # Test R behaviour that changed in v3.1 and is now depended on
   x = 1L:3L

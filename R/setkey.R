@@ -18,11 +18,6 @@ setindexv = function(x, cols, verbose=getOption("datatable.verbose")) {
   }
 }
 
-# remove these 3 after May 2019; see discussion in #3399 and notes in v1.12.2. They were marked experimental after all.
-set2key = function(...)  stop("set2key() is now deprecated. Please use setindex() instead.")
-set2keyv = function(...) stop("set2keyv() is now deprecated. Please use setindexv() instead.")
-key2 = function(...)     stop("key2() is now deprecated. Please use indices() instead.")
-
 # upgrade to error after Mar 2020. Has already been warning since 2012, and stronger warning in Mar 2019 (note in news for 1.12.2); #3399
 "key<-" = function(x,value) {
   warning("key(x)<-value is deprecated and not supported. Please change to use setkey() with perhaps copy(). Has been warning since 2012 and will be an error in future.")
@@ -160,20 +155,15 @@ setreordervec = function(x, order) .Call(Creorder, x, order)
 # The others (order, sort.int etc) are turned off to protect ourselves from using them internally, for speed and for
 # consistency; e.g., consistent twiddling of numeric/integer64, NA at the beginning of integer, locale ordering of character vectors.
 
-is.sorted = function(x, by=seq_along(x)) {
+is.sorted = function(x, by=NULL) {
   if (is.list(x)) {
-    warning("Use 'if (length(o <- forderv(DT,by))) ...' for efficiency in one step, so you have o as well if not sorted.")
-    # could pass through a flag for forderv to return early on first FALSE. But we don't need that internally
-    # since internally we always then need ordering, an it's better in one step. Don't want inefficiency to creep in.
-    # This is only here for user/debugging use to check/test valid keys; e.g. data.table:::is.sorted(DT,by)
-    0L == length(forderv(x,by,retGrp=FALSE,sort=TRUE))
+    if (missing(by)) by = seq_along(x)   # wouldn't make sense when x is a vector; hence by=seq_along(x) is not the argument default
+    if (is.character(by)) by = chmatch(by, names(x))
   } else {
     if (!missing(by)) stop("x is vector but 'by' is supplied")
-    .Call(Cfsorted, x)
   }
-  # Cfsorted could be named CfIsSorted, but since "sorted" is an adjective not verb, it's clear; e.g., Cfsort would sort it ("sort" is verb).
+  .Call(Cissorted, x, as.integer(by))
   # Return value of TRUE/FALSE is relied on in [.data.table quite a bit on vectors. Simple. Stick with that (rather than -1/0/+1)
-  # Important to call forder.c::fsorted here, for consistent character ordering and numeric/integer64 twiddling.
 }
 
 ORDERING_TYPES = c('logical', 'integer', 'double', 'complex', 'character')
@@ -205,8 +195,8 @@ forder = function(..., na.last=TRUE, decreasing=FALSE)
   # We intercept the unevaluated expressions and massage them before evaluating in with(DT) scope or not depending on the first item.
   for (i in seq.int(2L, length(sub))) {
     v = sub[[i]]
-    while (is.call(v) && length(v)==2L && ((s<-v[[1L]])=="-" || s=="+")) {
-      if (s=="-") asc[i-1L] = -asc[i-1L]
+    while (v %iscall% c('-', '+') && length(v)==2L) {
+      if (v[[1L]] == "-") asc[i-1L] = -asc[i-1L]
       sub[[i]] = v = v[[2L]]  # remove the leading +/- which is the 2nd item since length(v)==2; i.e. monadic +/-
     }
   }
@@ -256,7 +246,7 @@ setorder = function(x, ..., na.last=FALSE)
 # na.last=FALSE here, to be consistent with data.table's default
 # as opposed to DT[order(.)] where na.last=TRUE, to be consistent with base
 {
-  if (!is.data.frame(x)) stop("x must be a data.frame or data.table.")
+  if (!is.data.frame(x)) stop("x must be a data.frame or data.table")
   cols = substitute(list(...))[-1L]
   if (identical(as.character(cols),"NULL")) return(x)
   if (length(cols)) {
@@ -362,7 +352,7 @@ CJ = function(..., sorted = TRUE, unique = FALSE)
     }
   }
   nrow = prod( vapply_1i(l, length) )  # lengths(l) will work from R 3.2.0
-  if (nrow > .Machine$integer.max) stop("Cross product of elements provided to CJ() would result in ",nrow," rows which exceeds .Machine$integer.max == ",.Machine$integer.max)
+  if (nrow > .Machine$integer.max) stop(gettextf("Cross product of elements provided to CJ() would result in %.0f rows which exceeds .Machine$integer.max == %d", nrow, .Machine$integer.max, domain='R-data.table'))
   l = .Call(Ccj, l)
   setDT(l)
   l = setalloccol(l)  # a tiny bit wasteful to over-allocate a fixed join table (column slots only), doing it anyway for consistency since

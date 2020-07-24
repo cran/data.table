@@ -5,7 +5,7 @@ skip="__auto__", select=NULL, drop=NULL, colClasses=NULL, integer64=getOption("d
 col.names, check.names=FALSE, encoding="unknown", strip.white=TRUE, fill=FALSE, blank.lines.skip=FALSE, key=NULL, index=NULL,
 showProgress=getOption("datatable.showProgress",interactive()), data.table=getOption("datatable.fread.datatable",TRUE),
 nThread=getDTthreads(verbose), logical01=getOption("datatable.logical01",FALSE), keepLeadingZeros=getOption("datatable.keepLeadingZeros",FALSE),
-yaml=FALSE, autostart=NA, tmpdir=tempdir())
+yaml=FALSE, autostart=NA, tmpdir=tempdir(), tz="")
 {
   if (missing(input)+is.null(file)+is.null(text)+is.null(cmd) < 3L) stop("Used more than one of the arguments input=, file=, text= and cmd=.")
   input_has_vars = length(all.vars(substitute(input)))>0L  # see news for v1.11.6
@@ -133,7 +133,7 @@ yaml=FALSE, autostart=NA, tmpdir=tempdir())
     }
   }
   stopifnot(length(skip)==1L, !is.na(skip), is.character(skip) || is.numeric(skip))
-  if (identical(skip,"__auto__")) skip = ifelse(yaml,0L,-1L)
+  if (identical(skip,"__auto__")) skip = if (yaml) 0L else -1L
   else if (is.double(skip)) skip = as.integer(skip)
   # else skip="string" so long as "string" is not "__auto__" (best conveys to user skip is automatic rather than user needing to know -1 or NA means auto)
   stopifnot(is.null(na.strings) || is.character(na.strings))
@@ -267,8 +267,14 @@ yaml=FALSE, autostart=NA, tmpdir=tempdir())
     if (is.integer(skip)) skip = skip + n_read
   }
   warnings2errors = getOption("warn") >= 2
+  stopifnot(identical(tz,"UTC") || identical(tz,""))
+  if (tz=="") {
+    tt = Sys.getenv("TZ", unset=NA_character_)
+    if (identical(tt,"") || is_utc(tt)) # empty TZ env variable ("") means UTC in C library, unlike R; _unset_ TZ means local
+      tz="UTC"
+  }
   ans = .Call(CfreadR,input,sep,dec,quote,header,nrows,skip,na.strings,strip.white,blank.lines.skip,
-              fill,showProgress,nThread,verbose,warnings2errors,logical01,select,drop,colClasses,integer64,encoding,keepLeadingZeros)
+              fill,showProgress,nThread,verbose,warnings2errors,logical01,select,drop,colClasses,integer64,encoding,keepLeadingZeros,tz=="UTC")
   if (!length(ans)) return(null.data.table())  # test 1743.308 drops all columns
   nr = length(ans[[1L]])
   require_bit64_if_needed(ans)
@@ -295,7 +301,10 @@ yaml=FALSE, autostart=NA, tmpdir=tempdir())
              "complex" = as.complex(v),
              "raw" = as_raw(v),  # Internal implementation
              "Date" = as.Date(v),
-             "POSIXct" = as.POSIXct(v),
+             "POSIXct" = as.POSIXct(v),  # test 2150.14 covers this by setting the option to restore old behaviour. Otherwise types that
+             # are recognized by freadR.c (e.g. POSIXct; #4464) result in user-override-bump at C level before reading so do not reach this switch
+             # see https://github.com/Rdatatable/data.table/pull/4464#discussion_r447275278.
+             # Aside: as(v,"POSIXct") fails with error in R so has to be caught explicitly above
              # finally:
              methods::as(v, new_class))
       },
@@ -362,4 +371,3 @@ as_factor = function(x) {
 as_raw = function(x) {
   scan(text=x, what=raw(), quiet=TRUE)  # as in read.csv, which ultimately uses src/main/scan.c and strtoraw
 }
-

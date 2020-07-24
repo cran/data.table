@@ -43,18 +43,20 @@ test.data.table = function(script="tests.Rraw", verbose=FALSE, pkg=".", silent=F
     # nocov start
     fn2 = paste0(fn,".bz2")
     if (!file.exists(file.path(fulldir, fn2)))
-      stop("Neither ",fn," or ",fn2," exist in ",fulldir)
+      stop(gettextf("Neither %s nor %s exist in %s",fn, fn2, fulldir, domain="R-data.table"))
     fn = fn2
     # nocov end
     # sys.source() below accepts .bz2 directly.
   }
   fn = setNames(file.path(fulldir, fn), file.path(subdir, fn))
 
+  # These environment variables are restored to their previous state (including not defined) after sourcing test script
+  oldEnv = Sys.getenv(c("_R_CHECK_LENGTH_1_LOGIC2_", "TZ"), unset=NA_character_)
   # From R 3.6.0 onwards, we can check that && and || are using only length-1 logicals (in the test suite)
   # rather than relying on x && y being equivalent to x[[1L]] && y[[1L]]  silently.
-  orig__R_CHECK_LENGTH_1_LOGIC2_ = Sys.getenv("_R_CHECK_LENGTH_1_LOGIC2_", unset = NA_character_)
   Sys.setenv("_R_CHECK_LENGTH_1_LOGIC2_" = TRUE)
-  # This environment variable is restored to its previous state (including not defined) after sourcing test script
+  # TZ is not changed here so that tests run under the user's timezone. But we save and restore it here anyway just in case
+  # the test script stops early during a test that changes TZ (e.g. 2124 referred to in PR #4464).
 
   oldRNG = suppressWarnings(RNGversion("3.5.0"))
   # sample method changed in R 3.6 to remove bias; see #3431 for links and notes
@@ -75,12 +77,14 @@ test.data.table = function(script="tests.Rraw", verbose=FALSE, pkg=".", silent=F
     datatable.optimize = Inf,
     datatable.alloccol = 1024L,
     datatable.print.class = FALSE,  # this is TRUE in cc.R and we like TRUE. But output= tests need to be updated (they assume FALSE currently)
+    datatable.print.trunc.cols = FALSE, #4552
     datatable.rbindlist.check = NULL,
     datatable.integer64 = "integer64",
     warnPartialMatchArgs = base::getRversion()>="3.6.0", # ensure we don't rely on partial argument matching in internal code, #3664; >=3.6.0 for #3865
     warnPartialMatchAttr = TRUE,
     warnPartialMatchDollar = TRUE,
-    width = max(getOption('width'), 80L) # some tests (e.g. 1066, 1293) rely on capturing output that will be garbled with small width
+    width = max(getOption('width'), 80L), # some tests (e.g. 1066, 1293) rely on capturing output that will be garbled with small width
+    datatable.old.fread.datetime.character = FALSE
   )
 
   cat("getDTthreads(verbose=TRUE):\n")         # for tracing on CRAN; output to log before anything is attempted
@@ -114,6 +118,33 @@ test.data.table = function(script="tests.Rraw", verbose=FALSE, pkg=".", silent=F
   err = try(sys.source(fn, envir=env), silent=silent)
 
   options(oldOptions)
+  for (i in oldEnv) {
+    if (is.na(oldEnv[i]))
+      Sys.unsetenv(names(oldEnv)[i])
+    else
+      do.call("Sys.setenv", as.list(oldEnv[i])) # nocov
+  }
+  # Sys.setlocale("LC_CTYPE", oldlocale)
+  suppressWarnings(do.call("RNGkind",as.list(oldRNG)))
+  # suppressWarnings for the unlikely event that user selected sample='Rounding' themselves before calling test.data.table()
+
+  # Now output platform trace before error (if any) to be sure to always show it; e.g. to confirm endianness in #4099.
+  # As one long dense line for cases when 00check.log only shows the last 13 lines of log; to only use up one
+  # of those 13 line and give a better chance of seeing more of the output before it. Having said that, CRAN
+  # does show the full file output these days, so the 13 line limit no longer bites so much. It still bit recently
+  # when receiving output of R CMD check sent over email, though.
+  tz = Sys.getenv("TZ", unset=NA)
+  cat("\n", date(),   # so we can tell exactly when these tests ran on CRAN to double-check the result is up to date
+    "  endian==", .Platform$endian,
+    ", sizeof(long double)==", .Machine$sizeof.longdouble,
+    ", sizeof(pointer)==", .Machine$sizeof.pointer,
+    ", TZ==", if (is.na(tz)) "unset" else paste0("'",tz,"'"),
+    ", Sys.timezone()=='", suppressWarnings(Sys.timezone()), "'",
+    ", Sys.getlocale()=='", Sys.getlocale(), "'",
+    ", l10n_info()=='", paste0(names(l10n_info()), "=", l10n_info(), collapse="; "), "'",
+    ", getDTthreads()=='", paste0(gsub("[ ][ ]+","==",gsub("^[ ]+","",capture.output(invisible(getDTthreads(verbose=TRUE))))), collapse="; "), "'",
+    "\n", sep="")
+
   if (inherits(err,"try-error")) {
     # nocov start
     if (silent) return(FALSE)
@@ -122,39 +153,26 @@ test.data.table = function(script="tests.Rraw", verbose=FALSE, pkg=".", silent=F
     # nocov end
   }
 
-  # Sys.setlocale("LC_CTYPE", oldlocale)
-  ans = env$nfail==0
-
-  if (is.na(orig__R_CHECK_LENGTH_1_LOGIC2_)) {
-    Sys.unsetenv("_R_CHECK_LENGTH_1_LOGIC2_")
-  } else {
-    Sys.setenv("_R_CHECK_LENGTH_1_LOGIC2_" = orig__R_CHECK_LENGTH_1_LOGIC2_) # nocov
+  nfail = env$nfail
+  ntest = env$ntest
+  if (nfail > 0L) {
+    # nocov start
+    if (nfail > 1L) {s1="s";s2="s: "} else {s1="";s2=" "}
+    stop(nfail," error",s1," out of ",ntest,". Search ",names(fn)," for test number",s2,paste(env$whichfail,collapse=", "),".")
+    # important to stop() here, so that 'R CMD check' fails
+    # nocov end
   }
 
-  suppressWarnings(do.call("RNGkind",as.list(oldRNG)))
-  # suppressWarning again in the unlikely event that user selected sample='Rounding' themselves before calling test.data.table()
-
-  timings = get("timings", envir=env)
-  ntest = get("ntest", envir=env)
-  nfail = get("nfail", envir=env)
-  started.at = get("started.at", envir=env)
-  whichfail = get("whichfail", envir=env)
-
-  # Summary. This code originally in tests.Rraw and moved up here in #3307
-  # One big long line because CRAN checks output last 13 lines. One long line counts as one out of 13.
-  plat = paste0("endian==", .Platform$endian,
-                ", sizeof(long double)==", .Machine$sizeof.longdouble,
-                ", sizeof(pointer)==", .Machine$sizeof.pointer,
-                ", TZ=", suppressWarnings(Sys.timezone()),
-                ", locale='", Sys.getlocale(), "'",
-                ", l10n_info()='", paste0(names(l10n_info()), "=", l10n_info(), collapse="; "), "'",
-                ", getDTthreads()='", paste0(gsub("[ ][ ]+","==",gsub("^[ ]+","",capture.output(invisible(getDTthreads(verbose=TRUE))))), collapse="; "), "'")
+  # There aren't any errors, so we can use up 11 lines for the timings table
+  timings = env$timings
   DT = head(timings[-1L][order(-time)], 10L)   # exclude id 1 as in dev that includes JIT
   if ((x<-sum(timings[["nTest"]])) != ntest) {
     warning("Timings count mismatch:",x,"vs",ntest)  # nocov
   }
-  cat("\n10 longest running tests took ", as.integer(tt<-DT[, sum(time)]), "s (", as.integer(100*tt/(ss<-timings[,sum(time)])), "% of ", as.integer(ss), "s)\n", sep="")
+  cat("10 longest running tests took ", as.integer(tt<-DT[, sum(time)]), "s (", as.integer(100*tt/(ss<-timings[,sum(time)])), "% of ", as.integer(ss), "s)\n", sep="")
   print(DT, class=FALSE)
+
+  cat("All ",ntest," tests in ",names(fn)," completed ok in ",timetaken(env$started.at),"\n",sep="")
 
   ## this chunk requires to include new suggested deps: graphics, grDevices
   #memtest.plot = function(.inittime) {
@@ -181,21 +199,7 @@ test.data.table = function(script="tests.Rraw", verbose=FALSE, pkg=".", silent=F
   #}
   #if (memtest<-get("memtest", envir=env)) memtest.plot(get("inittime", envir=env))
 
-  # nocov start
-  if (nfail > 0L) {
-    if (nfail > 1L) {s1="s";s2="s: "} else {s1="";s2=" "}
-    cat("\r")
-    stop(nfail," error",s1," out of ",ntest," in ",timetaken(started.at)," on ",date(),". [",plat,"].",
-         " Search ",names(fn)," for test number",s2,paste(whichfail,collapse=", "),".")
-    # important to stop() here, so that 'R CMD check' fails
-  }
-  # nocov end
-  cat(plat,"\n\nAll ",ntest," tests in ",names(fn)," completed ok in ",timetaken(started.at)," on ",date(),"\n",sep="")
-  # date() is included so we can tell exactly when these tests ran on CRAN. Sometimes a CRAN log can show error but that can be just
-  # stale due to not updating yet since a fix in R-devel, for example.
-
-  #attr(ans, "details", exact=TRUE) = env
-  invisible(ans)
+  invisible(nfail==0L)
 }
 
 # nocov start
@@ -238,7 +242,7 @@ gc_mem = function() {
   # nocov end
 }
 
-test = function(num,x,y=TRUE,error=NULL,warning=NULL,message=NULL,output=NULL,notOutput=NULL) {
+test = function(num,x,y=TRUE,error=NULL,warning=NULL,message=NULL,output=NULL,notOutput=NULL,ignore.warning=NULL) {
   # Usage:
   # i) tests that x equals y when both x and y are supplied, the most common usage
   # ii) tests that x is TRUE when y isn't supplied
@@ -341,6 +345,12 @@ test = function(num,x,y=TRUE,error=NULL,warning=NULL,message=NULL,output=NULL,no
   if (!fail) for (type in c("warning","error","message")) {
     observed = actual[[type]]
     expected = get(type)
+    if (type=="warning" && length(observed) && !is.null(ignore.warning)) {
+      # if a warning containing this string occurs, ignore it. First need for #4182 where warning about 'timedatectl' only
+      # occurs in R 3.4, and maybe only on docker too not for users running test.data.table().
+      stopifnot(length(ignore.warning)==1L, is.character(ignore.warning), !is.na(ignore.warning), nchar(ignore.warning)>=1L)
+      observed = grep(ignore.warning, observed, value=TRUE, invert=TRUE)
+    }
     if (length(expected) != length(observed)) {
       # nocov start
       cat("Test ",numStr," produced ",length(observed)," ",type,"s but expected ",length(expected),"\n",sep="")
