@@ -1,5 +1,5 @@
 Package: data.table
-Version: 1.13.0
+Version: 1.13.2
 Title: Extension of `data.frame`
 Authors@R: c(
   person("Matt","Dowle",           role=c("aut","cre"), email="mattjdowle@gmail.com"),
@@ -59,7 +59,8 @@ Authors@R: c(
   person("Cole","Miller",          role="ctb"),
   person("Jens Peder","Meldgaard", role="ctb"),
   person("Vaclav","Tlapak",        role="ctb"),
-  person("Kevin","Ushey",          role="ctb"))
+  person("Kevin","Ushey",          role="ctb"),
+  person("Dirk","Eddelbuettel",    role="ctb"))
 Depends: R (>= 3.1.0)
 Imports: methods
 Suggests: bit64, curl, R.utils, xts, nanotime, zoo, yaml, knitr,
@@ -73,7 +74,7 @@ BugReports: https://github.com/Rdatatable/data.table/issues
 VignetteBuilder: knitr
 ByteCompile: TRUE
 NeedsCompilation: yes
-Packaged: 2020-07-22 23:00:19.963 UTC; mdowle
+Packaged: 2020-10-17 06:10:02 UTC; mdowle
 Author: Matt Dowle [aut, cre],
   Arun Srinivasan [aut],
   Jan Gorecki [ctb],
@@ -131,7 +132,8 @@ Author: Matt Dowle [aut, cre],
   Cole Miller [ctb],
   Jens Peder Meldgaard [ctb],
   Vaclav Tlapak [ctb],
-  Kevin Ushey [ctb]
+  Kevin Ushey [ctb],
+  Dirk Eddelbuettel [ctb]
 Maintainer: Matt Dowle <mattjdowle@gmail.com>
 Repository: CRAN
-Date/Publication: 2020-07-24 09:40:06 UTC
+Date/Publication: 2020-10-19 18:50:02 UTC

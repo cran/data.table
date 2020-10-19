@@ -11,10 +11,80 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 
 
-<meta name="date" content="2020-07-22" />
+<meta name="date" content="2020-10-17" />
 
 <title>Frequently Asked Questions about data.table</title>
 
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+      a.sourceLine { display: inline-block; line-height: 1.25; }
+  a.sourceLine { pointer-events: none; color: inherit; text-decoration: inherit; }
+  a.sourceLine:empty { height: 1.2em; }
+  .sourceCode { overflow: visible; }
+  code.sourceCode { white-space: pre; position: relative; }
+  div.sourceCode { margin: 1em 0; }
+  pre.sourceCode { margin: 0; }
+  @media screen {
+  div.sourceCode { overflow: auto; }
+  }
+  @media print {
+  code.sourceCode { white-space: pre-wrap; }
+  a.sourceLine { text-indent: -1em; padding-left: 1em; }
+  }
+  pre.numberSource a.sourceLine
+    { position: relative; left: -4em; }
+  pre.numberSource a.sourceLine::before
+    { content: attr(title);
+      position: relative; left: -1em; text-align: right; vertical-align: baseline;
+      border: none; pointer-events: all; display: inline-block;
+      -webkit-touch-callout: none; -webkit-user-select: none;
+      -khtml-user-select: none; -moz-user-select: none;
+      -ms-user-select: none; user-select: none;
+      padding: 0 4px; width: 4em;
+      color: #aaaaaa;
+    }
+  pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+  div.sourceCode
+    {  }
+  @media screen {
+  a.sourceLine::before { text-decoration: underline; }
+  }
+  code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+  code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+  code span.at { color: #7d9029; } /* Attribute */
+  code span.bn { color: #40a070; } /* BaseN */
+  code span.bu { } /* BuiltIn */
+  code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+  code span.ch { color: #4070a0; } /* Char */
+  code span.cn { color: #880000; } /* Constant */
+  code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+  code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+  code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+  code span.dt { color: #902000; } /* DataType */
+  code span.dv { color: #40a070; } /* DecVal */
+  code span.er { color: #ff0000; font-weight: bold; } /* Error */
+  code span.ex { } /* Extension */
+  code span.fl { color: #40a070; } /* Float */
+  code span.fu { color: #06287e; } /* Function */
+  code span.im { } /* Import */
+  code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+  code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+  code span.op { color: #666666; } /* Operator */
+  code span.ot { color: #007020; } /* Other */
+  code span.pp { color: #bc7a00; } /* Preprocessor */
+  code span.sc { color: #4070a0; } /* SpecialChar */
+  code span.ss { color: #bb6688; } /* SpecialString */
+  code span.st { color: #4070a0; } /* String */
+  code span.va { color: #19177c; } /* Variable */
+  code span.vs { color: #4070a0; } /* VerbatimString */
+  code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+    </style>
 
 
 <style type="text/css">code{white-space: pre;}</style>
@@ -299,7 +369,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 
 
 <h1 class="title toc-ignore">Frequently Asked Questions about data.table</h1>
-<h4 class="date">2020-07-22</h4>
+<h4 class="date">2020-10-17</h4>
 
 
 <div id="TOC">
@@ -425,12 +495,12 @@ h2 {
 <div id="ok-im-starting-to-see-what-data.table-is-about-but-why-didnt-you-just-enhance-data.frame-in-r-why-does-it-have-to-be-a-new-package" class="section level2">
 <h2><span class="header-section-number">1.7</span> OK, I’m starting to see what data.table is about, but why didn’t you just enhance <code>data.frame</code> in R? Why does it have to be a new package?</h2>
 <p>As <a href="#j-num">highlighted above</a>, <code>j</code> in <code>[.data.table</code> is fundamentally different from <code>j</code> in <code>[.data.frame</code>. Even if something as simple as <code>DF[ , 1]</code> was changed in base R to return a data.frame rather than a vector, that would break existing code in many 1000’s of CRAN packages and user code. As soon as we took the step to create a new class that inherited from data.frame, we had the opportunity to change a few things and we did. We want data.table to be slightly different and to work this way for more complicated syntax to work. There are other differences, too (see <a href="#SmallerDiffs">below</a> ).</p>
-<p>Furthermore, data.table <em>inherits</em> from <code>data.frame</code>. It <em>is</em> a <code>data.frame</code>, too. A data.table can be passed to any package that only accepts <code>data.frame</code> and that package can use <code>[.data.frame</code> syntax on the data.table. See <a href="http://stackoverflow.com/a/10529888/403310">this answer</a> for how that is achieved.</p>
+<p>Furthermore, data.table <em>inherits</em> from <code>data.frame</code>. It <em>is</em> a <code>data.frame</code>, too. A data.table can be passed to any package that only accepts <code>data.frame</code> and that package can use <code>[.data.frame</code> syntax on the data.table. See <a href="https://stackoverflow.com/a/10529888/403310">this answer</a> for how that is achieved.</p>
 <p>We <em>have</em> proposed enhancements to R wherever possible, too. One of these was accepted as a new feature in R 2.12.0 :</p>
 <blockquote>
 <p><code>unique()</code> and <code>match()</code> are now faster on character vectors where all elements are in the global CHARSXP cache and have unmarked encoding (ASCII). Thanks to Matt Dowle for suggesting improvements to the way the hash code is generated in unique.c.</p>
 </blockquote>
-<p>A second proposal was to use <code>memcpy</code> in duplicate.c, which is much faster than a for loop in C. This would improve the <em>way</em> that R copies data internally (on some measures by 13 times). The thread on r-devel is <a href="http://r.789695.n4.nabble.com/suggestion-how-to-use-memcpy-in-duplicate-c-td2019184.html">here</a>.</p>
+<p>A second proposal was to use <code>memcpy</code> in duplicate.c, which is much faster than a for loop in C. This would improve the <em>way</em> that R copies data internally (on some measures by 13 times). The thread on r-devel is <a href="https://r.789695.n4.nabble.com/suggestion-how-to-use-memcpy-in-duplicate-c-td2019184.html">here</a>.</p>
 <p>A third more significant proposal that was accepted is that R now uses data.table’s radix sort code as from R 3.3.0 :</p>
 <blockquote>
 <p>The radix sort algorithm and implementation from data.table (forder) replaces the previous radix (counting) sort and adds a new method for order(). Contributed by Matt Dowle and Arun Srinivasan, the new algorithm supports logical, integer (even with large values), real, and character vectors. It outperforms all other methods, but there are some caveats (see ?sort).</p>
@@ -972,7 +1042,7 @@ h2 {
 </div>
 <div id="i-have-created-a-package-that-uses-data.table.-how-do-i-ensure-my-package-is-data.table-aware-so-that-inheritance-from-data.frame-works" class="section level2">
 <h2><span class="header-section-number">6.9</span> I have created a package that uses data.table. How do I ensure my package is data.table-aware so that inheritance from <code>data.frame</code> works?</h2>
-<p>Please see <a href="http://stackoverflow.com/a/10529888/403310">this answer</a>.</p>
+<p>Please see <a href="https://stackoverflow.com/a/10529888/403310">this answer</a>.</p>
 </div>
 </div>
 <div class="footnotes">
