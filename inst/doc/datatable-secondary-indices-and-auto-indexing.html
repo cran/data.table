@@ -11,7 +11,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 
 
-<meta name="date" content="2021-02-20" />
+<meta name="date" content="2021-09-22" />
 
 <title>Secondary indices and auto indexing</title>
 
@@ -52,72 +52,17 @@ document.addEventListener('DOMContentLoaded', function() {
   div.column{display: inline-block; vertical-align: top; width: 50%;}
   div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
   ul.task-list{list-style: none;}
-      pre > code.sourceCode { white-space: pre; position: relative; }
-      pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
-      pre > code.sourceCode > span:empty { height: 1.2em; }
-      code.sourceCode > span { color: inherit; text-decoration: inherit; }
-      div.sourceCode { margin: 1em 0; }
-      pre.sourceCode { margin: 0; }
-      @media screen {
-      div.sourceCode { overflow: auto; }
-      }
-      @media print {
-      pre > code.sourceCode { white-space: pre-wrap; }
-      pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
-      }
-      pre.numberSource code
-        { counter-reset: source-line 0; }
-      pre.numberSource code > span
-        { position: relative; left: -4em; counter-increment: source-line; }
-      pre.numberSource code > span > a:first-child::before
-        { content: counter(source-line);
-          position: relative; left: -1em; text-align: right; vertical-align: baseline;
-          border: none; display: inline-block;
-          -webkit-touch-callout: none; -webkit-user-select: none;
-          -khtml-user-select: none; -moz-user-select: none;
-          -ms-user-select: none; user-select: none;
-          padding: 0 4px; width: 4em;
-          color: #aaaaaa;
-        }
-      pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
-      div.sourceCode
-        {   }
-      @media screen {
-      pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
-      }
-      code span.al { color: #ff0000; font-weight: bold; } /* Alert */
-      code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
-      code span.at { color: #7d9029; } /* Attribute */
-      code span.bn { color: #40a070; } /* BaseN */
-      code span.bu { } /* BuiltIn */
-      code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
-      code span.ch { color: #4070a0; } /* Char */
-      code span.cn { color: #880000; } /* Constant */
-      code span.co { color: #60a0b0; font-style: italic; } /* Comment */
-      code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
-      code span.do { color: #ba2121; font-style: italic; } /* Documentation */
-      code span.dt { color: #902000; } /* DataType */
-      code span.dv { color: #40a070; } /* DecVal */
-      code span.er { color: #ff0000; font-weight: bold; } /* Error */
-      code span.ex { } /* Extension */
-      code span.fl { color: #40a070; } /* Float */
-      code span.fu { color: #06287e; } /* Function */
-      code span.im { } /* Import */
-      code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
-      code span.kw { color: #007020; font-weight: bold; } /* Keyword */
-      code span.op { color: #666666; } /* Operator */
-      code span.ot { color: #007020; } /* Other */
-      code span.pp { color: #bc7a00; } /* Preprocessor */
-      code span.sc { color: #4070a0; } /* SpecialChar */
-      code span.ss { color: #bb6688; } /* SpecialString */
-      code span.st { color: #4070a0; } /* String */
-      code span.va { color: #19177c; } /* Variable */
-      code span.vs { color: #4070a0; } /* VerbatimString */
-      code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
     </style>
 
 
-<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css">
+  code {
+    white-space: pre;
+  }
+  .sourceCode {
+    overflow: visible;
+  }
+</style>
 <style type="text/css" data-origin="pandoc">
 pre > code.sourceCode { white-space: pre; position: relative; }
 pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
@@ -204,6 +149,7 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
   }
 })();
 </script>
+
 
 
 
@@ -400,7 +346,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 
 
 <h1 class="title toc-ignore">Secondary indices and auto indexing</h1>
-<h4 class="date">2021-02-20</h4>
+<h4 class="date">2021-09-22</h4>
 
 
 
@@ -565,7 +511,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <span id="cb7-4"><a href="#cb7-4" aria-hidden="true"></a><span class="co"># on= matches existing index, using index</span></span>
 <span id="cb7-5"><a href="#cb7-5" aria-hidden="true"></a><span class="co"># Starting bmerge ...</span></span>
 <span id="cb7-6"><a href="#cb7-6" aria-hidden="true"></a><span class="co"># forder.c received 1 rows and 1 columns</span></span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true"></a><span class="co"># bmerge done in 0.000s elapsed (0.000s cpu) </span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true"></a><span class="co"># bmerge done in 0.000s elapsed (0.001s cpu) </span></span>
 <span id="cb7-8"><a href="#cb7-8" aria-hidden="true"></a><span class="co"># Constructing irows for &#39;!byjoin || nqbyjoin&#39; ... 0.000s elapsed (0.000s cpu)</span></span>
 <span id="cb7-9"><a href="#cb7-9" aria-hidden="true"></a><span class="co">#    year month day dep_delay arr_delay carrier origin dest air_time distance hour</span></span>
 <span id="cb7-10"><a href="#cb7-10" aria-hidden="true"></a><span class="co"># 1: 2014     1   1        14        13      AA    JFK  LAX      359     2475    9</span></span>
@@ -722,7 +668,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <span id="cb20-5"><a href="#cb20-5" aria-hidden="true"></a><span class="co">## run thefirst time</span></span>
 <span id="cb20-6"><a href="#cb20-6" aria-hidden="true"></a>(t1 &lt;-<span class="st"> </span><span class="kw">system.time</span>(ans &lt;-<span class="st"> </span>dt[x <span class="op">==</span><span class="st"> </span>989L]))</span>
 <span id="cb20-7"><a href="#cb20-7" aria-hidden="true"></a><span class="co">#    user  system elapsed </span></span>
-<span id="cb20-8"><a href="#cb20-8" aria-hidden="true"></a><span class="co">#   0.534   0.039   0.099</span></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true"></a><span class="co">#   0.538   0.015   0.097</span></span>
 <span id="cb20-9"><a href="#cb20-9" aria-hidden="true"></a><span class="kw">head</span>(ans)</span>
 <span id="cb20-10"><a href="#cb20-10" aria-hidden="true"></a><span class="co">#      x         y</span></span>
 <span id="cb20-11"><a href="#cb20-11" aria-hidden="true"></a><span class="co"># 1: 989 0.7757157</span></span>
@@ -743,12 +689,12 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <div class="sourceCode" id="cb21"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true"></a><span class="co">## successive subsets</span></span>
 <span id="cb21-2"><a href="#cb21-2" aria-hidden="true"></a>(t2 &lt;-<span class="st"> </span><span class="kw">system.time</span>(dt[x <span class="op">==</span><span class="st"> </span>989L]))</span>
 <span id="cb21-3"><a href="#cb21-3" aria-hidden="true"></a><span class="co">#    user  system elapsed </span></span>
-<span id="cb21-4"><a href="#cb21-4" aria-hidden="true"></a><span class="co">#   0.001   0.000   0.001</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true"></a><span class="co">#   0.001   0.001   0.001</span></span>
 <span id="cb21-5"><a href="#cb21-5" aria-hidden="true"></a><span class="kw">system.time</span>(dt[x <span class="op">%in%</span><span class="st"> </span><span class="dv">1989</span><span class="op">:</span><span class="dv">2012</span>])</span>
 <span id="cb21-6"><a href="#cb21-6" aria-hidden="true"></a><span class="co">#    user  system elapsed </span></span>
 <span id="cb21-7"><a href="#cb21-7" aria-hidden="true"></a><span class="co">#   0.001   0.000   0.001</span></span></code></pre></div>
 <ul>
-<li><p>Running the first time took 0.099 seconds where as the second time took 0.001 seconds.</p></li>
+<li><p>Running the first time took 0.097 seconds where as the second time took 0.001 seconds.</p></li>
 <li><p>Auto indexing can be disabled by setting the global argument <code>options(datatable.auto.index = FALSE)</code>.</p></li>
 <li><p>Disabling auto indexing still allows to use indices created explicitly with <code>setindex</code> or <code>setindexv</code>. You can disable indices fully by setting global argument <code>options(datatable.use.index = FALSE)</code>.</p></li>
 </ul>
