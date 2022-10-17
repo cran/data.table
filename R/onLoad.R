@@ -19,8 +19,7 @@
   # Runs when loaded but not attached to search() path; e.g., when a package just Imports (not Depends on) data.table
   if (!exists("test.data.table", .GlobalEnv, inherits=FALSE)) {
     # check when installed package is loaded but skip when developing the package with cc()
-    dllV = if (is.loaded("CdllVersion",PACKAGE="datatable")) .Call(CdllVersion) else "before 1.12.0"
-    #                                              ^^ no dot as this is the name of the dll file, #3282
+    dllV = if (is.loaded("CdllVersion",PACKAGE="data_table")) .Call(CdllVersion) else "before 1.12.0"
     RV = packageVersion("data.table")
     if (dllV != RV) {
       dll = if (.Platform$OS.type=="windows") "dll" else "so"
@@ -137,9 +136,7 @@ getRversion = function(...) stop("Reminder to data.table developers: don't use g
 # 4) Defining getRversion with a stop() here helps prevent new switches on getRversion() being added in future. Easily circumvented but the point is to issue the message above.
 
 .onUnload = function(libpath) {
-  # fix for #474. the shared object name is different from package name
-  # So 'detach' doesn't find datatable.so, as it looks by default for data.table.so
-  library.dynam.unload("datatable", libpath)
+  library.dynam.unload("data_table", libpath)
 }
 
 # nocov end

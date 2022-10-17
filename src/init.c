@@ -40,95 +40,6 @@ Rcomplex NA_CPLX;
 size_t __sizes[100];
 size_t __typeorder[100];
 
-// .Calls
-SEXP setattrib();
-SEXP bmerge();
-SEXP assign();
-SEXP dogroups();
-SEXP copy();
-SEXP shallowwrapper();
-SEXP alloccolwrapper();
-SEXP selfrefokwrapper();
-SEXP truelength();
-SEXP setcharvec();
-SEXP setcolorder();
-SEXP chmatch_R();
-SEXP chmatchdup_R();
-SEXP chin_R();
-SEXP fifelseR();
-SEXP fcaseR();
-SEXP freadR();
-SEXP fwriteR();
-SEXP reorder();
-SEXP rbindlist();
-SEXP vecseq();
-SEXP setlistelt();
-SEXP address();
-SEXP expandAltRep();
-SEXP fmelt();
-SEXP fcast();
-SEXP uniqlist();
-SEXP uniqlengths();
-SEXP forder();
-SEXP issorted();
-SEXP gforce();
-SEXP gsum();
-SEXP gmean();
-SEXP gmin();
-SEXP gmax();
-SEXP isOrderedSubset();
-SEXP setNumericRounding();
-SEXP getNumericRounding();
-SEXP binary();
-SEXP subsetDT();
-SEXP subsetVector();
-SEXP convertNegAndZeroIdx();
-SEXP frank();
-SEXP dt_na();
-SEXP lookup();
-SEXP overlaps();
-SEXP whichwrapper();
-SEXP shift();
-SEXP transpose();
-SEXP anyNA();
-SEXP isReallyReal();
-SEXP setlevels();
-SEXP rleid();
-SEXP gmedian();
-SEXP gtail();
-SEXP ghead();
-SEXP glast();
-SEXP gfirst();
-SEXP gnthvalue();
-SEXP dim();
-SEXP gvar();
-SEXP gsd();
-SEXP gprod();
-SEXP nestedid();
-SEXP setDTthreads();
-SEXP getDTthreads_R();
-SEXP nqRecreateIndices();
-SEXP fsort();
-SEXP inrange();
-SEXP between();
-SEXP hasOpenMP();
-SEXP uniqueNlogical();
-SEXP frollfunR();
-SEXP dllVersion();
-SEXP nafillR();
-SEXP colnamesInt();
-SEXP initLastUpdated();
-SEXP cj();
-SEXP lock();
-SEXP unlock();
-SEXP islockedR();
-SEXP allNAR();
-SEXP test_dt_win_snprintf();
-SEXP dt_zlib_version();
-
-// .Externals
-SEXP fastmean();
-
 static const
 R_CallMethodDef callMethods[] = {
 {"Csetattrib", (DL_FUNC) &setattrib, -1},
@@ -228,7 +139,7 @@ R_ExternalMethodDef externalMethods[] = {
 {NULL, NULL, 0}
 };
 
-static void setSizes() {
+static void setSizes(void) {
   for (int i=0; i<100; ++i) { __sizes[i]=0; __typeorder[i]=0; }
   // only these types are currently allowed as column types :
   __sizes[LGLSXP] =  sizeof(int);       __typeorder[LGLSXP] =  0;
@@ -242,8 +153,7 @@ static void setSizes() {
   // One place we need the largest sizeof is the working memory malloc in reorder.c
 }
 
-void attribute_visible R_init_datatable(DllInfo *info)
-// relies on pkg/src/Makevars to mv data.table.so to datatable.so
+void attribute_visible R_init_data_table(DllInfo *info)
 {
   // C exported routines, see ?cdt for details
   R_RegisterCCallable("data.table", "CsubsetDT", (DL_FUNC) &subsetDT);
@@ -369,7 +279,7 @@ inline long long DtoLL(double x) {
   // under clang 3.9.1 -O3 and solaris-sparc but not solaris-x86 or gcc.
   // There is now a grep in CRAN_Release.cmd; use this union method instead.
   // int64_t may help rather than 'long long' (TODO: replace all long long with int64_t)
-  // The two types must be the same size. That is checked in R_init_datatable (above)
+  // The two types must be the same size. That is checked in R_init_data_table (above)
   // where sizeof(int64_t)==sizeof(double)==8 is checked.
   // Endianness should not matter because whether big or little, endianness is the same
   // inside this process, and the two types are the same size.
@@ -384,14 +294,14 @@ inline double LLtoD(long long x) {
   return u.d;
 }
 
-bool GetVerbose() {
+bool GetVerbose(void) {
   // don't call repetitively; save first in that case
   SEXP opt = GetOption(sym_verbose, R_NilValue);
   return isLogical(opt) && LENGTH(opt)==1 && LOGICAL(opt)[0]==1;
 }
 
 // # nocov start
-SEXP hasOpenMP() {
+SEXP hasOpenMP(void) {
   // Just for use by onAttach (hence nocov) to avoid an RPRINTF from C level which isn't suppressable by CRAN
   // There is now a 'grep' in CRAN_Release.cmd to detect any use of RPRINTF in init.c, which is
   // why RPRINTF is capitalized in this comment to avoid that grep.
@@ -412,8 +322,8 @@ SEXP initLastUpdated(SEXP var) {
   return R_NilValue;
 }
 
-SEXP dllVersion() {
+SEXP dllVersion(void) {
   // .onLoad calls this and checks the same as packageVersion() to ensure no R/C version mismatch, #3056
-  return(ScalarString(mkChar("1.14.2")));
+  return(ScalarString(mkChar("1.14.4")));
 }
 
