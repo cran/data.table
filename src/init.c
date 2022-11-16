@@ -111,6 +111,7 @@ R_CallMethodDef callMethods[] = {
 {"Cinrange", (DL_FUNC) &inrange, -1},
 {"Cbetween", (DL_FUNC) &between, -1},
 {"ChasOpenMP", (DL_FUNC) &hasOpenMP, -1},
+{"CbeforeR340", (DL_FUNC) &beforeR340, -1},
 {"CuniqueNlogical", (DL_FUNC) &uniqueNlogical, -1},
 {"CfrollfunR", (DL_FUNC) &frollfunR, -1},
 {"CdllVersion", (DL_FUNC) &dllVersion, -1},
@@ -314,6 +315,16 @@ SEXP hasOpenMP(void) {
 }
 // # nocov end
 
+SEXP beforeR340(void) {
+  // used in onAttach.R for message about fread memory leak fix needing R 3.4.0
+  // at C level to catch if user upgrades R but does not reinstall data.table
+  #if defined(R_VERSION) && R_VERSION<R_Version(3,4,0)
+  return ScalarLogical(true);
+  #else
+  return ScalarLogical(false);
+  #endif
+}
+
 extern int *_Last_updated;  // assign.c
 
 SEXP initLastUpdated(SEXP var) {
@@ -324,6 +335,6 @@ SEXP initLastUpdated(SEXP var) {
 
 SEXP dllVersion(void) {
   // .onLoad calls this and checks the same as packageVersion() to ensure no R/C version mismatch, #3056
-  return(ScalarString(mkChar("1.14.4")));
+  return(ScalarString(mkChar("1.14.6")));
 }
 
