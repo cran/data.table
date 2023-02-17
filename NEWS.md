@@ -1,6 +1,17 @@
 **If you are viewing this file on CRAN, please check [latest news on GitHub](https://github.com/Rdatatable/data.table/blob/master/NEWS.md) where the formatting is also better.**
 
-# data.table [v1.14.6](https://github.com/Rdatatable/data.table/milestone/27?closed=1)
+# data.table [v1.14.8](https://github.com/Rdatatable/data.table/milestone/28?closed=1)
+
+## NOTES
+
+1. Test 1613.605 now passes changes to `as.data.frame()` in R-devel, [#5597](https://github.com/Rdatatable/data.table/pull/5597). Thanks to Avraham Adler for reporting.
+
+2. An out of bounds read when combining non-equi join with `by=.EACHI` has been found and fixed thanks to clang ASAN, [#5598](https://github.com/Rdatatable/data.table/issues/5598). There was no bug or consequence because the read was followed (now preceded) by a bounds test.
+
+3. `.rbind.data.table` (note the leading `.`) is no longer exported when `data.table` is installed in R>=4.0.0 (Apr 2020), [#5600](https://github.com/Rdatatable/data.table/pull/5600). It was never documented which R-devel now detects and warns about. It is only needed by `data.table` internals to support R<4.0.0; see note 1 in v1.12.6 (Oct 2019) below in this file for more details.
+
+
+# data.table [v1.14.6](https://github.com/Rdatatable/data.table/milestone/27?closed=1)  (16 Nov 2022)
 
 ## BUG FIXES
 
