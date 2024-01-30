@@ -92,6 +92,7 @@ extern SEXP char_ordered;
 extern SEXP char_datatable;
 extern SEXP char_dataframe;
 extern SEXP char_NULL;
+extern SEXP char_maxString;
 extern SEXP sym_sorted;
 extern SEXP sym_index;
 extern SEXP sym_BY;
@@ -104,6 +105,8 @@ extern SEXP sym_inherits;
 extern SEXP sym_datatable_locked;
 extern SEXP sym_tzone;
 extern SEXP sym_old_fread_datetime_character;
+extern SEXP sym_variable_table;
+extern SEXP sym_as_character;
 extern double NA_INT64_D;
 extern long long NA_INT64_LL;
 extern Rcomplex NA_CPLX;  // initialized in init.c; see there for comments
@@ -112,7 +115,7 @@ extern size_t __typeorder[100]; // __ prefix otherwise if we use these names dir
 
 long long DtoLL(double x);
 double LLtoD(long long x);
-bool GetVerbose(void);
+int GetVerbose(void);
 
 // cj.c
 SEXP cj(SEXP base_list);
@@ -124,14 +127,14 @@ SEXP growVector(SEXP x, R_len_t newlen);
 // assign.c
 SEXP allocNAVector(SEXPTYPE type, R_len_t n);
 SEXP allocNAVectorLike(SEXP x, R_len_t n);
-void writeNA(SEXP v, const int from, const int n);
+void writeNA(SEXP v, const int from, const int n, const bool listNA);
 void savetl_init(void), savetl(SEXP s), savetl_end(void);
 int checkOverAlloc(SEXP x);
 
 // forder.c
 int StrCmp(SEXP x, SEXP y);
 uint64_t dtwiddle(double x);
-SEXP forder(SEXP DT, SEXP by, SEXP retGrp, SEXP sortStrArg, SEXP orderArg, SEXP naArg);
+SEXP forder(SEXP DT, SEXP by, SEXP retGrpArg, SEXP sortGroupsArg, SEXP ascArg, SEXP naArg);
 int getNumericRounding_C(void);
 
 // reorder.c
@@ -141,6 +144,7 @@ SEXP setcolorder(SEXP x, SEXP o);
 // subset.c
 void subsetVectorRaw(SEXP ans, SEXP source, SEXP idx, const bool anyNA);
 SEXP subsetVector(SEXP x, SEXP idx);
+const char *check_idx(SEXP idx, int max, bool *anyNA_out, bool *orderedSubset_out);
 
 // fcast.c
 SEXP int_vec_init(R_len_t n, int val);
@@ -228,14 +232,14 @@ SEXP between(SEXP x, SEXP lower, SEXP upper, SEXP incbounds, SEXP NAbounds, SEXP
 SEXP coalesce(SEXP x, SEXP inplace);
 
 // utils.c
+bool within_int32_repres(double x);
+bool within_int64_repres(double x);
 bool isRealReallyInt(SEXP x);
+SEXP isRealReallyIntR(SEXP x);
 SEXP isReallyReal(SEXP x);
 bool allNA(SEXP x, bool errorForBadType);
 SEXP colnamesInt(SEXP x, SEXP cols, SEXP check_dups);
-void coerceFill(SEXP fill, double *dfill, int32_t *ifill, int64_t *i64fill);
-SEXP coerceFillR(SEXP fill);
 bool INHERITS(SEXP x, SEXP char_);
-bool Rinherits(SEXP x, SEXP char_);
 SEXP copyAsPlain(SEXP x);
 void copySharedColumns(SEXP x);
 SEXP lock(SEXP x);
@@ -244,6 +248,7 @@ bool islocked(SEXP x);
 SEXP islockedR(SEXP x);
 bool need2utf8(SEXP x);
 SEXP coerceUtf8IfNeeded(SEXP x);
+SEXP coerceAs(SEXP x, SEXP as, SEXP copyArg);
 
 // types.c
 char *end(char *start);
@@ -256,6 +261,12 @@ SEXP fcaseR(SEXP na, SEXP rho, SEXP args);
 
 //snprintf.c
 int dt_win_snprintf(char *dest, size_t n, const char *fmt, ...);
+
+// programming.c
+SEXP substitute_call_arg_namesR(SEXP expr, SEXP env);
+
+//negate.c
+SEXP notchin(SEXP x, SEXP table);
 
 // functions called from R level .Call/.External and registered in init.c
 // these now live here to pass -Wstrict-prototypes, #5477
@@ -271,8 +282,8 @@ SEXP setcharvec(SEXP, SEXP, SEXP);
 SEXP chmatch_R(SEXP, SEXP, SEXP);
 SEXP chmatchdup_R(SEXP, SEXP, SEXP);
 SEXP chin_R(SEXP, SEXP);
-SEXP freadR(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-SEXP fwriteR(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+SEXP freadR(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+SEXP fwriteR(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 SEXP rbindlist(SEXP, SEXP, SEXP, SEXP);
 SEXP setlistelt(SEXP, SEXP, SEXP);
 SEXP address(SEXP);
@@ -281,7 +292,7 @@ SEXP fmelt(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 SEXP fcast(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 SEXP issorted(SEXP, SEXP);
 SEXP gforce(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-SEXP gsum(SEXP, SEXP, SEXP);
+SEXP gsum(SEXP, SEXP);
 SEXP gmean(SEXP, SEXP);
 SEXP gmin(SEXP, SEXP);
 SEXP gmax(SEXP, SEXP);
@@ -289,7 +300,7 @@ SEXP setNumericRounding(SEXP);
 SEXP getNumericRounding(void);
 SEXP binary(SEXP);
 SEXP subsetDT(SEXP, SEXP, SEXP);
-SEXP convertNegAndZeroIdx(SEXP, SEXP, SEXP);
+SEXP convertNegAndZeroIdx(SEXP, SEXP, SEXP, SEXP);
 SEXP frank(SEXP, SEXP, SEXP, SEXP);
 SEXP lookup(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 SEXP overlaps(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
@@ -324,6 +335,7 @@ SEXP initLastUpdated(SEXP);
 SEXP allNAR(SEXP);
 SEXP test_dt_win_snprintf(void);
 SEXP dt_zlib_version(void);
+SEXP dt_has_zlib(void);
 SEXP startsWithAny(SEXP, SEXP, SEXP);
 SEXP convertDate(SEXP, SEXP);
 SEXP fastmean(SEXP);
