@@ -1,5 +1,5 @@
 Package: data.table
-Version: 1.15.2
+Version: 1.15.4
 Title: Extension of `data.frame`
 Depends: R (>= 3.1.0)
 Imports: methods
@@ -86,7 +86,7 @@ Authors@R: c(
   person("Michael","Czekanski",    role="ctb")
   )
 NeedsCompilation: yes
-Packaged: 2024-02-27 06:21:25 UTC; tysonbarrett
+Packaged: 2024-03-28 05:25:20 UTC; tysonbarrett
 Author: Tyson Barrett [aut, cre],
   Matt Dowle [aut],
   Arun Srinivasan [aut],
@@ -160,4 +160,4 @@ Author: Tyson Barrett [aut, cre],
   Michael Czekanski [ctb]
 Maintainer: Tyson Barrett <t.barrett88@gmail.com>
 Repository: CRAN
-Date/Publication: 2024-02-29 07:10:06 UTC
+Date/Publication: 2024-03-30 23:50:02 UTC
