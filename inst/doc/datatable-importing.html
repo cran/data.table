@@ -142,7 +142,7 @@ section.footnotes::before {
 <div class="frontmatter">
 <div class="title"><h1>Importing data.table</h1></div>
 <div class="author"><h2></h2></div>
-<div class="date"><h3>2024-03-27</h3></div>
+<div class="date"><h3>2024-08-25</h3></div>
 </div>
 <div class="body">
 <style>
@@ -153,9 +153,9 @@ h2 {
 <p>This document is focused on using <code>data.table</code> as a dependency in other R packages. If you are interested in using <code>data.table</code> C code from a non-R application, or in calling its C functions directly, jump to the <a href="#non-r-API">last section</a> of this vignette.</p>
 <p>Importing <code>data.table</code> is no different from importing other R packages. This vignette is meant to answer the most common questions arising around that subject; the lessons presented here can be applied to other R packages.</p>
 <h2 id="why-to-import-data-table">Why to import <code>data.table</code></h2>
-<p>One of the biggest features of <code>data.table</code> is its concise syntax which makes exploratory analysis faster and easier to write and perceive; this convenience  can drive packages authors to use <code>data.table</code> in their own packages. Another maybe even more important reason is high performance. When outsourcing heavy computing tasks from your package to <code>data.table</code>, you usually get top performance without needing to re-invent any high of these numerical optimization tricks on your own.</p>
+<p>One of the biggest features of <code>data.table</code> is its concise syntax which makes exploratory analysis faster and easier to write and perceive; this convenience can drive package authors to use <code>data.table</code>. Another, perhaps more important reason is high performance. When outsourcing heavy computing tasks from your package to <code>data.table</code>, you usually get top performance without needing to re-invent any of these numerical optimization tricks on your own.</p>
 <h2 id="importing-data-table-is-easy">Importing <code>data.table</code> is easy</h2>
-<p>It is very easy to use <code>data.table</code> as a dependency due to the fact that <code>data.table</code> does not have any of its own dependencies. This statement is valid for both operating system dependencies and R dependencies. It means that if you have R installed on your machine, it already has everything  needed to install <code>data.table</code>. This also means that adding <code>data.table</code> as a dependency of your package will not result in a chain of other recursive dependencies to install, making it very convenient for offline installation.</p>
+<p>It is very easy to use <code>data.table</code> as a dependency due to the fact that <code>data.table</code> does not have any of its own dependencies. This applies both to operating system and to R dependencies. It means that if you have R installed on your machine, it already has everything needed to install <code>data.table</code>.  It also means that adding <code>data.table</code> as a dependency of your package will not result in a chain of other recursive dependencies to install, making it very convenient for offline installation.</p>
 <h2 id="description-file" DESCRIPTION><code>DESCRIPTION</code> file</h2>
 <p>The first place to define a dependency in a package is the <code>DESCRIPTION</code> file. Most commonly, you will need to add <code>data.table</code> under the <code>Imports:</code> field. Doing so will necessitate an installation of <code>data.table</code> before your package can compile/install. As mentioned above, no other packages will be installed because <code>data.table</code> does not have any dependencies of its own. You can also specify the minimal required version of a dependency; for example, if your package is using the <code>fwrite</code> function, which was introduced in <code>data.table</code> in version 1.9.8, you should incorporate this as <code>Imports: data.table (&gt;= 1.9.8)</code>. This way you can ensure that the version of <code>data.table</code> installed is 1.9.8 or later before your users will be able to install your package. Besides the <code>Imports:</code> field, you can also use <code>Depends: data.table</code> but we strongly discourage this approach (and may disallow it in future) because this loads <code>data.table</code> into your user’s workspace; i.e. it enables <code>data.table</code> functionality in your user’s scripts without them requesting that. <code>Imports:</code> is the proper way to use <code>data.table</code> within your package without inflicting <code>data.table</code> on your user. In fact, we hope the <code>Depends:</code> field is eventually deprecated in R since this is true for all packages.</p>
 <h2 id="namespace-file" NAMESPACE><code>NAMESPACE</code> file</h2>
@@ -220,13 +220,13 @@ aggr = function (x) {
   x[, .N, by = &quot;grp&quot;]
 }
 </code></pre>
-<p>The case for <code>data.table</code>’s special symbols (<code>.SD</code>, <code>.BY</code>, <code>.N</code>, <code>.I</code>, <code>.GRP</code>, <code>.NGRP</code>, and <code>.EACHI</code>; see <code>?.N</code>) and assignment operator (<code>:=</code>) is slightly different. You should import whichever of these values you use from <code>data.table</code>’s namespace to protect against any issues arising from the unlikely scenario that we change the exported value of these in the future, e.g. if you want to use <code>.N</code>, <code>.I</code>, and <code>:=</code>, a minimal <code>NAMESPACE</code> would have:</p>
+<p>The case for <code>data.table</code>’s special symbols (e.g. <code>.SD</code> and <code>.N</code>) and assignment operator (<code>:=</code>) is slightly different (see <code>?.N</code> for more, including a complete listing of such symbols). You should import whichever of these values you use from <code>data.table</code>’s namespace to protect against any issues arising from the unlikely scenario that we change the exported value of these in the future, e.g. if you want to use <code>.N</code>, <code>.I</code>, and <code>:=</code>, a minimal <code>NAMESPACE</code> would have:</p>
 <pre><code class="language-r">importFrom(data.table, .N, .I, ':=')
 </code></pre>
 <p>Much simpler is to just use <code>import(data.table)</code> which will greedily allow usage in your package’s code of any object exported from <code>data.table</code>.</p>
 <p>If you don’t mind having <code>id</code> and <code>grp</code> registered as variables globally in your package namespace you can use <code>?globalVariables</code>. Be aware that these notes do not have any impact on the code or its functionality; if you are not going to publish your package, you may simply choose to ignore them.</p>
 <h2 id="care-needed-when-providing-and-using-options">Care needed when providing and using options</h2>
-<p>Common practice by R packages is to provide customization options set by <code>options(name=val)</code> and fetched using <code>getOption(&quot;name&quot;, default)</code>. Function arguments often specify a call to <code>getOption()</code> so that the user knows (from <code>?fun</code> or <code>args(fun)</code>) the name of the option controlling the default for that parameter; e.g. <code>fun(..., verbose=getOption(&quot;datatable.verbose&quot;, FALSE))</code>. All <code>data.table</code> options start with <code>datatable.</code> so as to not conflict with options in other packages. A user simply calls <code>options(datatable.verbose=TRUE)</code> to turn on verbosity. This affects all calls to <code>fun()</code> other the ones which have been provided <code>verbose=</code> explicity; e.g. <code>fun(..., verbose=FALSE)</code>.</p>
+<p>Common practice by R packages is to provide customization options set by <code>options(name=val)</code> and fetched using <code>getOption(&quot;name&quot;, default)</code>. Function arguments often specify a call to <code>getOption()</code> so that the user knows (from <code>?fun</code> or <code>args(fun)</code>) the name of the option controlling the default for that parameter; e.g. <code>fun(..., verbose=getOption(&quot;datatable.verbose&quot;, FALSE))</code>. All <code>data.table</code> options start with <code>datatable.</code> so as to not conflict with options in other packages. A user simply calls <code>options(datatable.verbose=TRUE)</code> to turn on verbosity. This affects all data.table function calls unless <code>verbose=FALSE</code> is provided explicitly; e.g. <code>fun(..., verbose=FALSE)</code>.</p>
 <p>The option mechanism in R is <em>global</em>. Meaning that if a user sets a <code>data.table</code> option for their own use, that setting also affects code inside any package that is using <code>data.table</code> too. For an option like <code>datatable.verbose</code>, this is exactly the desired behavior since the desire is to trace and log all <code>data.table</code> operations from wherever they originate; turning on verbosity does not affect the results. Another unique-to-R and excellent-for-production option is R’s <code>options(warn=2)</code> which turns all warnings into errors. Again, the desire is to affect any warning in any package so as to not miss any warnings in production. There are 6 <code>datatable.print.*</code> options and 3 optimization options which do not affect the result of operations. However, there is one <code>data.table</code> option that does and is now a concern: <code>datatable.nomatch</code>. This option changes the default join from outer to inner. [Aside, the default join is outer because outer is safer; it doesn’t drop missing data silently; moreover it is consistent to base R way of matching by names and indices.] Some users prefer inner join to be the default and we provided this option for them. However, a user setting this option can unintentionally change the behavior of joins inside packages that use <code>data.table</code>. Accordingly, in v1.12.4 (Oct 2019) a message was printed when the <code>datatable.nomatch</code> option was used, and from v1.14.2 it is now ignored with warning. It was the only <code>data.table</code> option with this concern.</p>
 <h2 id="troubleshooting">Troubleshooting</h2>
 <p>If you face any problems in creating a package that uses data.table, please confirm that the problem is reproducible in a clean R session using the R console: <code>R CMD check package.name</code>.</p>
@@ -266,8 +266,68 @@ When using <code>data.table</code> in package tests (e.g. tests/testthat/test* f
 <p>For more canonical documentation of defining packages dependency check the official manual: <a href="https://cran.r-project.org/doc/manuals/r-release/R-exts.html">Writing R Extensions</a>.</p>
 <h2 id="importing-data-table-c-routines">Importing data.table C routines</h2>
 <p>Some of internally used C routines are now exported on C level thus can be used in R packages directly from their C code. See <a href="https://rdatatable.gitlab.io/data.table/reference/cdt.html"><code>?cdt</code></a> for details and <a href="https://cran.r-project.org/doc/manuals/r-release/R-exts.html">Writing R Extensions</a> <em>Linking to native routines in other packages</em> section for usage.</p>
-<h2 id="importing-from-non-r-applications" non-r-API>Importing from non-R Applications</h2>
+<h2 id="importing-from-non-r-applications" non-r-api>Importing from non-r Applications</h2>
 <p>Some tiny parts of <code>data.table</code> C code were isolated from the R C API and can now be used from non-R applications by linking to .so / .dll files. More concrete details about this will be provided later; for now you can study the C code that was isolated from the R C API in <a href="https://github.com/Rdatatable/data.table/blob/master/src/fread.c">src/fread.c</a> and <a href="https://github.com/Rdatatable/data.table/blob/master/src/fwrite.c">src/fwrite.c</a>.</p>
+<h2 id="how-to-convert-your-depends-dependency-on-data-table-to-imports">How to convert your Depends dependency on data.table to Imports</h2>
+<p>To convert a <code>Depends</code> dependency on <code>data.table</code> to an <code>Imports</code> dependency in your package, follow these steps:</p>
+<h3 id="step-0-ensure-your-package-is-passing-r-cmd-check-initially">Step 0. Ensure your package is passing R CMD check initially</h3>
+<h3 id="step-1-update-the-description-file-to-put-data-table-in-imports-not-depends">Step 1. Update the DESCRIPTION file to put data.table in Imports, not Depends</h3>
+<p><strong>Before:</strong></p>
+<pre><code class="language-dcf">Depends:
+    R (&gt;= 3.5.0),
+    data.table
+Imports:
+</code></pre>
+<p><strong>After:</strong></p>
+<pre><code class="language-dcf">Depends:
+    R (&gt;= 3.5.0)
+Imports:
+    data.table
+</code></pre>
+<h3 id="step-2-1-run-r-cmd-check">Step 2.1: Run <code>R CMD check</code></h3>
+<p>Run <code>R CMD check</code> to identify any missing imports or symbols. This step helps:</p>
+<ul>
+<li>Automatically detect any functions or symbols from <code>data.table</code> that are not explicitly imported.</li>
+<li>Flag missing special symbols like <code>.N</code>, <code>.SD</code>, and <code>:=</code>.</li>
+<li>Provide immediate feedback on what needs to be added to the NAMESPACE file.</li>
+</ul>
+<p>Note: Not all such usages are caught by <code>R CMD check</code>. In particular, <code>R CMD check</code> skips some symbols/functions in formulas and will completely miss parsed expressions like <code>parse(text = &quot;data.table(a = 1)&quot;)</code>. Packages will need good test coverage to detect these edge cases.</p>
+<h3 id="step-2-2-modify-the-namespace-file">Step 2.2: Modify the NAMESPACE file</h3>
+<p>Based on the <code>R CMD check</code> results, ensure all used functions, special symbols, S3 generics, and S4 classes from <code>data.table</code> are imported.</p>
+<p>That means adding <code>importFrom(data.table, ...)</code> directives for symbols, functions, and S3 generics, and/or <code>importClassesFrom(data.table, ...)</code> directives for S4 classes as appropriate. See ‘Writing R Extensions’ for full details on how to do so properly.</p>
+<h4 id="blanket-import">Blanket import</h4>
+<p>Alternatively, you can import all functions from <code>data.table</code> at once, though this is generally not recommended:</p>
+<pre><code class="language-r">import(data.table)
+</code></pre>
+<p><strong>Justification for Avoiding Blanket Imports:</strong></p>
+<ol>
+<li><strong>Documentation</strong>: The NAMESPACE file can serve as good documentation of how you depend on certain packages.</li>
+<li><strong>Avoiding Conflicts</strong>: Blanket imports leave you open to subtle breakage. For example, if you <code>import(pkgA)</code> and <code>import(pkgB)</code>, but later pkgB exports a function also exported by pkgA, this will break your package due to conflicts in your namespace, which is disallowed by <code>R CMD check</code> and CRAN.</li>
+</ol>
+<h3 id="step-3-update-your-r-code-files-outside-the-package-s-r-directory">Step 3: Update Your R code files outside the package’s R/ directory</h3>
+<p>When you move a package from <code>Depends</code> to <code>Imports</code>, it will no longer be automatically attached when your package is loaded. This can be important for examples, tests, vignettes, and demos, where <code>Imports</code> packages need to be attached explicitly.</p>
+<p><strong>Before (with <code>Depends</code>):</strong></p>
+<pre><code class="language-r"># data.table functions are directly available
+library(MyPkgDependsDataTable)
+dt &lt;- data.table(x = 1:10, y = letters[1:10])
+setDT(dt)
+result &lt;- merge(dt, other_dt, by = &quot;x&quot;)
+</code></pre>
+<p><strong>After (with <code>Imports</code>):</strong></p>
+<pre><code class="language-r"># Explicitly load data.table in user scripts or vignettes
+library(data.table)
+library(MyPkgDependsDataTable)
+dt &lt;- data.table(x = 1:10, y = letters[1:10])
+setDT(dt)
+result &lt;- merge(dt, other_dt, by = &quot;x&quot;)
+</code></pre>
+<h3 id="benefits-of-using-imports">Benefits of using <code>Imports</code></h3>
+<ul>
+<li>*<em>User-Friendliness</em>: <code>Depends</code> alters your users’ <code>search()</code> path, possibly without their wanting to do so.</li>
+<li><strong>Namespace Management</strong>: Only the functions your package explicitly imports are available, reducing the risk of function name clashes.</li>
+<li><strong>Cleaner Package Loading</strong>: Your package’s dependencies are not attached to the search path, making the loading process cleaner and potentially faster.</li>
+<li><strong>Easier Maintenance</strong>: It simplifies maintenance tasks as upstream dependencies’ APIs evolve. Depending too much on <code>Depends</code> can lead to conflicts and compatibility issues over time.</li>
+</ul>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js" defer></script>

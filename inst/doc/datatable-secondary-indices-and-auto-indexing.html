@@ -142,7 +142,7 @@ section.footnotes::before {
 <div class="frontmatter">
 <div class="title"><h1>Secondary indices and auto indexing</h1></div>
 <div class="author"><h2></h2></div>
-<div class="date"><h3>2024-03-27</h3></div>
+<div class="date"><h3>2024-08-25</h3></div>
 </div>
 <div class="body">
 <p>This vignette assumes that the reader is familiar with data.table’s <code>[i, j, by]</code> syntax, and how to perform fast key based subsets. If you’re not familiar with these concepts, please read the <em>“Introduction to data.table”</em>,  <em>“Reference semantics”</em> and <em>“Keys and fast binary search based subset”</em> vignettes first.</p>
@@ -248,7 +248,7 @@ flights[&quot;JFK&quot;] # or flights[.(&quot;JFK&quot;)]
 <p>a) computing the order vector for the column(s) provided, here, <code>origin</code>, and</p>
 <p>b) reordering the entire data.table, by reference, based on the order vector computed.</p>
 <h1></h1>
-<p>Computing the order isn’t the time consuming part, since data.table uses true radix sorting on integer, character and numeric vectors. However reordering the data.table could be time consuming (depending on the number of rows and columns).</p>
+<p>Computing the order isn’t the time consuming part, since data.table uses true radix sorting on integer, character and numeric vectors. However, reordering the data.table could be time consuming (depending on the number of rows and columns).</p>
 <p>Unless our task involves repeated subsetting on the same column, fast key based subsetting could effectively be nullified by the time to reorder, depending on our data.table dimensions.</p>
 <h4 id="there-can-be-only-one-key-at-the-most">– There can be only one <code>key</code> at the most</h4>
 <p>Now if we would like to repeat the same operation but on <code>dest</code> column instead, for the value “LAX”, then we have to <code>setkey()</code>, <em>again</em>.</p>
@@ -272,7 +272,7 @@ flights[&quot;LAX&quot;]
 </li>
 <li>
 <p>allows for a cleaner syntax by having the columns on which the subset is performed as part of the syntax. This makes the code easier to follow when looking at it at a later point.</p>
-<p>Note that <code>on</code> argument can also be used on keyed subsets as well. In fact, we encourage to provide the <code>on</code> argument even when subsetting using keys for better readability.</p>
+<p>Note that <code>on</code> argument can also be used on keyed subsets as well. In fact, we encourage providing the <code>on</code> argument even when subsetting using keys for better readability.</p>
 </li>
 </ul>
 <h1></h1>
@@ -310,8 +310,11 @@ flights[&quot;JFK&quot;, on = &quot;origin&quot;, verbose = TRUE][1:5]
 # on= matches existing index, using index
 # Starting bmerge ...
 # forder.c received 1 rows and 1 columns
+# forderReuseSorting: opt=-1, took 0.000s
+# bmerge: looping bmerge_r took 0.000s
+# bmerge: took 0.000s
 # bmerge done in 0.000s elapsed (0.000s cpu)
-# Constructing irows for '!byjoin || nqbyjoin' ... 0.000s elapsed (0.000s cpu)
+# Constructing irows for '!byjoin || nqbyjoin' ... 0.001s elapsed (0.000s cpu)
 #     year month   day dep_delay arr_delay carrier origin   dest air_time distance  hour
 #    &lt;int&gt; &lt;int&gt; &lt;int&gt;     &lt;int&gt;     &lt;int&gt;  &lt;char&gt; &lt;char&gt; &lt;char&gt;    &lt;int&gt;    &lt;int&gt; &lt;int&gt;
 # 1:  2014     1     1        14        13      AA    JFK    LAX      359     2475     9
@@ -444,7 +447,7 @@ head(ans)
 <li>There are no flights connecting “JFK” and “XNA”. Therefore, that row is skipped in the result.</li>
 </ul>
 <h2 id="3-auto-indexing">3. Auto indexing</h2>
-<p>First we looked at how to fast subset using binary search using <em>keys</em>. Then we figured out that we could improve performance even further and have more cleaner syntax by using secondary indices.</p>
+<p>First we looked at how to fast subset using binary search using <em>keys</em>. Then we figured out that we could improve performance even further and have cleaner syntax by using secondary indices.</p>
 <p>That is what <em>auto indexing</em> does. At the moment, it is only implemented for binary operators <code>==</code> and <code>%in%</code>. An index is automatically created <em>and</em> saved as an attribute. That is, unlike the <code>on</code> argument which computes the index on the fly each time (unless one already exists), a secondary index is created here.</p>
 <p>Let’s start by creating a data.table big enough to highlight the advantage.</p>
 <pre><code class="language-r">set.seed(1L)
@@ -460,7 +463,7 @@ names(attributes(dt))
 ## run thefirst time
 (t1 &lt;- system.time(ans &lt;- dt[x == 989L]))
 #    user  system elapsed 
-#   0.249   0.006   0.256
+#   0.265   0.006   0.271
 head(ans)
 #        x         y
 #    &lt;int&gt;     &lt;num&gt;
@@ -483,14 +486,14 @@ indices(dt)
 <pre><code class="language-r">## successive subsets
 (t2 &lt;- system.time(dt[x == 989L]))
 #    user  system elapsed 
-#   0.001   0.000   0.000
+#   0.012   0.001   0.014
 system.time(dt[x %in% 1989:2012])
 #    user  system elapsed 
-#   0.000   0.000   0.001
+#   0.013   0.001   0.014
 </code></pre>
 <ul>
 <li>
-<p>Running the first time took 0.256 seconds where as the second time took 0.000 seconds.</p>
+<p>Running the first time took 0.271 seconds where as the second time took 0.014 seconds.</p>
 </li>
 <li>
 <p>Auto indexing can be disabled by setting the global argument <code>options(datatable.auto.index = FALSE)</code>.</p>

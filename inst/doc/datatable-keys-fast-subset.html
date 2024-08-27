@@ -142,10 +142,10 @@ section.footnotes::before {
 <div class="frontmatter">
 <div class="title"><h1>Keys and fast binary search based subset</h1></div>
 <div class="author"><h2></h2></div>
-<div class="date"><h3>2024-03-27</h3></div>
+<div class="date"><h3>2024-08-25</h3></div>
 </div>
 <div class="body">
-<p>This vignette is aimed at those who are already familiar with <em>data.table</em> syntax, its general form, how to subset rows in <code>i</code>, select and compute on columns, add/modify/delete columns <em>by reference</em> in <code>j</code> and  group by using <code>by</code>. If you’re not familiar with these concepts, please read the <em>“Introduction to data.table”</em> and <em>“Reference semantics”</em> vignettes first.</p>
+<p>This vignette is aimed at those who are already familiar with <em>data.table</em> syntax, its general form, how to subset rows in <code>i</code>, select and compute on columns, add/modify/delete columns <em>by reference</em> in <code>j</code> and group by using <code>by</code>. If you’re not familiar with these concepts, please read the <em>“Introduction to data.table”</em> and <em>“Reference semantics”</em> vignettes first.</p>
 <hr />
 <h2 id="data">Data</h2>
 <p>We will use the same <code>flights</code> data as in the <em>“Introduction to data.table”</em> vignette.</p>
@@ -303,7 +303,7 @@ head(flights)
 </li>
 </ul>
 <h4 id="set-and">set* and <code>:=</code>:</h4>
-<p>In <em>data.table</em>, the <code>:=</code> operator and all the <code>set*</code> (e.g., <code>setkey</code>, <code>setorder</code>, <code>setnames</code> etc..) functions are the only ones which modify the input object <em>by reference</em>.</p>
+<p>In <em>data.table</em>, the <code>:=</code> operator and all the <code>set*</code> (e.g., <code>setkey</code>, <code>setorder</code>, <code>setnames</code> etc.) functions are the only ones which modify the input object <em>by reference</em>.</p>
 <p>Once you <em>key</em> a <em>data.table</em> by certain columns, you can subset by querying those key columns using the <code>.()</code> notation in <code>i</code>. Recall that <code>.()</code> is an <em>alias to</em> <code>list()</code>.</p>
 <h4 id="use-the-key-column-origin-to-subset-all-rows-where-the-origin-airport-matches-jfk">– Use the key column <code>origin</code> to subset all rows where the origin airport matches <em>“JFK”</em></h4>
 <pre><code class="language-r">flights[.(&quot;JFK&quot;)]
@@ -323,7 +323,7 @@ head(flights)
 # 81483:  2014    10    31        -6       -38      UA    JFK    LAX      323     2475    11
 
 ## alternatively
-# flights[J(&quot;JFK&quot;)] (or) 
+# flights[J(&quot;JFK&quot;)] (or)
 # flights[list(&quot;JFK&quot;)]
 </code></pre>
 <ul>
@@ -451,7 +451,7 @@ flights[.(&quot;JFK&quot;)] ## or in this case simply flights[&quot;JFK&quot;], 
 <h4 id="what-s-happening-here">What’s happening here?</h4>
 <ul>
 <li>
-<p>Read <a href="#multiple-key-point">this</a> again. The value provided for the second key column <em>“MIA”</em> has to find the matching values in <code>dest</code> key column <em>on the matching rows provided by the first key column <code>origin</code></em>. We can not skip the values of key columns <em>before</em>. Therefore we provide <em>all</em> unique values from key column <code>origin</code>.</p>
+<p>Read <a href="#multiple-key-point">this</a> again. The value provided for the second key column <em>“MIA”</em> has to find the matching values in <code>dest</code> key column <em>on the matching rows provided by the first key column <code>origin</code></em>. We can not skip the values of key columns <em>before</em>. Therefore, we provide <em>all</em> unique values from key column <code>origin</code>.</p>
 </li>
 <li>
 <p><em>“MIA”</em> is automatically recycled to fit the length of <code>unique(origin)</code> which is <em>3</em>.</p>
@@ -541,7 +541,7 @@ key(flights)
 <p>And on those row indices, we replace the <code>key</code> column with the value <code>0</code>.</p>
 </li>
 <li>
-<p>Since we have replaced values on the <em>key</em> column, the <em>data.table</em> <code>flights</code> isn’t sorted by <code>hour</code> any more. Therefore, the key has been automatically removed by setting to NULL.</p>
+<p>Since we have replaced values on the <em>key</em> column, the <em>data.table</em> <code>flights</code> isn’t sorted by <code>hour</code> anymore. Therefore, the key has been automatically removed by setting to NULL.</p>
 </li>
 </ul>
 <p>Now, there shouldn’t be any <em>24</em> in the <code>hour</code> column.</p>
@@ -658,7 +658,7 @@ print(object.size(DT), units = &quot;Mb&quot;)
 t1 &lt;- system.time(ans1 &lt;- DT[x == &quot;g&quot; &amp; y == 877L])
 t1
 #    user  system elapsed 
-#   0.189   0.015   0.204
+#   0.220   0.016   0.236
 head(ans1)
 #         x     y        val
 #    &lt;char&gt; &lt;int&gt;      &lt;num&gt;
@@ -679,7 +679,7 @@ key(DT)
 t2 &lt;- system.time(ans2 &lt;- DT[.(&quot;g&quot;, 877L)])
 t2
 #    user  system elapsed 
-#   0.000   0.000   0.001
+#   0.001   0.000   0.001
 head(ans2)
 # Key: &lt;x, y&gt;
 #         x     y        val
@@ -697,7 +697,7 @@ identical(ans1$val, ans2$val)
 # [1] TRUE
 </code></pre>
 <ul>
-<li>The speed-up is <strong>~204x</strong>!</li>
+<li>The speed-up is <strong>~236x</strong>!</li>
 </ul>
 <h3 id="b-why-does-keying-a-data-table-result-in-blazing-fast-subsets">b) Why does keying a <em>data.table</em> result in blazing fast subsets?</h3>
 <p>To understand that, let’s first look at what <em>vector scan approach</em> (method 1) does.</p>
@@ -717,7 +717,7 @@ identical(ans1$val, ans2$val)
 <p>Now let us look at binary search approach (method 2). Recall from <a href="#key-properties">Properties of key</a> - <em>setting keys reorders the data.table by key columns</em>. Since the data is sorted, we don’t have to <em>scan through the entire length of the column</em>! We can instead use <em>binary search</em> to search a value in <code>O(log n)</code> as opposed to <code>O(n)</code> in case of <em>vector scan approach</em>, where <code>n</code> is the number of rows in the <em>data.table</em>.</p>
 <h4 id="binary-search-approach">Binary search approach</h4>
 <p>Here’s a very simple illustration. Let’s consider the (sorted) numbers shown below:</p>
-<pre><code class="language-r">1, 5, 10, 19, 22, 23, 30
+<pre><code>1, 5, 10, 19, 22, 23, 30
 </code></pre>
 <p>Suppose we’d like to find the matching position of the value <em>1</em>, using binary search, this is how we would proceed - because we know that the data is <em>sorted</em>.</p>
 <ul>

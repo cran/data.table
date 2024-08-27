@@ -142,7 +142,7 @@ section.footnotes::before {
 <div class="frontmatter">
 <div class="title"><h1>Reference semantics</h1></div>
 <div class="author"><h2></h2></div>
-<div class="date"><h3>2024-03-27</h3></div>
+<div class="date"><h3>2024-08-25</h3></div>
 </div>
 <div class="body">
 <p>This vignette discusses <em>data.table</em>‘s reference semantics which allows to <em>add/update/delete</em> columns of a <em>data.table by reference</em>, and also combine them with <code>i</code> and <code>by</code>. It is aimed at those who are already familiar with <em>data.table</em> syntax, its general form, how to subset rows in <code>i</code>, select and compute on columns, and perform aggregations by group. If you’re not familiar with these concepts, please read the <em>“Introduction to data.table”</em> vignette first.</p>
@@ -204,6 +204,7 @@ DF$c[DF$ID == &quot;b&quot;] &lt;- 15:13 # (2) -- subassign in column 'c'
 <h4 id="shallow-vs-deep-copy"><em>shallow</em> vs <em>deep</em> copy</h4>
 <p>A <em>shallow</em> copy is just a copy of the vector of column pointers (corresponding to the columns in a <em>data.frame</em> or <em>data.table</em>). The actual data is not physically copied in memory.</p>
 <p>A <em>deep</em> copy on the other hand copies the entire data to another location in memory.</p>
+<p>When subsetting a <em>data.table</em> using <code>i</code> (e.g., <code>DT[1:10]</code>), a <em>deep</em> copy is made. However, when <code>i</code> is not provided or equals <code>TRUE</code>, a <em>shallow</em> copy is made.</p>
 <h1></h1>
 <p>With <em>data.table’s</em> <code>:=</code> operator, absolutely no copies are made in <em>both</em> (1) and (2), irrespective of R version you are using. This is because <code>:=</code> operator updates <em>data.table</em> columns <em>in-place</em> (by reference).</p>
 <h3 id="b-the-operator">b) The <code>:=</code> operator</h3>
@@ -451,6 +452,24 @@ head(flights)
 # 5:  2014     1     1         2         1      AA    JFK    LAX      350     2475    13
 # 6:  2014     1     1         4         0      AA    EWR    LAX      339     2454    18
 </code></pre>
+<h4 id="how-can-we-update-multiple-existing-columns-in-place-using-sd">– How can we update multiple existing columns in place using <code>.SD</code>?</h4>
+<pre><code class="language-r">flights[, names(.SD) := lapply(.SD, as.factor), .SDcols = is.character]
+</code></pre>
+<p>Let’s clean up again and convert our newly-made factor columns back into character columns. This time we will make use of <code>.SDcols</code> accepting a function to decide which columns to include. In this case, <code>is.factor()</code> will return the columns which are factors. For more on the <strong>S</strong>ubset of the <strong>D</strong>ata, there is also an <a href="https://cran.r-project.org/package=data.table/vignettes/datatable-sd-usage.html">SD Usage vignette</a>.</p>
+<p>Sometimes, it is also nice to keep track of columns that we transform. That way, even after we convert our columns we would be able to call the specific columns we were updating.</p>
+<pre><code class="language-r">factor_cols &lt;- sapply(flights, is.factor)
+flights[, names(.SD) := lapply(.SD, as.character), .SDcols = factor_cols]
+str(flights[, ..factor_cols])
+# Classes 'data.table' and 'data.frame':	253316 obs. of  3 variables:
+#  $ carrier: chr  &quot;AA&quot; &quot;AA&quot; &quot;AA&quot; &quot;AA&quot; ...
+#  $ origin : chr  &quot;JFK&quot; &quot;JFK&quot; &quot;JFK&quot; &quot;LGA&quot; ...
+#  $ dest   : chr  &quot;LAX&quot; &quot;LAX&quot; &quot;LAX&quot; &quot;PBI&quot; ...
+#  - attr(*, &quot;.internal.selfref&quot;)=&lt;externalptr&gt;
+</code></pre>
+<h4 id="bs-callout-bs-callout-info">{.bs-callout .bs-callout-info}</h4>
+<ul>
+<li>We also could have used <code>(factor_cols)</code> on the <code>LHS</code> instead of <code>names(.SD)</code>.</li>
+</ul>
 <h2 id="3-and-copy">3. <code>:=</code> and <code>copy()</code></h2>
 <p><code>:=</code> modifies the input object by reference. Apart from the features we have discussed already, sometimes we might want to use the update by reference feature for its side effect. And at other times it may not be desirable to modify the original object, in which case we can use <code>copy()</code> function, as we will see in a moment.</p>
 <h3 id="a-for-its-side-effect">a) <code>:=</code> for its side effect</h3>

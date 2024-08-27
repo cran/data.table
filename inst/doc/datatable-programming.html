@@ -143,7 +143,7 @@ section.footnotes::before {
 <div class="frontmatter">
 <div class="title"><h1>Programming on data.table</h1></div>
 <div class="author"><h2></h2></div>
-<div class="date"><h3>2024-03-27</h3></div>
+<div class="date"><h3>2024-08-25</h3></div>
 </div>
 <div class="body">
 <h2 id="introduction">Introduction</h2>
@@ -169,7 +169,7 @@ my_subset(iris, Species, &quot;setosa&quot;)
 <h4 id="avoid-lazy-evaluation">Avoid <em>lazy evaluation</em></h4>
 <p>The easiest workaround is to avoid <em>lazy evaluation</em> in the first place, and fall back to less intuitive, more error-prone approaches like <code>df[[&quot;variable&quot;]]</code>, etc.</p>
 <pre><code class="language-r">my_subset = function(data, col, val) {
-  data[data[[col]] == val, ]
+  data[data[[col]] == val &amp; !is.na(data[[col]]), ]
 }
 my_subset(iris, col = &quot;Species&quot;, val = &quot;setosa&quot;)
 #   Sepal.Length Sepal.Width Petal.Length Petal.Width Species
@@ -177,7 +177,7 @@ my_subset(iris, col = &quot;Species&quot;, val = &quot;setosa&quot;)
 # 2          4.9         3.0          1.4         0.2  setosa
 # ...
 </code></pre>
-<p>Here, we compute a logical vector of length <code>nrow(iris)</code>, then this vector is supplied to the <code>i</code> argument of <code>[.data.frame</code> to perform ordinary “logical vector”-based subsetting. It works well for this simple example, but it lacks flexibility, introduces variable repetition, and requires user to change the function interface to pass the column name as a character rather than unquoted symbol. The more complex the expression we need to parameterize, the less practical this approach becomes.</p>
+<p>Here, we compute a logical vector of length <code>nrow(iris)</code>, then this vector is supplied to the <code>i</code> argument of <code>[.data.frame</code> to perform ordinary “logical vector”-based subsetting. To align with <code>subset()</code>, which also drops NAs, we need to include an additional use of <code>data[[col]]</code> to catch that. It works well enough for this simple example, but it lacks flexibility, introduces variable repetition, and requires user to change the function interface to pass the column name as a character rather than unquoted symbol. The more complex the expression we need to parameterize, the less practical this approach becomes.</p>
 <h4 id="use-of-parse-eval">Use of <code>parse</code> / <code>eval</code></h4>
 <p>This method is usually preferred by newcomers to R as it is, perhaps, the most straightforward conceptually. This way requires producing the required expression using string concatenation, parsing it, and then evaluating it.</p>
 <pre><code class="language-r">my_subset = function(data, col, val) {
@@ -193,7 +193,7 @@ my_subset(iris, Species, &quot;setosa&quot;)
 # 2          4.9         3.0          1.4         0.2  setosa
 # ...
 </code></pre>
-<p>We have to use <code>deparse(substitute(...))</code> to catch the actual names of objects passed to function so we can construct the <code>subset</code> function call using those original names. Although ths provides unlimited flexibility with relatively low complexity, <strong>use of <code>eval(parse(...))</code> should be avoided</strong>. The main reasons are:</p>
+<p>We have to use <code>deparse(substitute(...))</code> to catch the actual names of objects passed to function, so we can construct the <code>subset</code> function call using those original names. Although this provides unlimited flexibility with relatively low complexity, <strong>use of <code>eval(parse(...))</code> should be avoided</strong>. The main reasons are:</p>
 <ul>
 <li>lack of syntax validation</li>
 <li><a href="https://github.com/Rdatatable/data.table/issues/2655#issuecomment-376781159">vulnerability to code injection</a></li>
@@ -243,7 +243,7 @@ quote(
 )
 # sqrt(square(a) + square(b))
 </code></pre>
-<p>We can see in the output that both the functions names, as well as the names of the variables passed to those functions, have been replaced.. We used <code>substitute2</code> for convenience. In this simple case, base R’s <code>substitute</code> could have been used as well, though it would’ve required usage of <code>lapply(env, as.name)</code>.</p>
+<p>We can see in the output that both the functions names, as well as the names of the variables passed to those functions, have been replaced. We used <code>substitute2</code> for convenience. In this simple case, base R’s <code>substitute</code> could have been used as well, though it would’ve required usage of <code>lapply(env, as.name)</code>.</p>
 <p>Now, to use substitution inside <code>[.data.table</code>, we don’t need to call the <code>substitute2</code> function. As it is now being used internally, all we have to do is to provide <code>env</code> argument, the same way as we’ve provided it to the <code>substitute2</code> function in the example above. Substitution can be applied to the <code>i</code>, <code>j</code> and <code>by</code> (or <code>keyby</code>) arguments of the <code>[.data.table</code> method. Note that setting the <code>verbose</code> argument to <code>TRUE</code> can be used to print expressions after substitution is applied. This is very useful for debugging.</p>
 <p>Let’s use the <code>iris</code> data set as a demonstration. Just as an example, let’s pretend we want to compute the <code>Sepal.Hypotenuse</code>, treating the sepal width and length as if they were legs of a right triangle.</p>
 <pre><code class="language-r">DT = as.data.table(iris)
@@ -421,7 +421,7 @@ DT[, j,  # the same as above but accepts character vector
    env = I(list(j = lapply(cols, as.name))),
    verbose = TRUE]
 # Argument 'j' after substitute: list(Sepal.Length, Sepal.Width)
-# Error: When with=FALSE, j-argument should be of type logical/character/integer indicating the columns to select.
+# Error in `[.data.table`(DT, , j, env = I(list(j = lapply(cols, as.name))), : When with=FALSE, j-argument should be of type logical/character/integer indicating the columns to select.
 
 DT[, j,  # again the proper way, enlist list to list call automatically
    env = list(j = as.list(cols)),

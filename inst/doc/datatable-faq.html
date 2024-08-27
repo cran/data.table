@@ -151,7 +151,7 @@ section.footnotes::before {
 <div class="frontmatter">
 <div class="title"><h1>Frequently Asked Questions about data.table</h1></div>
 <div class="author"><h2></h2></div>
-<div class="date"><h3>2024-03-27</h3></div>
+<div class="date"><h3>2024-08-25</h3></div>
 </div>
 <div class="body">
 <div id="TOC">
@@ -575,6 +575,7 @@ data.table <em>inherits</em> from <code>data.frame</code>. It <em>is</em> a <cod
 <li><code>check.names</code> is by default <code>TRUE</code> in <code>data.frame</code> but <code>FALSE</code> in data.table, for convenience.</li>
 <li><code>data.table</code> has always set <code>stringsAsFactors=FALSE</code> by default. In R 4.0.0 (Apr 2020), <code>data.frame</code>’s default was changed from <code>TRUE</code> to <code>FALSE</code> and there is no longer a difference in this regard; see <a href="https://developer.r-project.org/Blog/public/2020/02/16/stringsasfactors/">stringsAsFactors, Kurt Hornik, Feb 2020</a>.</li>
 <li>Atomic vectors in <code>list</code> columns are collapsed when printed using <code>&quot;, &quot;</code> in <code>data.frame</code>, but <code>&quot;,&quot;</code> in data.table with a trailing comma after the 6th item to avoid accidental printing of large embedded objects.</li>
+<li>Unlike data.frames a data.table cannot store rows with no columns, as rows are considered to be the children of columns: <code>nrow(DF[, 0])</code> returns the number of rows, while <code>nrow(DT[, 0])</code> always returns 0; but see issue <a href="https://github.com/Rdatatable/data.table/issues/2422">#2422</a>.</li>
 </ul>
 <p>In <code>[.data.frame</code> we very often set <code>drop = FALSE</code>. When we forget, bugs can arise in edge cases where single columns are selected and all of a sudden a vector is returned rather than a single column <code>data.frame</code>. In <code>[.data.table</code> we took the opportunity to make it consistent and dropped <code>drop</code>.</p>
 <p>When a data.table is passed to a data.table-unaware package, that package is not concerned with any of these differences; it just works.</p>
@@ -692,7 +693,8 @@ DT[ , list(.N = .N), list(a, b)]   # show intermediate result for exposition
 cat(try(
     DT[ , list(.N = .N), by = list(a, b)][ , unique(.N), by = a]   # compound query more typical
 , silent = TRUE))
-# Error : The column '.N' can't be grouped because it conflicts with the special .N variable. Try setnames(DT,'.N','N') first.
+# Error in `[.data.table`(DT[, list(.N = .N), by = list(a, b)], , unique(.N),  : 
+#   The column '.N' can't be grouped because it conflicts with the special .N variable. Try setnames(DT,'.N','N') first.
 </code></pre>
 <p>If you are already running v1.8.1 or later then the error message is now more helpful than the “cannot change value of locked binding” error, as you can see above, since this vignette was produced using v1.8.1 or later.</p>
 <p>The more natural syntax now works:</p>

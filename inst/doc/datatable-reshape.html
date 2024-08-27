@@ -142,7 +142,7 @@ section.footnotes::before {
 <div class="frontmatter">
 <div class="title"><h1>Efficient reshaping using data.tables</h1></div>
 <div class="author"><h2></h2></div>
-<div class="date"><h3>2024-03-27</h3></div>
+<div class="date"><h3>2024-08-25</h3></div>
 </div>
 <div class="body">
 <p>This vignette discusses the default usage of reshaping functions <code>melt</code> (wide to long) and <code>dcast</code> (long to wide) for <em>data.tables</em> as well as the <strong>new extended functionalities</strong> of melting and casting on <em>multiple columns</em> available from <code>v1.9.6</code>.</p>
@@ -310,7 +310,7 @@ DT.m1
 </code></pre>
 <p>Check <code>?dcast</code> for other useful arguments and additional examples.</p>
 <h2 id="2-limitations-in-current-melt-dcast-approaches">2. Limitations in current <code>melt/dcast</code> approaches</h2>
-<p>So far we’ve seen features of <code>melt</code> and <code>dcast</code> that are implemented efficiently for <code>data.table</code>s, using internal <code>data.table</code> machinery (<em>fast radix ordering</em>, <em>binary search</em> etc..).</p>
+<p>So far we’ve seen features of <code>melt</code> and <code>dcast</code> that are implemented efficiently for <code>data.table</code>s, using internal <code>data.table</code> machinery (<em>fast radix ordering</em>, <em>binary search</em> etc.).</p>
 <p>However, there are situations we might run into where the desired operation is not expressed in a straightforward manner. For example, consider the <code>data.table</code> shown below:</p>
 <pre><code class="language-r">s2 &lt;- &quot;family_id age_mother dob_child1 dob_child2 dob_child3 gender_child1 gender_child2 gender_child3
 1         30 1998-11-26 2000-01-29         NA             1             2            NA
@@ -366,7 +366,7 @@ str(DT.c1) ## gender column is character type now!
 <h4 id="issues">Issues</h4>
 <ol>
 <li>
-<p>What we wanted to do was to combine all the <code>dob</code> and <code>gender</code> type columns together respectively. Instead we are combining <em>everything</em> together, and then splitting them again. I think it’s easy to see that it’s quite roundabout (and inefficient).</p>
+<p>What we wanted to do was to combine all the <code>dob</code> and <code>gender</code> type columns together respectively. Instead, we are combining <em>everything</em> together, and then splitting them again. I think it’s easy to see that it’s quite roundabout (and inefficient).</p>
 <p>As an analogy, imagine you’ve a closet with four shelves of clothes and you’d like to put together the clothes from shelves 1 and 2 together (in 1), and 3 and 4 together (in 3). What we are doing is more or less to combine all the clothes together, and then split them back on to shelves 1 and 3!</p>
 </li>
 <li>
@@ -551,7 +551,7 @@ function,</p>
 <pre><code class="language-r">melt(who, measure.vars = measure(
   diagnosis, gender, ages,
   ymin=as.numeric,
-  ymax=function(y)ifelse(y==&quot;&quot;, Inf, as.numeric(y)),
+  ymax=function(y) ifelse(nzchar(y), as.numeric(y), Inf),
   pattern=&quot;new_?(.*)_(.)(([0-9]{2})([0-9]{0,2}))&quot;
 ))
 #       id diagnosis gender   ages  ymin  ymax value

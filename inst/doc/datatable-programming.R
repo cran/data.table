@@ -22,15 +22,9 @@ registerS3method("print", "data.frame", function(x, ...) {
 ## ----subset---------------------------------------------------------------------------------------
 subset(iris, Species == "setosa")
 
-## ----subset_error, error=TRUE---------------------------------------------------------------------
-my_subset = function(data, col, val) {
-  subset(data, col == val)
-}
-my_subset(iris, Species, "setosa")
-
 ## ----subset_nolazy--------------------------------------------------------------------------------
 my_subset = function(data, col, val) {
-  data[data[[col]] == val, ]
+  data[data[[col]] == val & !is.na(data[[col]]), ]
 }
 my_subset(iris, col = "Species", val = "setosa")
 
@@ -159,15 +153,6 @@ DT[, j,  # turning the above 'j' list into a list call
 
 DT[, j,  # the same as above but accepts character vector
    env = list(j = as.call(c(quote(list), lapply(cols, as.name)))),
-   verbose = TRUE]
-
-## ----splice_not, error=TRUE-----------------------------------------------------------------------
-DT[, j,  # list of symbols
-   env = I(list(j = lapply(cols, as.name))),
-   verbose = TRUE]
-
-DT[, j,  # again the proper way, enlist list to list call automatically
-   env = list(j = as.list(cols)),
    verbose = TRUE]
 
 ## ----splice_substitute2_not-----------------------------------------------------------------------
