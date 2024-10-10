@@ -34,6 +34,16 @@ print.data.table = function(x, topn=getOption("datatable.print.topn"),
         ( length(SYS) >= 3L && is.symbol(thisSYS <- SYS[[length(SYS)-2L]][[1L]]) &&
           as.character(thisSYS) == 'source') || # suppress printing from source(echo = TRUE) calls, #2369
         ( length(SYS) > 3L && is.symbol(thisSYS <- SYS[[length(SYS)-3L]][[1L]]) &&
+          as.character(thisSYS) %chin% mimicsAutoPrint ) || # suppress printing from knitr, #6509
+          # In previous versions of knitr, call stack when auto-printing looked like:
+          #  knit_print -> knit_print.default -> normal_print -> print -> print.data.table
+          # and we detected and avoided that by checking fourth last call in the stack.
+          # As of September 2024, the call stack can also look like:
+          #  knit_print.default -> normal_print -> render -> evalq -> evalq -> print -> print.data.table
+          # so we have to check the 7th last call in the stack too.
+          # Ideally, we would like to return invisibly from DT[, foo := bar] and have knitr respect that, but a flag in
+          # .Primitive("[") sets all values returned from [.data.table to visible, hence the need for printing hacks later.
+        ( length(SYS) > 6L && is.symbol(thisSYS <- SYS[[length(SYS)-6L]][[1L]]) &&
           as.character(thisSYS) %chin% mimicsAutoPrint ) )  {
       return(invisible(x))
       # is.symbol() temp fix for #1758.
@@ -247,7 +257,7 @@ char.trunc = function(x, trunc.char = getOption("datatable.prettyprint.char")) {
   nchar_width = nchar(x, 'width') # Check whether string is full-width or half-width, #5096
   nchar_chars = nchar(x, 'char')
   is_full_width = nchar_width > nchar_chars
-  idx = pmin(nchar_width, nchar_chars) > trunc.char
+  idx = !is.na(x) & pmin(nchar_width, nchar_chars) > trunc.char
   if (!any(idx)) return(x) # strtrim() errors for width=integer() on R 3.3.0
   x[idx] = paste0(strtrim(x[idx], trunc.char * fifelse(is_full_width[idx], 2L, 1L)), "...")
   x
