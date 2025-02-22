@@ -142,7 +142,7 @@ section.footnotes::before {
 <div class="frontmatter">
 <div class="title"><h1>Importing data.table</h1></div>
 <div class="author"><h2></h2></div>
-<div class="date"><h3>2024-12-04</h3></div>
+<div class="date"><h3>2025-02-20</h3></div>
 </div>
 <div class="body">
 <style>
@@ -150,15 +150,20 @@ h2 {
     font-size: 20px;
 }
 </style>
-<p>This document is focused on using <code>data.table</code> as a dependency in other R packages. If you are interested in using <code>data.table</code> C code from a non-R application, or in calling its C functions directly, jump to the <a href="#non-r-API">last section</a> of this vignette.</p>
+<p>Translations of this document are available in</p>
+<ul>
+<li><a href="https://rdatatable.gitlab.io/data.table/articles/fr/datatable-importing.html">French</a></li>
+<li><a href="https://rdatatable.gitlab.io/data.table/articles/ru/datatable-importing.html">Russian</a></li>
+</ul>
+<p>This document is focused on using <code>data.table</code> as a dependency in other R packages. If you are interested in using <code>data.table</code> C code from a non-R application, or in calling its C functions directly, jump to the <a href="#non-r-api">last section</a> of this vignette.</p>
 <p>Importing <code>data.table</code> is no different from importing other R packages. This vignette is meant to answer the most common questions arising around that subject; the lessons presented here can be applied to other R packages.</p>
 <h2 id="why-to-import-data-table">Why to import <code>data.table</code></h2>
 <p>One of the biggest features of <code>data.table</code> is its concise syntax which makes exploratory analysis faster and easier to write and perceive; this convenience can drive package authors to use <code>data.table</code>. Another, perhaps more important reason is high performance. When outsourcing heavy computing tasks from your package to <code>data.table</code>, you usually get top performance without needing to re-invent any of these numerical optimization tricks on your own.</p>
 <h2 id="importing-data-table-is-easy">Importing <code>data.table</code> is easy</h2>
 <p>It is very easy to use <code>data.table</code> as a dependency due to the fact that <code>data.table</code> does not have any of its own dependencies. This applies both to operating system and to R dependencies. It means that if you have R installed on your machine, it already has everything needed to install <code>data.table</code>.  It also means that adding <code>data.table</code> as a dependency of your package will not result in a chain of other recursive dependencies to install, making it very convenient for offline installation.</p>
-<h2 id="description-file" DESCRIPTION><code>DESCRIPTION</code> file</h2>
+<h2 id="DESCRIPTION"><code>DESCRIPTION</code> file</h2>
 <p>The first place to define a dependency in a package is the <code>DESCRIPTION</code> file. Most commonly, you will need to add <code>data.table</code> under the <code>Imports:</code> field. Doing so will necessitate an installation of <code>data.table</code> before your package can compile/install. As mentioned above, no other packages will be installed because <code>data.table</code> does not have any dependencies of its own. You can also specify the minimal required version of a dependency; for example, if your package is using the <code>fwrite</code> function, which was introduced in <code>data.table</code> in version 1.9.8, you should incorporate this as <code>Imports: data.table (&gt;= 1.9.8)</code>. This way you can ensure that the version of <code>data.table</code> installed is 1.9.8 or later before your users will be able to install your package. Besides the <code>Imports:</code> field, you can also use <code>Depends: data.table</code> but we strongly discourage this approach (and may disallow it in future) because this loads <code>data.table</code> into your user’s workspace; i.e. it enables <code>data.table</code> functionality in your user’s scripts without them requesting that. <code>Imports:</code> is the proper way to use <code>data.table</code> within your package without inflicting <code>data.table</code> on your user. In fact, we hope the <code>Depends:</code> field is eventually deprecated in R since this is true for all packages.</p>
-<h2 id="namespace-file" NAMESPACE><code>NAMESPACE</code> file</h2>
+<h2 id="NAMESPACE"><code>NAMESPACE</code> file</h2>
 <p>The next thing is to define what content of <code>data.table</code> your package is using. This needs to be done in the <code>NAMESPACE</code> file. Most commonly, package authors will want to use <code>import(data.table)</code> which will import all exported (i.e., listed in <code>data.table</code>’s own <code>NAMESPACE</code> file) functions from <code>data.table</code>.</p>
 <p>You may also want to use just a subset of <code>data.table</code> functions; for example, some packages may simply make use of <code>data.table</code>’s high-performance CSV reader and writer, for which you can add <code>importFrom(data.table, fread, fwrite)</code> in your <code>NAMESPACE</code> file. It is also possible to import all functions from a package <em>excluding</em> particular ones using <code>import(data.table, except=c(fread, fwrite))</code>.</p>
 <p>Be sure to read also the note about non-standard evaluation in <code>data.table</code> in <a href="#globals">the section on “undefined globals”</a></p>
@@ -266,7 +271,7 @@ When using <code>data.table</code> in package tests (e.g. tests/testthat/test* f
 <p>For more canonical documentation of defining packages dependency check the official manual: <a href="https://cran.r-project.org/doc/manuals/r-release/R-exts.html">Writing R Extensions</a>.</p>
 <h2 id="importing-data-table-c-routines">Importing data.table C routines</h2>
 <p>Some of internally used C routines are now exported on C level thus can be used in R packages directly from their C code. See <a href="https://rdatatable.gitlab.io/data.table/reference/cdt.html"><code>?cdt</code></a> for details and <a href="https://cran.r-project.org/doc/manuals/r-release/R-exts.html">Writing R Extensions</a> <em>Linking to native routines in other packages</em> section for usage.</p>
-<h2 id="importing-from-non-r-applications" non-r-api>Importing from non-r Applications</h2>
+<h2 id="non-r-api">Importing from non-r Applications</h2>
 <p>Some tiny parts of <code>data.table</code> C code were isolated from the R C API and can now be used from non-R applications by linking to .so / .dll files. More concrete details about this will be provided later; for now you can study the C code that was isolated from the R C API in <a href="https://github.com/Rdatatable/data.table/blob/master/src/fread.c">src/fread.c</a> and <a href="https://github.com/Rdatatable/data.table/blob/master/src/fwrite.c">src/fwrite.c</a>.</p>
 <h2 id="how-to-convert-your-depends-dependency-on-data-table-to-imports">How to convert your Depends dependency on data.table to Imports</h2>
 <p>To convert a <code>Depends</code> dependency on <code>data.table</code> to an <code>Imports</code> dependency in your package, follow these steps:</p>
@@ -323,7 +328,7 @@ result &lt;- merge(dt, other_dt, by = &quot;x&quot;)
 </code></pre>
 <h3 id="benefits-of-using-imports">Benefits of using <code>Imports</code></h3>
 <ul>
-<li>*<em>User-Friendliness</em>: <code>Depends</code> alters your users’ <code>search()</code> path, possibly without their wanting to do so.</li>
+<li><strong>User-Friendliness</strong>: <code>Depends</code> alters your users’ <code>search()</code> path, possibly without their wanting to do so.</li>
 <li><strong>Namespace Management</strong>: Only the functions your package explicitly imports are available, reducing the risk of function name clashes.</li>
 <li><strong>Cleaner Package Loading</strong>: Your package’s dependencies are not attached to the search path, making the loading process cleaner and potentially faster.</li>
 <li><strong>Easier Maintenance</strong>: It simplifies maintenance tasks as upstream dependencies’ APIs evolve. Depending too much on <code>Depends</code> can lead to conflicts and compatibility issues over time.</li>

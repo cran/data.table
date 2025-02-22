@@ -137,20 +137,12 @@ section.footnotes::before {
   pre { white-space: pre; }
 }
 </style>
-<style type="text/css">
-#TOC {
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  padding-left: 1em;
-  background: #f6f6f6;
-}
-</style>
 </head>
 <body>
 <div class="frontmatter">
 <div class="title"><h1>Benchmarking data.table</h1></div>
 <div class="author"><h2></h2></div>
-<div class="date"><h3>2024-12-04</h3></div>
+<div class="date"><h3>2025-02-20</h3></div>
 </div>
 <div class="body">
 <div id="TOC">
@@ -171,7 +163,18 @@ section.footnotes::before {
 h2 {
     font-size: 20px;
 }
+
+#TOC {
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  padding-left: 1em;
+  background: #f6f6f6;
+}
 </style>
+<p>Translations of this document are available in</p>
+<ul>
+<li><a href="https://rdatatable.gitlab.io/data.table/articles/fr/datatable-benchmarking.html">French</a></li>
+</ul>
 <p>This document is meant to guide on measuring performance of <code>data.table</code>. Single place to document best practices and traps to avoid.</p>
 <h1 id="fread-clear-caches"><span class="section-number">1.</span> fread: clear caches</h1>
 <p>Ideally each <code>fread</code> call should be run in fresh session with the following commands preceding R execution. This clears OS cache file in RAM and HD cache.</p>

@@ -142,9 +142,14 @@ section.footnotes::before {
 <div class="frontmatter">
 <div class="title"><h1>Introduction to data.table</h1></div>
 <div class="author"><h2></h2></div>
-<div class="date"><h3>2024-12-04</h3></div>
+<div class="date"><h3>2025-02-20</h3></div>
 </div>
 <div class="body">
+<p>Translations of this document are available in</p>
+<ul>
+<li><a href="https://rdatatable.gitlab.io/data.table/articles/fr/datatable-intro.html">French</a></li>
+<li><a href="https://rdatatable.gitlab.io/data.table/articles/ru/datatable-intro.html">Russian</a></li>
+</ul>
 <p>This vignette introduces the <code>data.table</code> syntax, its general form, how to <em>subset</em> rows, <em>select and compute</em> on columns, and perform aggregations <em>by group</em>. Familiarity with the <code>data.frame</code> data structure from base R is useful, but not essential to follow this vignette.</p>
 <hr />
 <h2 id="data-analysis-using-data-table">Data analysis using <code>data.table</code></h2>
@@ -231,7 +236,7 @@ class(DT$ID)
 </code></pre>
 </li>
 <li>
-<p><code>data.table</code> doesn’t set or use <em>row names</em>, ever. We will see why in the <em>“Keys and fast binary search based subset”</em> vignette.</p>
+<p><code>data.table</code> doesn’t set or use <em>row names</em>, ever. We will see why in the <a href="datatable-keys-fast-subset.html"><code>vignette(&quot;datatable-keys-fast-subset&quot;, package=&quot;data.table&quot;)</code></a> vignette.</p>
 </li>
 </ul>
 <h3 id="enhanced-1b">b) General form - in what way is a <code>data.table</code> <em>enhanced</em>?</h3>
@@ -458,7 +463,7 @@ ans
 </li>
 </ul>
 <p>We could have accomplished the same operation by doing <code>nrow(flights[origin == &quot;JFK&quot; &amp; month == 6L])</code>. However, it would have to subset the entire <code>data.table</code> first corresponding to the <em>row indices</em> in <code>i</code> <em>and then</em> return the rows using <code>nrow()</code>, which is unnecessary and inefficient. We will cover this and other optimisation aspects in detail under the <em><code>data.table</code> design</em> vignette.</p>
-<h3 id="h-great-but-how-can-i-refer-to-columns-by-names-in-j-like-in-a-data-frame" #refer_j>h) Great! But how can I refer to columns by names in <code>j</code> (like in a <code>data.frame</code>)?</h3>
+<h3 id="refer-j">h) Great! But how can I refer to columns by names in <code>j</code> (like in a <code>data.frame</code>)?</h3>
 <p>If you’re writing out the column names explicitly, there’s no difference compared to a <code>data.frame</code> (since v1.9.8).</p>
 <h4 id="select-both-arr-delay-and-dep-delay-columns-the-data-frame-way">– Select both <code>arr_delay</code> and <code>dep_delay</code> columns the <code>data.frame</code> way.</h4>
 <pre><code class="language-r">ans &lt;- flights[, c(&quot;arr_delay&quot;, &quot;dep_delay&quot;)]
@@ -600,7 +605,7 @@ ans
 <p>We’ll use this convenient form wherever applicable hereafter.</p>
 </li>
 </ul>
-<h4 id="how-can-we-calculate-the-number-of-trips-for-each-origin-airport-for-carrier-code-quot-aa-quot" #origin-.N>– How can we calculate the number of trips for each origin airport for carrier code <code>&quot;AA&quot;</code>?</h4>
+<h4 id="origin-N">– How can we calculate the number of trips for each origin airport for carrier code <code>&quot;AA&quot;</code>?</h4>
 <p>The unique carrier code <code>&quot;AA&quot;</code> corresponds to <em>American Airlines Inc.</em></p>
 <pre><code class="language-r">ans &lt;- flights[carrier == &quot;AA&quot;, .N, by = origin]
 ans
@@ -618,7 +623,7 @@ ans
 <p>Using those <em>row indices</em>, we obtain the number of rows while grouped by <code>origin</code>. Once again no columns are actually materialised here, because the <code>j-expression</code> does not require any columns to be actually subsetted and is therefore fast and memory efficient.</p>
 </li>
 </ul>
-<h4 id="how-can-we-get-the-total-number-of-trips-for-each-origin-dest-pair-for-carrier-code-quot-aa-quot" #origin-dest-.N>– How can we get the total number of trips for each <code>origin, dest</code> pair for carrier code <code>&quot;AA&quot;</code>?</h4>
+<h4 id="origin-dest-N">– How can we get the total number of trips for each <code>origin, dest</code> pair for carrier code <code>&quot;AA&quot;</code>?</h4>
 <pre><code class="language-r">ans &lt;- flights[carrier == &quot;AA&quot;, .N, by = .(origin, dest)]
 head(ans)
 #    origin   dest     N
@@ -690,9 +695,9 @@ ans
 <li>All we did was change <code>by</code> to <code>keyby</code>. This automatically orders the result by the grouping variables in increasing order. In fact, due to the internal implementation of <code>by</code> first requiring a sort before recovering the original table’s order, <code>keyby</code> is typically faster than <code>by</code> because it doesn’t require this second step.</li>
 </ul>
 <p><strong>Keys:</strong> Actually <code>keyby</code> does a little more than <em>just ordering</em>. It also <em>sets a key</em> after ordering by setting an <code>attribute</code> called <code>sorted</code>.</p>
-<p>We’ll learn more about <code>keys</code> in the <em>Keys and fast binary search based subset</em> vignette; for now, all you have to know is that you can use <code>keyby</code> to automatically order the result by the columns specified in <code>by</code>.</p>
+<p>We’ll learn more about <code>keys</code> in the <a href="datatable-keys-fast-subset.html"><code>vignette(&quot;datatable-keys-fast-subset&quot;, package=&quot;data.table&quot;)</code></a> vignette; for now, all you have to know is that you can use <code>keyby</code> to automatically order the result by the columns specified in <code>by</code>.</p>
 <h3 id="c-chaining">c) Chaining</h3>
-<p>Let’s reconsider the task of <a href="#origin-dest-.N">getting the total number of trips for each <code>origin, dest</code> pair for carrier <em>“AA”</em></a>.</p>
+<p>Let’s reconsider the task of <a href="#origin-dest-N">getting the total number of trips for each <code>origin, dest</code> pair for carrier <em>“AA”</em></a>.</p>
 <pre><code class="language-r">ans &lt;- flights[carrier == &quot;AA&quot;, .N, by = .(origin, dest)]
 </code></pre>
 <h4 id="how-can-we-order-ans-using-the-columns-origin-in-ascending-order-and-dest-in-descending-order">– How can we order <code>ans</code> using the columns <code>origin</code> in ascending order, and <code>dest</code> in descending order?</h4>
@@ -832,7 +837,7 @@ DT[, print(.SD), by = ID]
 <h4 id="how-can-we-specify-just-the-columns-we-would-like-to-compute-the-mean-on">– How can we specify just the columns we would like to compute the <code>mean()</code> on?</h4>
 <h4 id="sdcols">.SDcols</h4>
 <p>Using the argument <code>.SDcols</code>. It accepts either column names or column indices. For example, <code>.SDcols = c(&quot;arr_delay&quot;, &quot;dep_delay&quot;)</code> ensures that <code>.SD</code> contains only these two columns for each group.</p>
-<p>Similar to <a href="#refer_j">part g)</a>, you can also specify the columns to remove instead of columns to keep using <code>-</code> or <code>!</code>. Additionally, you can select consecutive columns as <code>colA:colB</code> and deselect them as <code>!(colA:colB)</code> or <code>-(colA:colB)</code>.</p>
+<p>Similar to <a href="#refer-j">part g)</a>, you can also specify the columns to remove instead of columns to keep using <code>-</code> or <code>!</code>. Additionally, you can select consecutive columns as <code>colA:colB</code> and deselect them as <code>!(colA:colB)</code> or <code>-(colA:colB)</code>.</p>
 <p>Now let us try to use <code>.SD</code> along with <code>.SDcols</code> to get the <code>mean()</code> of <code>arr_delay</code> and <code>dep_delay</code> columns grouped by <code>origin</code>, <code>dest</code> and <code>month</code>.</p>
 <pre><code class="language-r">flights[carrier == &quot;AA&quot;,                       ## Only on trips with carrier &quot;AA&quot;
         lapply(.SD, mean),                     ## compute the mean
@@ -933,6 +938,45 @@ DT[, print(list(c(a,b))), by = ID] # (2)
 # Empty data.table (0 rows and 1 cols): ID
 </code></pre>
 <p>In (1), for each group, a vector is returned, with length = 6,4,2 here. However, (2) returns a list of length 1 for each group, with its first element holding vectors of length 6,4,2. Therefore, (1) results in a length of <code> 6+4+2 = 12</code>, whereas (2) returns <code>1+1+1=3</code>.</p>
+<p>Flexibility of j allows us to store any list object as an element of data.table.  For example, when statistical models are fit to groups, these models can be stored in a data.table.  Code is concise and easy to understand.</p>
+<pre><code class="language-r">## Do long distance flights cover up departure delay more than short distance flights?
+## Does cover up vary by month?
+flights[, `:=`(makeup = dep_delay - arr_delay)]
+
+makeup.models &lt;- flights[, .(fit = list(lm(makeup ~ distance))), by = .(month)]
+makeup.models[, .(coefdist = coef(fit[[1]])[2], rsq = summary(fit[[1]])$r.squared), by = .(month)]
+#     month      coefdist          rsq
+#     &lt;int&gt;         &lt;num&gt;        &lt;num&gt;
+#  1:     1  0.0042864543 2.664617e-02
+#  2:     2 -0.0036042523 2.211601e-02
+#  3:     3  0.0012742633 3.661327e-03
+#  4:     4  0.0018003305 5.912241e-03
+#  5:     5  0.0021486474 7.794517e-03
+#  6:     6 -0.0000427658 3.261486e-06
+#  7:     7  0.0028011128 1.199733e-02
+#  8:     8  0.0029923379 1.910536e-02
+#  9:     9  0.0014305778 4.917775e-03
+# 10:    10  0.0022125344 1.099980e-02
+</code></pre>
+<p>Using data.frames, we need more complicated code to obtain same result.</p>
+<pre><code class="language-r">setDF(flights)
+flights.split &lt;- split(flights, f = flights$month)
+makeup.models.list &lt;- lapply(flights.split, function(df) c(month = df$month[1], fit = list(lm(makeup ~ distance, data = df))))
+makeup.models.df &lt;- do.call(rbind, makeup.models.list)
+sapply(makeup.models.df[, &quot;fit&quot;], function(model) c(coefdist = coef(model)[2], rsq =  summary(model)$r.squared)) |&gt; t() |&gt; data.frame()
+#    coefdist.distance          rsq
+# 1       0.0042864543 2.664617e-02
+# 2      -0.0036042523 2.211601e-02
+# 3       0.0012742633 3.661327e-03
+# 4       0.0018003305 5.912241e-03
+# 5       0.0021486474 7.794517e-03
+# 6      -0.0000427658 3.261486e-06
+# 7       0.0028011128 1.199733e-02
+# 8       0.0029923379 1.910536e-02
+# 9       0.0014305778 4.917775e-03
+# 10      0.0022125344 1.099980e-02
+setDT(flights)
+</code></pre>
 <h2 id="summary">Summary</h2>
 <p>The general form of <code>data.table</code> syntax is:</p>
 <pre><code class="language-r">DT[i, j, by]
@@ -947,7 +991,7 @@ DT[, print(list(c(a,b))), by = ID] # (2)
 <p>We can also sort a <code>data.table</code> using <code>order()</code>, which internally uses data.table’s fast order for better performance.</p>
 </li>
 </ul>
-<p>We can do much more in <code>i</code> by keying a <code>data.table</code>, which allows for blazing fast subsets and joins. We will see this in the <em>“Keys and fast binary search based subsets”</em> and <em>“Joins and rolling joins”</em> vignette.</p>
+<p>We can do much more in <code>i</code> by keying a <code>data.table</code>, which allows for blazing fast subsets and joins. We will see this in the vignettes <a href="datatable-keys-fast-subset.html"><code>vignette(&quot;datatable-keys-fast-subset&quot;, package=&quot;data.table&quot;)</code></a> and <a href="datatable-joins.html"><code>vignette(&quot;datatable-joins&quot;, package=&quot;data.table&quot;)</code></a>.</p>
 <h4 id="using-j">Using <code>j</code>:</h4>
 <ol>
 <li>
@@ -960,7 +1004,7 @@ DT[, print(list(c(a,b))), by = ID] # (2)
 <p>Compute on columns: <code>DT[, .(sum(colA), mean(colB))]</code>.</p>
 </li>
 <li>
-<p>Provide names if necessary: <code>DT[, .(sA =sum(colA), mB = mean(colB))]</code>.</p>
+<p>Provide names if necessary: <code>DT[, .(sA = sum(colA), mB = mean(colB))]</code>.</p>
 </li>
 <li>
 <p>Combine with <code>i</code>: <code>DT[colA &gt; value, sum(colB)]</code>.</p>
@@ -994,7 +1038,7 @@ DT[, print(list(c(a,b))), by = ID] # (2)
 </ul>
 <h4 id="and-remember-the-tip">And remember the tip:</h4>
 <p>As long as <code>j</code> returns a <code>list</code>, each element of the list will become a column in the resulting <code>data.table</code>.</p>
-<p>We will see how to <em>add/update/delete</em> columns <em>by reference</em> and how to combine them with <code>i</code> and <code>by</code> in the next vignette.</p>
+<p>We will see how to <em>add/update/delete</em> columns <em>by reference</em> and how to combine them with <code>i</code> and <code>by</code> in the <a href="datatable-reference-semantics.html">next vignette (<code>vignette(&quot;datatable-reference-semantics&quot;, package=&quot;data.table&quot;)</code>)</a>.</p>
 <hr />
 </div>
 <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js" defer></script>

@@ -143,9 +143,13 @@ section.footnotes::before {
 <div class="frontmatter">
 <div class="title"><h1>Programming on data.table</h1></div>
 <div class="author"><h2></h2></div>
-<div class="date"><h3>2024-12-04</h3></div>
+<div class="date"><h3>2025-02-20</h3></div>
 </div>
 <div class="body">
+<p>Translations of this document are available in</p>
+<ul>
+<li><a href="https://rdatatable.gitlab.io/data.table/articles/fr/datatable-programming.html">French</a></li>
+</ul>
 <h2 id="introduction">Introduction</h2>
 <p><code>data.table</code>, from its very first releases, enabled the usage of <code>subset</code> and <code>with</code> (or <code>within</code>) functions by defining the <code>[.data.table</code> method. <code>subset</code> and <code>with</code> are base R functions that are useful for reducing repetition in code, enhancing readability, and reducing number the total characters the user has to type. This functionality is possible in R because of a quite unique feature called <em>lazy evaluation</em>. This feature allows a function to catch its arguments, before they are evaluated, and to evaluate them in a different scope than the one in which they were called. Let’s recap usage of the <code>subset</code> function.</p>
 <pre><code class="language-r">subset(iris, Species == &quot;setosa&quot;)

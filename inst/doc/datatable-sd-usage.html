@@ -137,20 +137,12 @@ section.footnotes::before {
   pre { white-space: pre; }
 }
 </style>
-<style type="text/css">
-#TOC {
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  padding-left: 1em;
-  background: #f6f6f6;
-}
-</style>
 </head>
 <body>
 <div class="frontmatter">
 <div class="title"><h1>Using .SD for Data Analysis</h1></div>
 <div class="author"><h2></h2></div>
-<div class="date"><h3>2024-12-04</h3></div>
+<div class="date"><h3>2025-02-20</h3></div>
 </div>
 <div class="body">
 <div id="TOC">
@@ -177,6 +169,18 @@ section.footnotes::before {
 </li>
 </ul>
 </div>
+<style>
+#TOC {
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  padding-left: 1em;
+  background: #f6f6f6;
+}
+</style>
+<p>Translations of this document are available in</p>
+<ul>
+<li><a href="https://rdatatable.gitlab.io/data.table/articles/fr/datatable-sd-usage.html">French</a></li>
+</ul>
 <p>This vignette will explain the most common ways to use the <code>.SD</code> variable in your <code>data.table</code> analyses. It is an adaptation of <a href="https://stackoverflow.com/a/47406952/3576984">this answer</a> given on StackOverflow.</p>
 <h1 id="what-is-sd"><span class="section-number">1.</span> What is <code>.SD</code>?</h1>
 <p>In the broadest sense, <code>.SD</code> is just shorthand for capturing a variable that comes up frequently in the context of data analysis. It can be understood to stand for <em>S</em>ubset, <em>S</em>elfsame, or <em>S</em>elf-reference of the <em>D</em>ata. That is, <code>.SD</code> is in its most basic guise a <em>reflexive reference</em> to the <code>data.table</code> itself – as we’ll see in examples below, this is particularly helpful for chaining together “queries” (extractions/subsets/etc using <code>[</code>). In particular, this also means that <code>.SD</code> is <em>itself a <code>data.table</code></em> (with the caveat that it does not allow assignment with <code>:=</code>).</p>
@@ -394,7 +398,7 @@ head(unique(Teams[[fkt[1L]]]))
 </code></pre>
 <p>Note:</p>
 <ol>
-<li>The <code>:=</code> is an assignment operator to update the <code>data.table</code> in place without making a copy. See <a href="https://cran.r-project.org/package=data.table/vignettes/datatable-reference-semantics.html">reference semantics</a> for more.</li>
+<li>The <code>:=</code> is an assignment operator to update the <code>data.table</code> in place without making a copy. See <a href="datatable-reference-semantics.html"><code>vignette(&quot;datatable-reference-semantics&quot;, package=&quot;data.table&quot;)</code></a> for more.</li>
 <li>The LHS, <code>names(.SD)</code>, indicates which columns we are updating - in this case we update the entire <code>.SD</code>.</li>
 <li>The RHS, <code>lapply()</code>, loops through each column of the <code>.SD</code> and converts the column to a factor.</li>
 <li>We use the <code>.SDcols</code> to only select columns that have pattern of <code>teamID</code>.</li>

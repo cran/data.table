@@ -142,13 +142,17 @@ section.footnotes::before {
 <div class="frontmatter">
 <div class="title"><h1>Reference semantics</h1></div>
 <div class="author"><h2></h2></div>
-<div class="date"><h3>2024-12-04</h3></div>
+<div class="date"><h3>2025-02-20</h3></div>
 </div>
 <div class="body">
-<p>This vignette discusses <em>data.table</em>‘s reference semantics which allows to <em>add/update/delete</em> columns of a <em>data.table by reference</em>, and also combine them with <code>i</code> and <code>by</code>. It is aimed at those who are already familiar with <em>data.table</em> syntax, its general form, how to subset rows in <code>i</code>, select and compute on columns, and perform aggregations by group. If you’re not familiar with these concepts, please read the <em>“Introduction to data.table”</em> vignette first.</p>
+<p>Translations of this document are available in</p>
+<ul>
+<li><a href="https://rdatatable.gitlab.io/data.table/articles/fr/datatable-reference-semantics.html">French</a></li>
+</ul>
+<p>This vignette discusses <em>data.table</em>‘s reference semantics which allows to <em>add/update/delete</em> columns of a <em>data.table by reference</em>, and also combine them with <code>i</code> and <code>by</code>. It is aimed at those who are already familiar with <em>data.table</em> syntax, its general form, how to subset rows in <code>i</code>, select and compute on columns, and perform aggregations by group. If you’re not familiar with these concepts, please read the <a href="datatable-intro.html"><code>vignette(&quot;datatable-intro&quot;, package=&quot;data.table&quot;)</code></a> vignette first.</p>
 <hr />
 <h2 id="data">Data</h2>
-<p>We will use the same <code>flights</code> data as in the <em>“Introduction to data.table”</em> vignette.</p>
+<p>We will use the same <code>flights</code> data as in the <a href="datatable-intro.html"><code>vignette(&quot;datatable-intro&quot;, package=&quot;data.table&quot;)</code></a> vignette.</p>
 <pre><code class="language-r">flights &lt;- fread(&quot;flights14.csv&quot;)
 flights
 #          year month   day dep_delay arr_delay carrier origin   dest air_time distance  hour
@@ -199,7 +203,7 @@ DF
 # or
 DF$c[DF$ID == &quot;b&quot;] &lt;- 15:13 # (2) -- subassign in column 'c'
 </code></pre>
-<p>both (1) and (2) resulted in deep copy of the entire data.frame in versions of <code>R</code> versions <code>&lt; 3.1</code>. <a href="https://stackoverflow.com/q/23898969/559784">It copied more than once</a>. To improve performance by avoiding these redundant copies, <em>data.table</em> utilised the <a href="https://stackoverflow.com/q/7033106/559784">available but unused <code>:=</code> operator in R</a>.</p>
+<p>both (1) and (2) resulted in deep copy of the entire data.frame in versions of <code>R &lt; 3.1</code>. <a href="https://stackoverflow.com/q/23898969/559784">It copied more than once</a>. To improve performance by avoiding these redundant copies, <em>data.table</em> utilised the <a href="https://stackoverflow.com/q/7033106/559784">available but unused <code>:=</code> operator in R</a>.</p>
 <p>Great performance improvements were made in <code>R v3.1</code> as a result of which only a <em>shallow</em> copy is made for (1) and not <em>deep</em> copy. However, for (2) still, the entire column is <em>deep</em> copied even in <code>R v3.1+</code>. This means the more columns one subassigns to in the <em>same query</em>, the more <em>deep</em> copies R does.</p>
 <h4 id="shallow-vs-deep-copy"><em>shallow</em> vs <em>deep</em> copy</h4>
 <p>A <em>shallow</em> copy is just a copy of the vector of column pointers (corresponding to the columns in a <em>data.frame</em> or <em>data.table</em>). The actual data is not physically copied in memory.</p>
@@ -292,7 +296,7 @@ flights[hour == 24L, hour := 0L]
 </code></pre>
 <ul>
 <li>
-<p>We can use <code>i</code> along with <code>:=</code> in <code>j</code> the very same way as we have already seen in the <em>“Introduction to data.table”</em> vignette.</p>
+<p>We can use <code>i</code> along with <code>:=</code> in <code>j</code> the very same way as we have already seen in the <a href="datatable-intro.html"><code>vignette(&quot;datatable-intro&quot;, package=&quot;data.table&quot;)</code></a> vignette.</p>
 </li>
 <li>
 <p>Column <code>hour</code> is replaced with <code>0</code> only on those <em>row indices</em> where the condition <code>hour == 24L</code> specified in <code>i</code> evaluates to <code>TRUE</code>.</p>
@@ -400,7 +404,7 @@ head(flights)
 <p>We provide the columns to group by the same way as shown in the <em>Introduction to data.table</em> vignette. For each group, <code>max(speed)</code> is computed, which returns a single value. That value is recycled to fit the length of the group. Once again, no copies are being made at all. <code>flights</code> <em>data.table</em> is modified <em>in-place</em>.</p>
 </li>
 <li>
-<p>We could have also provided <code>by</code> with a <em>character vector</em> as we saw in the <em>Introduction to data.table</em> vignette, e.g., <code>by = c(&quot;origin&quot;, &quot;dest&quot;)</code>.</p>
+<p>We could have also provided <code>by</code> with a <em>character vector</em> as we saw in the <a href="datatable-intro.html"><code>vignette(&quot;datatable-intro&quot;, package=&quot;data.table&quot;)</code></a> vignette, e.g., <code>by = c(&quot;origin&quot;, &quot;dest&quot;)</code>.</p>
 </li>
 </ul>
 <h1></h1>
@@ -432,10 +436,10 @@ head(flights)
 <p>We use the <code>LHS := RHS</code> form. We store the input column names and the new columns to add in separate variables and provide them to <code>.SDcols</code> and for <code>LHS</code> (for better readability).</p>
 </li>
 <li>
-<p>Note that since we allow assignment by reference without quoting column names when there is only one column as explained in <a href="#delete-convenience">Section 2c</a>, we can not do <code>out_cols := lapply(.SD, max)</code>. That would result in adding one new column named <code>out_col</code>. Instead we should do either <code>c(out_cols)</code> or simply <code>(out_cols)</code>. Wrapping the variable name with <code>(</code> is enough to differentiate between the two cases.</p>
+<p>Note that since we allow assignment by reference without quoting column names when there is only one column as explained in <a href="#delete-convenience">Section 2c</a>, we can not do <code>out_cols := lapply(.SD, max)</code>. That would result in adding one new column named <code>out_cols</code>. Instead we should do either <code>c(out_cols)</code> or simply <code>(out_cols)</code>. Wrapping the variable name with <code>(</code> is enough to differentiate between the two cases.</p>
 </li>
 <li>
-<p>The <code>LHS := RHS</code> form allows us to operate on multiple columns. In the RHS, to compute the <code>max</code> on columns specified in <code>.SDcols</code>, we make use of the base function <code>lapply()</code> along with <code>.SD</code> in the same way as we have seen before in the <em>“Introduction to data.table”</em> vignette. It returns a list of two elements, containing the maximum value corresponding to <code>dep_delay</code> and <code>arr_delay</code> for each group.</p>
+<p>The <code>LHS := RHS</code> form allows us to operate on multiple columns. In the RHS, to compute the <code>max</code> on columns specified in <code>.SDcols</code>, we make use of the base function <code>lapply()</code> along with <code>.SD</code> in the same way as we have seen before in the <a href="datatable-intro.html"><code>vignette(&quot;datatable-intro&quot;, package=&quot;data.table&quot;)</code></a> vignette. It returns a list of two elements, containing the maximum value corresponding to <code>dep_delay</code> and <code>arr_delay</code> for each group.</p>
 </li>
 </ul>
 <h1></h1>
@@ -587,14 +591,14 @@ DT_n
 <p>It is used to <em>add/update/delete</em> columns by reference.</p>
 </li>
 <li>
-<p>We have also seen how to use <code>:=</code> along with <code>i</code> and <code>by</code> the same way as we have seen in the <em>Introduction to data.table</em> vignette. We can in the same way use <code>keyby</code>, chain operations together, and pass expressions to <code>by</code> as well all in the same way. The syntax is <em>consistent</em>.</p>
+<p>We have also seen how to use <code>:=</code> along with <code>i</code> and <code>by</code> the same way as we have seen in the <a href="datatable-intro.html"><code>vignette(&quot;datatable-intro&quot;, package=&quot;data.table&quot;)</code></a> vignette. We can in the same way use <code>keyby</code>, chain operations together, and pass expressions to <code>by</code> as well all in the same way. The syntax is <em>consistent</em>.</p>
 </li>
 <li>
 <p>We can use <code>:=</code> for its side effect or use <code>copy()</code> to not modify the original object while updating by reference.</p>
 </li>
 </ul>
 <h1></h1>
-<p>So far we have seen a whole lot in <code>j</code>, and how to combine it with <code>by</code> and little of <code>i</code>. Let’s turn our attention back to <code>i</code> in the next vignette <em>“Keys and fast binary search based subset”</em> to perform <em>blazing fast subsets</em> by <em>keying data.tables</em>.</p>
+<p>So far we have seen a whole lot in <code>j</code>, and how to combine it with <code>by</code> and little of <code>i</code>. Let’s turn our attention back to <code>i</code> in the <a href="datatable-keys-fast-subset.html">next vignette (<code>vignette(&quot;datatable-keys-fast-subset&quot;, package=&quot;data.table&quot;)</code>)</a> to perform <em>blazing fast subsets</em> by <em>keying data.tables</em>.</p>
 <hr />
 </div>
 <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js" defer></script>

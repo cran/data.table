@@ -142,9 +142,14 @@ section.footnotes::before {
 <div class="frontmatter">
 <div class="title"><h1>Efficient reshaping using data.tables</h1></div>
 <div class="author"><h2></h2></div>
-<div class="date"><h3>2024-12-04</h3></div>
+<div class="date"><h3>2025-02-20</h3></div>
 </div>
 <div class="body">
+<p>Translations of this document are available in</p>
+<ul>
+<li><a href="https://rdatatable.gitlab.io/data.table/articles/fr/datatable-reshape.html">French</a></li>
+<li><a href="https://rdatatable.gitlab.io/data.table/articles/ru/datatable-reshape.html">Russian</a></li>
+</ul>
 <p>This vignette discusses the default usage of reshaping functions <code>melt</code> (wide to long) and <code>dcast</code> (long to wide) for <em>data.tables</em> as well as the <strong>new extended functionalities</strong> of melting and casting on <em>multiple columns</em> available from <code>v1.9.6</code>.</p>
 <hr />
 <h2 id="data">Data</h2>
@@ -228,7 +233,7 @@ str(DT.m1)
 <p><code>measure.vars</code> specify the set of columns we would like to collapse (or combine) together.</p>
 </li>
 <li>
-<p>We can also specify column <em>indices</em> instead of <em>names</em>.</p>
+<p>We can also specify column <em>positions</em> instead of <em>names</em>.</p>
 </li>
 <li>
 <p>By default, <code>variable</code> column is of type <code>factor</code>. Set <code>variable.factor</code> argument to <code>FALSE</code> if you’d like to return a <em><code>character</code></em> vector instead.</p>
@@ -309,7 +314,7 @@ DT.m1
 # 5:         5     2
 </code></pre>
 <p>Check <code>?dcast</code> for other useful arguments and additional examples.</p>
-<h2 id="2-limitations-in-current-melt-dcast-approaches">2. Limitations in current <code>melt/dcast</code> approaches</h2>
+<h2 id="2-limitations-in-previous-melt-dcast-approaches">2. Limitations in previous <code>melt/dcast</code> approaches</h2>
 <p>So far we’ve seen features of <code>melt</code> and <code>dcast</code> that are implemented efficiently for <code>data.table</code>s, using internal <code>data.table</code> machinery (<em>fast radix ordering</em>, <em>binary search</em> etc.).</p>
 <p>However, there are situations we might run into where the desired operation is not expressed in a straightforward manner. For example, consider the <code>data.table</code> shown below:</p>
 <pre><code class="language-r">s2 &lt;- &quot;family_id age_mother dob_child1 dob_child2 dob_child3 gender_child1 gender_child2 gender_child3
@@ -353,7 +358,7 @@ DT.c1
 # 14:         5         29 child2 2005-02-28 1970-01-02
 # 15:         5         29 child3       &lt;NA&gt;       &lt;NA&gt;
 
-str(DT.c1) ## gender column is character type now!
+str(DT.c1) ## gender column is class IDate now!
 # Classes 'data.table' and 'data.frame':	15 obs. of  5 variables:
 #  $ family_id : int  1 1 1 2 2 2 3 3 3 4 ...
 #  $ age_mother: int  30 30 30 27 27 27 26 26 26 32 ...
@@ -370,7 +375,7 @@ str(DT.c1) ## gender column is character type now!
 <p>As an analogy, imagine you’ve a closet with four shelves of clothes and you’d like to put together the clothes from shelves 1 and 2 together (in 1), and 3 and 4 together (in 3). What we are doing is more or less to combine all the clothes together, and then split them back on to shelves 1 and 3!</p>
 </li>
 <li>
-<p>The columns to <code>melt</code> may be of different types, as in this case (<code>character</code> and <code>integer</code> types). By <code>melt</code>ing them all together, the columns will be coerced in result, as explained by the warning message above and shown from output of <code>str(DT.c1)</code>, where <code>gender</code> has been converted to <em><code>character</code></em> type.</p>
+<p>The columns to <code>melt</code> may be of different types. By <code>melt</code>ing them all together, the columns will be coerced in result.</p>
 </li>
 <li>
 <p>We are generating an additional column by splitting the <code>variable</code> column into two columns, whose purpose is quite cryptic. We do it because we need it for <em>casting</em> in the next step.</p>
@@ -490,7 +495,7 @@ for each unique name found in that group:</p>
 # 4: virginica  Width   3.0   1.8
 </code></pre>
 <p>Using the code above we get one value column per flower part. If we
-instead want a value column for each measurement dimension, we can do</p>
+instead want a value column for each measurement dimension, we can do:</p>
 <pre><code class="language-r">melt(two.iris, measure.vars = measure(part, value.name, sep=&quot;.&quot;))
 #      Species   part Length Width
 #       &lt;fctr&gt; &lt;char&gt;  &lt;num&gt; &lt;num&gt;
