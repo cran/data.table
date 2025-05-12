@@ -1,2 +1,2 @@
-CC=clang
+CC=clang -std=gnu2x
 CFLAGS=-g -O2
