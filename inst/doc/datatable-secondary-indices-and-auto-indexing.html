@@ -114,7 +114,7 @@ section.footnotes {
 <body>
 <div class="frontmatter">
 <div class="title"><h1>Secondary indices and auto indexing</h1></div>
-<div class="date"><h3>2025-05-25</h3></div>
+<div class="date"><h3>2025-06-15</h3></div>
 </div>
 <div class="body">
 <p>Translations of this document are available in</p>
@@ -289,7 +289,7 @@ flights[&quot;JFK&quot;, on = &quot;origin&quot;, verbose = TRUE][1:5]
 # forderReuseSorting: opt=-1, took 0.000s
 # bmerge: looping bmerge_r took 0.000s
 # bmerge: took 0.000s
-# bmerge done in 0.000s elapsed (0.001s cpu)
+# bmerge done in 0.000s elapsed (0.000s cpu)
 # Constructing irows for '!byjoin || nqbyjoin' ... 0.000s elapsed (0.000s cpu)
 #     year month   day dep_delay arr_delay carrier origin   dest air_time distance  hour
 #    &lt;int&gt; &lt;int&gt; &lt;int&gt;     &lt;int&gt;     &lt;int&gt;  &lt;char&gt; &lt;char&gt; &lt;char&gt;    &lt;int&gt;    &lt;int&gt; &lt;int&gt;
@@ -439,7 +439,7 @@ names(attributes(dt))
 ## run thefirst time
 (t1 &lt;- system.time(ans &lt;- dt[x == 989L]))
 #    user  system elapsed 
-#   0.258   0.007   0.265
+#   0.267   0.011   0.307
 head(ans)
 #        x         y
 #    &lt;int&gt;     &lt;num&gt;
@@ -465,11 +465,11 @@ indices(dt)
 #   0.013   0.001   0.014
 system.time(dt[x %in% 1989:2012])
 #    user  system elapsed 
-#   0.013   0.001   0.014
+#   0.013   0.001   0.015
 </code></pre>
 <ul>
 <li>
-<p>Running the first time took 0.265 seconds where as the second time took 0.014 seconds.</p>
+<p>Running the first time took 0.307 seconds where as the second time took 0.014 seconds.</p>
 </li>
 <li>
 <p>Auto indexing can be disabled by setting the global argument <code>options(datatable.auto.index = FALSE)</code>.</p>

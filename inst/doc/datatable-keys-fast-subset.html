@@ -114,7 +114,7 @@ section.footnotes {
 <body>
 <div class="frontmatter">
 <div class="title"><h1>Keys and fast binary search based subset</h1></div>
-<div class="date"><h3>2025-05-25</h3></div>
+<div class="date"><h3>2025-06-15</h3></div>
 </div>
 <div class="body">
 <p>Translations of this document are available in</p>
@@ -634,7 +634,7 @@ print(object.size(DT), units = &quot;Mb&quot;)
 t1 &lt;- system.time(ans1 &lt;- DT[x == &quot;g&quot; &amp; y == 877L])
 t1
 #    user  system elapsed 
-#   0.219   0.018   0.236
+#   0.218   0.015   0.233
 head(ans1)
 #         x     y        val
 #    &lt;char&gt; &lt;int&gt;      &lt;num&gt;
@@ -655,7 +655,7 @@ key(DT)
 t2 &lt;- system.time(ans2 &lt;- DT[.(&quot;g&quot;, 877L)])
 t2
 #    user  system elapsed 
-#   0.001   0.000   0.001
+#       0       0       0
 head(ans2)
 # Key: &lt;x, y&gt;
 #         x     y        val
@@ -673,7 +673,7 @@ identical(ans1$val, ans2$val)
 # [1] TRUE
 </code></pre>
 <ul>
-<li>The speed-up is <strong>~236x</strong>!</li>
+<li>The speed-up is <strong>~233x</strong>!</li>
 </ul>
 <h3 id="sec:b-why-does-keying-a-data-table-result-in-blazing-fast-subsets">b) Why does keying a <em>data.table</em> result in blazing fast subsets?</h3>
 <p>To understand that, let’s first look at what <em>vector scan approach</em> (method 1) does.</p>

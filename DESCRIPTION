@@ -1,5 +1,5 @@
 Package: data.table
-Version: 1.17.4
+Version: 1.17.6
 Title: Extension of `data.frame`
 Depends: R (>= 3.3.0)
 Imports: methods
@@ -105,7 +105,7 @@ Authors@R: c(
   person("Bill", "Evans",          role="ctb")
   )
 NeedsCompilation: yes
-Packaged: 2025-05-25 18:36:32 UTC; tysonbarrett
+Packaged: 2025-06-15 18:20:39 UTC; tysonbarrett
 Author: Tyson Barrett [aut, cre] (ORCID:
     <https://orcid.org/0000-0002-2137-1391>),
   Matt Dowle [aut],
@@ -199,4 +199,4 @@ Author: Tyson Barrett [aut, cre] (ORCID:
   Bill Evans [ctb]
 Maintainer: Tyson Barrett <t.barrett88@gmail.com>
 Repository: CRAN
-Date/Publication: 2025-05-26 12:40:02 UTC
+Date/Publication: 2025-06-17 03:40:02 UTC
